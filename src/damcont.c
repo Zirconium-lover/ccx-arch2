@@ -198,7 +198,9 @@ ITG damcont_select(const double *ring,const ITG *fl,
                             double kaptol,const ITG *bl,ITG nbl)
 {
   ITG i,j,k,n,s0,s1,f0,f1,ok,cnt=0;
-  double tn0,ts0,gc,beta,df,atau,d0[3],d1[3],mm[3],deff,adv,best=-1.;
+  /* d0[3] was declared here and never read; gcc says so now that the
+     function is compiled on its own.  Removed. */
+  double tn0,ts0,gc,beta,df,atau,d1[3],mm[3],deff,adv,best=-1.;
   double q[5],kp[5],sq[5],sk[5],t;
 
   n=mi0*ne0;*ncand=0;*reason=1;*belem=-1;*bip=-1;

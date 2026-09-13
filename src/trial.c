@@ -134,9 +134,11 @@ void trial_reduce(const trialctx *t,double *dst)
           *(t->cvini),*(t->cv),t->alpham,t->num_cpus);
 }
 
-/* The whole atom: scratch, evaluate, reduce.  The caller fills b first -
-   the step is the caller's decision and this file takes no view on it. */
-void trial_residual(const trialctx *t,double *dst)
+/* Scratch and evaluate, without the reduce.  Two sites want the model
+   evaluated at a trial state and then read the STATE - the stored
+   tractions, the damage - rather than the residual, and both had written
+   these eight lines out by hand. */
+void trial_evaluate(const trialctx *t)
 {
   ITG *nk=*(t->nk),*ne=*(t->ne),*mi=*(t->mi);
   ITG mt=mi[1]+1,isiz;
@@ -156,7 +158,13 @@ void trial_residual(const trialctx *t,double *dst)
   trial_results(t);
 
   if(*(t->ne1d2d)==1) SFREE(*(t->inum));
+}
 
+/* The whole atom: scratch, evaluate, reduce.  The caller fills b first -
+   the step is the caller's decision and this file takes no view on it. */
+void trial_residual(const trialctx *t,double *dst)
+{
+  trial_evaluate(t);
   trial_reduce(t,dst);
 }
 

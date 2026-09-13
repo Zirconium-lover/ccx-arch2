@@ -110,9 +110,10 @@ Each file answers the question in its own first paragraph. Sizes are
   have.* A bounded extension, conditional on damage actually advancing.
   It extends a budget; it relaxes no tolerance and closes no divergence
   path.
-- **`dogleg.c`** — *the trust-region step.* `dogleg_pick()` is the choice
+- **`dogleg.c`** — *the trust region.* `dogleg_pick()` is the step choice
   alone: a radius and five scalars in, a branch and two coefficients out,
   which is what makes it testable against a closed form.
+  `dogleg_rescue()` is the loop that uses it.
 - **`lsladder.c`** — *what step length to try next, and which to take.*
 - **`loadcut.c`**, **`crackcontrol.c`**, **`pathfollow.c`** — the load
   parameter: when to cut it, how to drive it by crack opening, how to
@@ -120,18 +121,20 @@ Each file answers the question in its own first paragraph. Sizes are
 - **`topology.c`** — *the transaction that commits an erosion.* One marked
   set, one lifetime, one discard.
 
-### State with an owner but a driver still in `nonlingeo()`
+### State with an owner, and drivers partly still in `nonlingeo()`
 
-These files hold a cluster's state and its arithmetic; the loop that
-orders them is still in `nonlingeo()`, because it cuts increments, rolls
-back topology and ends steps.
+These files hold a cluster's state and its arithmetic. Where a loop has
+moved it is named; where it has not, it is because the loop cuts
+increments, rolls topology back or ends steps.
 
-- **`damcont.c`** — the bounded local continuation (88 locals → one
-  object; 12 of the 88 were declared and never read, and are gone).
 - **`rescue.c`** — what happens when an increment will not converge: the
   line search, its probe, transactional backtracking, same-load
   re-equilibration, the recovery corridor and the levels that order them
-  (67 locals, six clusters, one object).
+  (67 locals, six clusters, one object). `rescue_backtrack()` is the
+  backtracking loop itself; the rest of the ladder is still inline.
+- **`damcont.c`** — the bounded local continuation (88 locals → one
+  object; 12 of the 88 were declared and never read, and are gone). The
+  driver is still inline.
 - **`pathfollow.c`** — `pathdrv`, the driver state of the path follower
   (63 locals), beside the method it drives.
 
@@ -166,17 +169,29 @@ Moving one of those out means giving `nonlingeo()`'s control flow —
 `icutb`, `idamagereeq`, `dtheta`, the increment's rollback baselines — an
 owner too. That object has not been built.
 
-One loop has moved, as the proof that it can be done. The trust-region
-dogleg was 239 lines naming twenty things outside itself; before `trial.c`
-and the `dogleg` object, thirteen of those twenty were raw locals of
-`nonlingeo()` and the other seven were the thirty-line
+Two loops have moved, as the proof that it can be done.
+
+The trust-region dogleg was 239 lines naming twenty things outside itself;
+before `trial.c` and the `dogleg` object, thirteen of those twenty were raw
+locals of `nonlingeo()` and the other seven were the thirty-line
 `results()`/`calcresidual()` pair written out by hand, so there was no
-signature to give it. There is one now, of seven arguments, and the body
-is `dogleg_rescue()` in `dogleg.c`. The **guard** stayed behind: whether
-the region may fire at all — not thermal, not dynamic, no contact, no
-continuation running — is a decision about the increment, and it belongs
-where the increment is. That split is the pattern for the loops that
-remain.
+signature to give it. There is one now, of seven arguments, and the body is
+`dogleg_rescue()` in `dogleg.c`. Transactional backtracking followed: 148
+lines, nineteen of its twenty-seven external names now arriving through
+`trialctx`, and `rescue_backtrack()` takes six arguments.
+
+In both cases the **guard** stayed behind. Whether the mechanism may fire
+at all — not thermal, not dynamic, no contact, no continuation running — is
+a decision about the increment, and it belongs where the increment is. What
+moves is what the mechanism then does. That split is the pattern for the
+loops that remain.
+
+Moving a block also makes the compiler able to see it. `-Wall` on the small
+functions found an out-of-bounds read in a self test's own data, two unused
+locals, and a `may be used uninitialized` that is a false positive — and
+that last one is worth the note it carries in `rescue.c`, because the
+identical lines produced no warning while they were inside a 13,000-line
+function. That was checked by compiling the pre-move file, not assumed.
 
 ## How a change is accepted
 

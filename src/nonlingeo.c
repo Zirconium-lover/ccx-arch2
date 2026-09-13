@@ -9686,161 +9686,9 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
       if(((rsc.bt_mode==1)||(rsc.rescue_bt_on==1))&&
          (idamagereeq==1)&&(ncont==0)&&
          (*nmethod!=4)&&(*nmethod!=5)&&(*ithermal<2)&&(*idrct==0)){
-        static const double btA[]={0.,1.,0.5,0.25,0.125,0.0625,0.03125,
-                                   0.015625};
-        ITG bii,bjj,bacc,bnst,bevt;
-        double ba,br,bref,br2;
-
-        bnst=*nstate_;
-        if(prb.ray_p==NULL){
-          NNEW(prb.ray_p,double,neq[1]);
-          NNEW(prb.ray_res,double,neq[1]);
-        }
-        if(rsc.bt_dam==NULL){
-          NNEW(rsc.bt_dam,double,mi[0]**ne);
-          NNEW(rsc.bt_visc,double,mi[0]**ne);
-          if(bnst>0) NNEW(rsc.bt_xs,double,bnst*mi[0]**ne);
-        }
-        isiz=neq[1];cpypardou(prb.ray_p,b,&isiz,&num_cpus);
-        isiz=mi[0]**ne;cpypardou(rsc.bt_dam,dam,&isiz,&num_cpus);
-        if(damage_damvisc!=NULL){
-          isiz=mi[0]**ne;
-          cpypardou(rsc.bt_visc,damage_damvisc,&isiz,&num_cpus);
-        }
-        if((bnst>0)&&(rsc.bt_xs!=NULL)){
-          isiz=bnst*mi[0]**ne;cpypardou(rsc.bt_xs,xstate,&isiz,&num_cpus);
-        }
-
-        bacc=-1; rsc.bt_ntrial=0;
-        /* non-monotone reference: the largest residual over the window.  The
-           ring is reset at the first iteration of each same-load solve. */
-        if(iit<=1){ rsc.bt_nring=0; }
-        for(bii=0;bii<8;bii++){
-          ba=btA[bii];
-          if((bii>=2)&&(ba<rsc.bt_floor-1.e-12)) break;
-          isiz=mi[0]**ne;cpypardou(dam,rsc.bt_dam,&isiz,&num_cpus);
-          if(damage_damvisc!=NULL){
-            isiz=mi[0]**ne;
-            cpypardou(damage_damvisc,rsc.bt_visc,&isiz,&num_cpus);
-          }
-          if((bnst>0)&&(rsc.bt_xs!=NULL)){
-            isiz=bnst*mi[0]**ne;
-            cpypardou(xstate,rsc.bt_xs,&isiz,&num_cpus);
-          }
-          for(bjj=0;bjj<neq[1];bjj++) b[bjj]=ba*prb.ray_p[bjj];
-          trial_residual(&nlgt,prb.ray_res);
-          br=0.;br2=0.;
-          for(bjj=0;bjj<neq[0];bjj++){
-            if(fabs(prb.ray_res[bjj])>br) br=fabs(prb.ray_res[bjj]);
-            br2+=prb.ray_res[bjj]*prb.ray_res[bjj];
-          }
-          br2=sqrt(br2);
-
-          if((prb.evt_on==1)&&(bii==0)){
-            if(prb.evt_sgn==NULL) NNEW(prb.evt_sgn,ITG,mi[0]*ne0);
-            damage_evt_sign(stx,ipkon,lakon,ne0,mi[0],prb.evt_sgn);
-            for(bjj=0;bjj<8;bjj++){
-              prb.evt_nsw[bjj]=0;prb.evt_fe[bjj]=0;prb.evt_fp[bjj]=0;
-            }
-          }else if((prb.evt_on==1)&&(bii<8)){
-            prb.evt_nsw[bii]=damage_evt_flips(stx,ipkon,lakon,ne0,mi[0],
-                                                 prb.evt_sgn,
-                                                 &prb.evt_fe[bii],
-                                                 &prb.evt_fp[bii]);
-          }
-          if(bii==0){
-            rsc.bt_r0=br;
-            bref=br;
-            for(bjj=0;bjj<rsc.bt_nring;bjj++)
-              if(rsc.bt_ring[bjj]>bref) bref=rsc.bt_ring[bjj];
-            continue;
-          }
-          if(bii==1){
-            /* engagement gate: a full step that is not much worse than the
-               current point is taken unchanged.  Newton is allowed to be
-               temporarily worse; that is how the undamped run crosses. */
-            if(br<=rsc.bt_growth*rsc.bt_r0){ bacc=1; break; }
-          }
-          rsc.bt_ntrial++;
-          printf("[DAMAGE BT] inc=%" ITGFORMAT " iter=%" ITGFORMAT
-                 " trial=%" ITGFORMAT " alpha=%.6f R=%.6e R0=%.6e"
-                 " Rref=%.6e R2=%.6e%s",
-                 iinc,iit,rsc.bt_ntrial,ba,br,rsc.bt_r0,bref,br2,"\n");
-          if(br<=(1.-1.e-4*ba)*bref){ bacc=bii; break; }
-        }
-        /* push the residual actually kept into the non-monotone ring */
-        if(rsc.bt_window>1){
-          if(rsc.bt_nring<rsc.bt_window){
-            rsc.bt_ring[rsc.bt_nring++]=rsc.bt_r0;
-          }else{
-            for(bjj=1;bjj<rsc.bt_window;bjj++)
-              rsc.bt_ring[bjj-1]=rsc.bt_ring[bjj];
-            rsc.bt_ring[rsc.bt_window-1]=rsc.bt_r0;
-          }
-        }
-
-        /* [DAMAGE EVT] Nothing satisfied Armijo.  Level one restores the
-           full step here and hands the increment to the standard cutback.
-           Level two first asks whether the obstruction is a UC6 crossing: if
-           some ladder alpha changes the compression set, take the SMALLEST
-           such alpha.  That leaves the facet definitely on its new branch, so
-           the next assembly - built from vold, e_c3d_uc6.f:45 - carries
-           ctan(1,1)=kn for it, which is the whole point.  If no alpha changes
-           the set, nothing happens and level one's behaviour stands. */
-        bevt=-1;
-        if((bacc<0)&&(prb.evt_on==1)){
-          for(bii=7;bii>=1;bii--){
-            if(prb.evt_nsw[bii]>0){ bevt=bii; break; }
-          }
-          if(bevt>=0){
-            bacc=bevt;
-            prb.evt_nstep++;
-            printf("[DAMAGE EVT] inc=%" ITGFORMAT " iter=%" ITGFORMAT
-                   " no alpha satisfied Armijo; the UC6 compression set first "
-                   "changes at alpha=%.6f (%" ITGFORMAT " point(s) cross, "
-                   "first el=%" ITGFORMAT " ip=%" ITGFORMAT
-                   "); taking that EVENT STEP so the next tangent is built on "
-                   "the new branch.  event steps so far: %" ITGFORMAT "%s",
-                   iinc,iit,btA[bevt],prb.evt_nsw[bevt],
-                   prb.evt_fe[bevt],prb.evt_fp[bevt],
-                   prb.evt_nstep,"\n");
-          }else{
-            printf("[DAMAGE EVT] inc=%" ITGFORMAT " iter=%" ITGFORMAT
-                   " no alpha satisfied Armijo and NO ladder alpha changes the "
-                   "UC6 compression set; the obstruction is not a crossing, so "
-                   "level one behaviour stands (full step restored)%s",
-                   iinc,iit,"\n");
-          }
-          fflush(stdout);
-        }
-
-        ba=(bacc>=0)?btA[bacc]:1.;
-        isiz=mi[0]**ne;cpypardou(dam,rsc.bt_dam,&isiz,&num_cpus);
-        if(damage_damvisc!=NULL){
-          isiz=mi[0]**ne;
-          cpypardou(damage_damvisc,rsc.bt_visc,&isiz,&num_cpus);
-        }
-        if((bnst>0)&&(rsc.bt_xs!=NULL)){
-          isiz=bnst*mi[0]**ne;cpypardou(xstate,rsc.bt_xs,&isiz,&num_cpus);
-        }
-        SFREE(v);SFREE(stx);SFREE(fn);
-        for(bjj=0;bjj<neq[1];bjj++) b[bjj]=ba*prb.ray_p[bjj];
-        MNEW(v,double,mt**nk);
-        isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);
-        NNEW(stx,double,6*mi[0]**ne);
-        MNEW(fn,double,mt**nk);
-        if(ne1d2d==1)NNEW(inum,ITG,*nk);
-              trial_results(&nlgt);
-        if(ne1d2d==1)SFREE(inum);
-        glob_fired(&damage_glob,GLOB_BACKTRACK);
-        printf("[DAMAGE BT] inc=%" ITGFORMAT " iter=%" ITGFORMAT
-               " R0=%.6e trials=%" ITGFORMAT " %s%.6f%s",
-               iinc,iit,rsc.bt_r0,rsc.bt_ntrial,
-               (bevt>=0)?"EVENT-STEP alpha=":
-               ((bacc>=0)?"ACCEPTED alpha=":
-                          "NONE-ACCEPTED-full-step-restored alpha="),
-               ba,"\n");
-        fflush(stdout);
+        /* what the ladder then does is rescue.c's; the guard above -
+           whether it may run at all - is a decision about the increment. */
+        rescue_backtrack(&rsc,&nlgt,&damage_glob,&prb,damage_damvisc,iit);
       }
 
       /* ---- [DAMAGE ABA] full-state purity test, fires once --------------- */
@@ -9936,15 +9784,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         prb.aba_done=1;
 
         /* leave the full step, exactly as the unprobed code would have */
-        SFREE(v);SFREE(stx);SFREE(fn);
         isiz=neq[1];cpypardou(b,prb.ray_p,&isiz,&num_cpus);
-        MNEW(v,double,mt**nk);
-        isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);
-        NNEW(stx,double,6*mi[0]**ne);
-        MNEW(fn,double,mt**nk);
-        if(ne1d2d==1)NNEW(inum,ITG,*nk);
-          trial_results(&nlgt);
-        if(ne1d2d==1)SFREE(inum);
+        trial_evaluate(&nlgt);
       }
 
       /* calculating the residual */

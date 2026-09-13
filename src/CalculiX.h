@@ -5935,6 +5935,7 @@ typedef struct{
   }while(0)
 
 void trial_results(const trialctx *t);          /* evaluate the model   */
+void trial_evaluate(const trialctx *t);         /* ...with its scratch  */
 void trial_reduce(const trialctx *t,double *dst);/* ...reduce to a residual */
 void trial_residual(const trialctx *t,double *dst);/* scratch + both halves */
 ITG  trial_check(const trialctx *t);
@@ -5945,7 +5946,15 @@ ITG  trial_check(const trialctx *t);
    the guard - whether the region may fire at all is a decision about the
    increment - and this does what the region then does. */
 void dogleg_rescue(dogleg *d,const trialctx *t,glob_census *g,
-                   const double *damvisc,ITG iit,ITG icutb,double *uam);
+                   double *damvisc,ITG iit,ITG icutb,double *uam);
+
+/* Transactional backtracking, the second loop that could not be moved.
+   Walks alpha down 1, 1/2 ... 1/64 with the committed baseline restored
+   before every probe, accepts on Armijo against a non-monotone reference,
+   restores the full step if nothing is acceptable.  It CHANGES THE ANSWER
+   and is off by default; the caller keeps the guard. */
+void rescue_backtrack(rescue *r,const trialctx *t,glob_census *g,
+                      probedrv *p,double *damvisc,ITG iit);
 
 /* ---- which elements leave the assembly (erosion.c) --------------------
 

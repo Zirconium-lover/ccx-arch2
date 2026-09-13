@@ -246,7 +246,7 @@ ITG dogleg_selftest(void)
    this runs: trial_residual() replaces v, stx and fn, and nothing else. */
 
 void dogleg_rescue(dogleg *d,const trialctx *t,glob_census *g,
-                   const double *damvisc,ITG iit,ITG icutb,double *uam)
+                   double *damvisc,ITG iit,ITG icutb,double *uam)
 {
   double *b=*(t->b),*xstate=*(t->xstate),*dam=*(t->dam);
   double *qa=t->qa,*cam=t->cam;

@@ -587,8 +587,13 @@ ITG erosion_selftest(void)
   ITG ipkon[4]={0,4,8,12};
   ITG kon[16]={1,2,3,4, 2,3,4,5, 3,4,5,6, 4,5,6,7};
   ITG ielmat[4]={1,1,2,2};
-  ITG ndmcon[4]={4,0,4,0};          /* nconst=4 for both materials      */
-  double dmcon[10];                 /* off=1+(ndmat+1)*ntmat*(imat-1)   */
+  /* Three materials, not two: the test asks about material 3 (the one
+     with no damage record), and both tables are indexed by the material
+     number - ndmcon at 2*(imat-1) and dmcon at 1+(ndmat+1)*ntmat*(imat-1),
+     which is 11 for imat=3.  Sized for two, the question read off the end
+     of both arrays; -Wall said so and it was right. */
+  ITG ndmcon[6]={4,0,4,0,0,0};      /* nconst per material              */
+  double dmcon[16];                 /* off=1+(ndmat+1)*ntmat*(imat-1)   */
   double dam[4],visc[4],dmax,vmin;
   double tv[4]; ITG tip[4];
   erosion_policy pol;
@@ -597,7 +602,7 @@ ITG erosion_selftest(void)
   memset(matname,' ',sizeof(matname)-1); matname[sizeof(matname)-1]=0;
   memcpy(matname,"ZrH",3);            /* material 1 */
   memcpy(matname+80,"Zr",2);          /* material 2 - a prefix of the first */
-  for(i=0;i<10;i++) dmcon[i]=0.;
+  for(i=0;i<16;i++) dmcon[i]=0.;
   dmcon[1]=1.;                        /* material 1: Rice-Tracey, type 1 */
   dmcon[6]=1.;                        /* material 2: same              */
 
