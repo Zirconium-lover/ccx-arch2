@@ -159,15 +159,24 @@ fork's locals, in clusters of thirty and fewer: dissipation control, path
 control, the release probe, the topology-diagnostic handles, the free/float
 stabilisation knobs, the termination test's state.
 
-More importantly, three *loops* are still inline, and for the same reason
-in each case: they do not only compute, they **commit**. The trust-region
-loop, the rescue ladder and the continuation driver all decide a cutback,
-roll topology back, or end a step. Moving one of those out means giving
-`nonlingeo()`'s control flow — `icutb`, `idamagereeq`, `dtheta`, the
-increment's rollback baselines — an owner too. That is the next object, and
-it has not been built. What changed is that it *can* be: the state each
-loop works in now has a home, and the residual evaluations they make go
-through `trial.c`.
+More importantly, *loops* are still inline, and for the same reason in each
+case: they do not only compute, they **commit**. The rescue ladder and the
+continuation driver decide a cutback, roll topology back, or end a step.
+Moving one of those out means giving `nonlingeo()`'s control flow —
+`icutb`, `idamagereeq`, `dtheta`, the increment's rollback baselines — an
+owner too. That object has not been built.
+
+One loop has moved, as the proof that it can be done. The trust-region
+dogleg was 239 lines naming twenty things outside itself; before `trial.c`
+and the `dogleg` object, thirteen of those twenty were raw locals of
+`nonlingeo()` and the other seven were the thirty-line
+`results()`/`calcresidual()` pair written out by hand, so there was no
+signature to give it. There is one now, of seven arguments, and the body
+is `dogleg_rescue()` in `dogleg.c`. The **guard** stayed behind: whether
+the region may fire at all — not thermal, not dynamic, no contact, no
+continuation running — is a decision about the increment, and it belongs
+where the increment is. That split is the pattern for the loops that
+remain.
 
 ## How a change is accepted
 

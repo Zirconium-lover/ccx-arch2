@@ -5939,6 +5939,14 @@ void trial_reduce(const trialctx *t,double *dst);/* ...reduce to a residual */
 void trial_residual(const trialctx *t,double *dst);/* scratch + both halves */
 ITG  trial_check(const trialctx *t);
 
+/* The trust-region LOOP.  239 lines that could not be moved before
+   trialctx and the dogleg object existed, because there was no signature
+   to give them; now there is one, of seven arguments.  The caller keeps
+   the guard - whether the region may fire at all is a decision about the
+   increment - and this does what the region then does. */
+void dogleg_rescue(dogleg *d,const trialctx *t,glob_census *g,
+                   const double *damvisc,ITG iit,ITG icutb,double *uam);
+
 /* ---- which elements leave the assembly (erosion.c) --------------------
 
    Three rules - the terminal damage threshold, DEADALL and DEADSOLE -

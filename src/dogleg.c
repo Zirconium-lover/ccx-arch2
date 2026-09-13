@@ -221,3 +221,276 @@ ITG dogleg_selftest(void)
   fflush(stdout);
   return nbad;
 }
+
+/* ---- the trust-region loop ---------------------------------------------
+
+   This is the block that could not be moved.  It is 239 lines and it names
+   twenty things outside itself; before trial.c and the dogleg object,
+   thirteen of those twenty were raw locals of nonlingeo() and the other
+   seven were the thirty-line results()/calcresidual() pair written out by
+   hand.  There was no signature to give it.
+
+   There is now.  Everything the model side needs comes through trialctx,
+   everything the mechanism owns is in dogleg, and what is left is seven
+   arguments: the census it reports to, the viscous damage it snapshots,
+   and the three numbers it prints.
+
+   The caller keeps the GUARD.  Whether the trust region is allowed to fire
+   at all - not thermal, not dynamic, no contact, no continuation running -
+   is a decision about the increment, and it belongs where the increment
+   is.  What belongs here is what the region then does.
+
+   The local aliases below are exactly the names the block used inside
+   nonlingeo(), bound once from the context, so the body that moved is the
+   body that was there.  None of the arrays they name is reallocated while
+   this runs: trial_residual() replaces v, stx and fn, and nothing else. */
+
+void dogleg_rescue(dogleg *d,const trialctx *t,glob_census *g,
+                   const double *damvisc,ITG iit,ITG icutb,double *uam)
+{
+  double *b=*(t->b),*xstate=*(t->xstate),*dam=*(t->dam);
+  double *qa=t->qa,*cam=t->cam;
+  ITG *neq=*(t->neq),*mi=*(t->mi),*ne=*(t->ne),*nstate_=*(t->nstate_);
+  ITG num_cpus=*(t->num_cpus),iinc=*(t->iinc);
+  ITG isiz;
+
+  ITG tnst,tii,tjj,tacc,tkind,tbnd,tkkind;
+  double tpa,tpb,tnrm,tphi,tl2,tinf,tpred,tared,trho;
+  double tpcn,tpnn,tdold;
+  double tkpa,tkpb,tkphi,tknrm,tkrho;
+  double tqas[4],tuams[2];
+  const char *tname;
+
+  tnst=*nstate_;
+  if(d->res==NULL){
+    NNEW(d->res,double,neq[1]);
+    NNEW(d->dam,double,mi[0]**ne);
+    NNEW(d->visc,double,mi[0]**ne);
+    if(tnst>0) NNEW(d->xs,double,tnst*mi[0]**ne);
+  }
+
+  tpnn=sqrt(d->npn2);
+  tpcn=d->tc*sqrt(d->nd2);
+  d->phi0=0.5*d->nb2;
+  tname="NEWTON";tkind=1;tii=0;
+  if(d->delta<=0.){
+    d->delta=d->d0fac*tpnn;
+    d->dmax=1.e3*tpnn;
+    if(d->delta<=0.){d->delta=1.;d->dmax=1.e3;}
+    printf("[DAMAGE TR] ARMED inc=%" ITGFORMAT " iter=%" ITGFORMAT
+           " attempt=%" ITGFORMAT ": |p_N|=%.6e |p_C|=%.6e |R|2=%.6e "
+           "phi=%.6e Delta0=%.6e.  BK3 is bypassed for this attempt; "
+           "the correction is chosen by the trust region.%s",
+           iinc,iit,icutb+1,tpnn,tpcn,sqrt(d->nb2),
+           d->phi0,d->delta,"\n");
+    fflush(stdout);
+  }
+
+  /* snapshot the trial-derived state and the convergence bookkeeping */
+  isiz=mi[0]**ne;cpypardou(d->dam,dam,&isiz,&num_cpus);
+  if(damvisc!=NULL){
+    isiz=mi[0]**ne;
+    cpypardou(d->visc,damvisc,&isiz,&num_cpus);
+  }
+  if((tnst>0)&&(d->xs!=NULL)){
+    isiz=tnst*mi[0]**ne;
+    cpypardou(d->xs,xstate,&isiz,&num_cpus);
+  }
+  /* uam is the running maximum correction over the WHOLE step and is
+     updated only after this block, so the value captured here is the
+     value BEFORE the rejected full Newton step.  Restoring it before
+     the final evaluation is what keeps a rejected step out of the
+     displacement criterion for the rest of the step. */
+  for(tjj=0;tjj<4;tjj++) tqas[tjj]=qa[tjj];
+  for(tjj=0;tjj<2;tjj++) tuams[tjj]=uam[tjj];
+
+  tacc=-1;tkpa=0.;tkpb=1.;tkphi=0.;tknrm=tpnn;tkrho=0.;tkkind=1;
+  for(tii=0;tii<d->maxtrial;tii++){
+    if(d->neval>=d->maxeval) break;
+    tdold=d->delta;
+
+    /* ---- the dogleg step for the current radius.  Same function
+       the geometry self-test exercised before the run started; a
+       degenerate or non-finite input returns 0 and is a refusal, never
+       a step of zero length. ---- */
+    tkind=dogleg_pick(d->delta,d->nd2,d->nw2,
+                         d->npn2,d->dtpn,&tpa,&tpb,&tnrm);
+    /* a REFUSAL is not a firing: tkind==0 means no step was
+       constructed, and counting it would credit the mechanism for
+       declining to act */
+    if(tkind!=0) glob_fired(&*g,GLOB_TRUSTREGION);
+    if(tkind==0){
+      printf("[DAMAGE TR] inc=%" ITGFORMAT " iter=%" ITGFORMAT
+             " trial=%" ITGFORMAT ": the step construction REFUSED a "
+             "degenerate or non-finite input (Delta=%.6e |d|^2=%.6e "
+             "|Jd|^2=%.6e |p_N|^2=%.6e dot=%.6e).  Nothing is accepted; "
+             "the full Newton step is restored and the stock divergence "
+             "and cutback machinery takes over unchanged.%s",
+             iinc,iit,tii+1,d->delta,d->nd2,
+             d->nw2,d->npn2,d->dtpn,"\n");
+      fflush(stdout);
+      break;
+    }
+    tname=(tkind==1)?"NEWTON":((tkind==2)?"CAUCHY":"DOGLEG");
+    tbnd=(tnrm>=0.99*d->delta)?1:0;
+    tpred=dogleg_pred(tpa,tpb,d->nb2,d->nd2,
+                         d->nw2);
+    if(tpred<=0.){
+      printf("[DAMAGE TR] inc=%" ITGFORMAT " iter=%" ITGFORMAT
+             " trial=%" ITGFORMAT " %s Delta=%.6e |p|=%.6e pred=%.6e "
+             "<= 0 - the model itself promises nothing, shrinking "
+             "without evaluating%s",
+             iinc,iit,tii+1,tname,d->delta,tnrm,tpred,"\n");
+      fflush(stdout);
+      d->delta=0.25*((tnrm>0.)?tnrm:d->delta);
+      if(d->delta<1.e-12*d->dmax) break;
+      continue;
+    }
+
+    /* ---- transactional trial evaluation of the ORIGINAL residual --- */
+    /* [DAMAGE TR] cam starts from the STOCK CLEAN state, never from a
+       snapshot: cam[0] is a running maximum, and any snapshot taken
+       after the full-Newton results() already carries that step's
+       correction.  Same initialisation the iteration top uses. */
+    for(tjj=0;tjj<3;tjj++) cam[tjj]=0.;
+    for(tjj=3;tjj<5;tjj++) cam[tjj]=0.5;
+    isiz=mi[0]**ne;cpypardou(dam,d->dam,&isiz,&num_cpus);
+    if(damvisc!=NULL){
+      isiz=mi[0]**ne;
+      cpypardou(damvisc,d->visc,&isiz,&num_cpus);
+    }
+    if((tnst>0)&&(d->xs!=NULL)){
+      isiz=tnst*mi[0]**ne;
+      cpypardou(xstate,d->xs,&isiz,&num_cpus);
+    }
+    for(tjj=0;tjj<neq[1];tjj++)
+      b[tjj]=tpa*d->d[tjj]+tpb*d->pn[tjj];
+    trial_residual(t,d->res);
+    d->neval++;
+    tphi=0.;tinf=0.;
+    for(tjj=0;tjj<neq[1];tjj++){
+      tphi+=d->res[tjj]*d->res[tjj];
+      if(fabs(d->res[tjj])>tinf) tinf=fabs(d->res[tjj]);
+    }
+    tl2=sqrt(tphi);tphi*=0.5;
+
+    tared=d->phi0-tphi;
+    trho=tared/tpred;
+    if(trho>1.e-4){
+      tacc=tii;tkpa=tpa;tkpb=tpb;tkphi=tphi;tknrm=tnrm;
+      tkrho=trho;tkkind=tkind;
+    }
+    if(trho<0.25){
+      d->delta=0.25*tnrm;
+    }else if((trho>0.75)&&(tbnd==1)){
+      d->delta=2.*tnrm;
+      if(d->delta>d->dmax)
+        d->delta=d->dmax;
+    }
+    printf("[DAMAGE TR] inc=%" ITGFORMAT " iter=%" ITGFORMAT " trial=%"
+           ITGFORMAT " %s Delta=%.6e |p|=%.6e boundary=%" ITGFORMAT
+           " |R|2=%.6e |R|inf=%.6e phi=%.6e pred=%.6e ared=%.6e "
+           "rho=%.6e %s Delta %.6e -> %.6e%s",
+           iinc,iit,tii+1,tname,tdold,tnrm,tbnd,tl2,tinf,tphi,tpred,
+           tared,trho,(trho>1.e-4)?"ACCEPT":"REJECT",tdold,
+           d->delta,"\n");
+    fflush(stdout);
+    if(tacc>=0) break;
+    if(d->delta<1.e-12*d->dmax){
+      printf("[DAMAGE TR] inc=%" ITGFORMAT " iter=%" ITGFORMAT
+             ": the radius COLLAPSED to %.6e - no step of any length "
+             "along either leg reduces phi%s",
+             iinc,iit,d->delta,"\n");
+      fflush(stdout);
+      break;
+    }
+  }
+
+  /* ---- leave the point that is kept, and prove the transaction ----
+     cam/qa/uam go back first, so that only the kept step own
+     evaluation contributes to the convergence bookkeeping. */
+  for(tjj=0;tjj<4;tjj++) qa[tjj]=tqas[tjj];
+  for(tjj=0;tjj<2;tjj++) uam[tjj]=tuams[tjj];
+  if(tacc<0){
+    tkpa=0.;tkpb=1.;tkkind=0;
+    d->nfail++;
+    d->nrej+=tii;
+  }else{
+    d->nacc++;
+    d->nrej+=tacc;
+    if(tkkind==1) d->nnewt++;
+    else if(tkkind==2) d->ncau++;
+    else d->ndog++;
+  }
+  tpa=tkpa;tpb=tkpb;
+    /* [DAMAGE TR] cam starts from the STOCK CLEAN state, never from a
+       snapshot: cam[0] is a running maximum, and any snapshot taken
+       after the full-Newton results() already carries that step's
+       correction.  Same initialisation the iteration top uses. */
+    for(tjj=0;tjj<3;tjj++) cam[tjj]=0.;
+    for(tjj=3;tjj<5;tjj++) cam[tjj]=0.5;
+    isiz=mi[0]**ne;cpypardou(dam,d->dam,&isiz,&num_cpus);
+    if(damvisc!=NULL){
+      isiz=mi[0]**ne;
+      cpypardou(damvisc,d->visc,&isiz,&num_cpus);
+    }
+    if((tnst>0)&&(d->xs!=NULL)){
+      isiz=tnst*mi[0]**ne;
+      cpypardou(xstate,d->xs,&isiz,&num_cpus);
+    }
+    for(tjj=0;tjj<neq[1];tjj++)
+      b[tjj]=tpa*d->d[tjj]+tpb*d->pn[tjj];
+    trial_residual(t,d->res);
+    d->neval++;
+    tphi=0.;tinf=0.;
+    for(tjj=0;tjj<neq[1];tjj++){
+      tphi+=d->res[tjj]*d->res[tjj];
+      if(fabs(d->res[tjj])>tinf) tinf=fabs(d->res[tjj]);
+    }
+    tl2=sqrt(tphi);tphi*=0.5;
+
+  printf("[DAMAGE TR] inc=%" ITGFORMAT " iter=%" ITGFORMAT " KEEP %s "
+         "|p|=%.6e phi_kept=%.6e phi_start=%.6e rho=%.6e "
+         "Delta_next=%.6e evals=%" ITGFORMAT " armed_factorisations=%"
+         ITGFORMAT " rollback_purity=%.3e%s",
+         iinc,iit,
+         (tkkind==0)?"FULL-NEWTON (nothing accepted; the stock "
+         "divergence and cutback machinery takes over unchanged)":
+         ((tkkind==1)?"NEWTON":((tkkind==2)?"CAUCHY":"DOGLEG")),
+         tknrm,tphi,d->phi0,tkrho,d->delta,
+         d->neval,d->nfact,
+         ((tacc>=0)&&(tkphi>0.))?fabs(tphi-tkphi)/tkphi:0.,"\n");
+  fflush(stdout);
+  if((tacc>=0)&&(tkphi>0.)&&(fabs(tphi-tkphi)>1.e-12*tkphi)){
+    printf("[DAMAGE TR] *WARNING IMPURITY: re-evaluating the kept step "
+           "gave phi=%.17e against %.17e in the trial pass.  The trial "
+           "is then NOT a pure function of the step, and every rho "
+           "above compared different physical states.%s",
+           tphi,tkphi,"\n");
+    fflush(stdout);
+  }
+  if(cam[0]>tknrm*(1.+1.e-9)+1.e-30){
+    printf("*ERROR [DAMAGE TR] inc=%" ITGFORMAT " iter=%" ITGFORMAT
+           ": cam[0]=%.12e exceeds |p_kept|_2=%.12e.  cam[0] is the "
+           "largest component of the correction actually applied and "
+           "cannot exceed its 2-norm, so the state left behind does "
+           "NOT belong to the step that was kept and every "
+           "displacement criterion from here on is meaningless.  "
+           "Stopping the experiment.%s",iinc,iit,cam[0],tknrm,"\n");
+    fflush(stdout);FORTRAN(stop,());
+  }
+  d->used=1;
+
+  if((d->neval>=d->maxeval)||
+     (d->nfact>=d->maxfact)){
+    printf("[DAMAGE TR] BUDGET EXHAUSTED (evaluations %" ITGFORMAT
+           "/%" ITGFORMAT ", armed factorisations %" ITGFORMAT "/%"
+           ITGFORMAT ").  The trust region switches OFF; the rest of "
+           "this attempt runs the stock path and the wall, if it "
+           "returns, goes to the original stock stop.%s",
+           d->neval,d->maxeval,d->nfact,
+           d->maxfact,"\n");
+    fflush(stdout);
+    d->on=0;
+  }
+}
