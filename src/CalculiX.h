@@ -5137,9 +5137,64 @@ void topo_txn_commit(const topo_txn *t,FILE *fdamage,ITG batch,
                      ITG de13_transaction,ITG active_pass);
 ITG  topo_selftest(void);
 
-/* Defined in nonlingeo.c.  Whether a material's damage is progressive is a
-   Material question and that object does not exist yet; topology.c calls
-   this directly rather than inventing a dependency on one that does. */
+/* ---- which elements leave the assembly (erosion.c) --------------------
+
+   Three rules - the terminal damage threshold, DEADALL and DEADSOLE -
+   applied in that order against one batch budget.  The block that applied
+   them was written out twice in nonlingeo.c, at the two points where a
+   converged state is scanned, identical but for indentation; erosion_mark()
+   is the call both sites make now.  The three rules are file-static inside
+   erosion.c, so "what else can delete an element" has the answer `nothing,
+   by construction'.
+
+   It MARKS (ipkon -> -ipkon-2) and does no more: the equation structure,
+   the .damage record and the rollback belong to topology.c and to
+   nonlingeo, and erosion.c contains no code that touches them.          */
+
+typedef struct{
+  double delete_d;      /* CCX_DAMAGE_DELETE_D: the terminal threshold    */
+  ITG    delete_visc;   /* CCX_DAMAGE_DELETE_VISC: read Dvis, not D       */
+  const char *filter;   /* CCX_DAMAGE_DELETE_MAT; NULL means every one    */
+  double deadall_g;     /* CCX_DAMAGE_DEADALL, 0 = the rule is off        */
+  double deadsole_g;    /* CCX_DAMAGE_DEADSOLE, 0 = the rule is off       */
+  ITG    batchmax;      /* how many may leave in one transaction          */
+}erosion_policy;
+
+/* What one call took, and what the run has taken so far.  Seven locals of
+   nonlingeo() with no owner, read from five other places; one object. */
+typedef struct{
+  ITG marked;           /* elements marked by this call                   */
+  ITG terminal;         /* ...of them by the damage threshold alone       */
+  ITG deadall,deadsole; /* ...by each load-path rule                      */
+  ITG deadall_nodes;    /* nodes DEADALL judged unsupported               */
+  double batch_dmax;    /* worst D in the batch                           */
+  double batch_vmin;    /* smallest Dvis in it - how much stress it held  */
+  ITG total_deadall,total_deadsole;   /* running, over the whole run      */
+}erosion_batch;
+
+void erosion_batch_init(erosion_batch *b);
+ITG  erosion_mark(const erosion_policy *p,erosion_batch *b,
+                  double *dam,const double *damvisc,
+                  ITG *ipkon,const char *lakon,const ITG *kon,
+                  const ITG *ielmat,const char *matname,
+                  const ITG *ndmcon,const double *dmcon,
+                  ITG ndmat,ITG ntmat,ITG nk,ITG ne,ITG ne0,ITG mi0,ITG mi2,
+                  double *trigger_value,ITG *trigger_ip,
+                  ITG iinc,double steptime);
+/* Is anything actually softening in the present Newton trial?  The line
+   search and the iteration budget both ask; having a DE1/DM2.0 material in
+   the model is not an answer. */
+ITG  erosion_softening(const double *dam,const double *dambase,
+                       const ITG *ipkon,const char *lakon,
+                       const ITG *ielmat,ITG mi2,
+                       const ITG *ndmcon,const double *dmcon,
+                       ITG ndmat,ITG ntmat,ITG ne0,ITG mi0,
+                       ITG *nsoft,double *maxdd);
+ITG  erosion_selftest(void);
+
+/* Whether a material's damage is progressive is a Material question and
+   that object does not exist yet; erosion.c owns the answer meanwhile and
+   topology.c calls it directly rather than inventing a dependency. */
 ITG damage_progressive_material(ITG imat,const ITG *ndmcon,
                                 const double *dmcon,ITG ndmat,ITG ntmat);
 

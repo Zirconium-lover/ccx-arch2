@@ -81,7 +81,7 @@ void topodiag_union(ITG *p,ITG a,ITG b){
    understands.  Bulk elements are read from lakon exactly as
    nodebelongstoel does; USER elements are read from byte 8, which is
    where the element reader stores the *USER ELEMENT NODES= count and what
-   damage_de13_mark_deadall already relies on. */
+   erosion.c's DEADALL rule already relies on. */
 
 ITG topodiag_nope(const char *lak){
 

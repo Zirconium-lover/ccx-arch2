@@ -984,77 +984,7 @@ static ITG damage_wall_setdiff(const ITG *cat,const double *xstate,
 }
 
 
-/* Progressive damage material classifier shared by DE1 and DM2.0.
-   Rice-Tracey + Evolution=Displacement keeps the historical four-constant
-   signature.  DM2.0 is identified by model type 3 and a variable-length
-   constant count 3+2*NPOINTS (NPOINTS>=2). */
-ITG damage_progressive_material(ITG imat,const ITG *ndmcon,
-                                const double *dmcon,ITG ndmat,
-                                ITG ntmat)
-{
-  ITG nconst,type,off;
 
-  if(imat<1) return 0;
-  nconst=ndmcon[2*(imat-1)];
-  if((dmcon==NULL)||(ndmat<1)||(ntmat<1)) return 0;
-
-  off=1+(ndmat+1)*ntmat*(imat-1);
-  type=(ITG)dmcon[off];
-  if((type==1)&&(nconst==4)) return 1;
-  if((type==3)&&(nconst>=7)&&(((nconst-3)%2)==0)) return 1;
-
-  return 0;
-}
-
-/* Detect actual progressive softening in the present Newton trial.  Merely
-   having a DE1/DM2.0 material in the model is not enough: at least one active
-   integration point must have D_trial>D_committed.  Comparing degradation D
-   rather than the overloaded raw dam value also handles initiation crossing
-   (omega<1 -> dam=1+D) without a false large jump. */
-static ITG damage_de12_trial_softening(const double *dam,
-                                      const double *dambase,
-                                      const ITG *ipkon,const char *lakon,
-                                      const ITG *ielmat,ITG mi2,
-                                      const ITG *ndmcon,const double *dmcon,
-                                      ITG ndmat,ITG ntmat,ITG ne0,ITG mi0,
-                                      ITG *nsoft,double *maxdd)
-{
-  ITG i,j,nip,imat,elementsoft;
-  double dtrial,dbase,dd;
-
-  *nsoft=0;
-  *maxdd=0.;
-  if((dam==NULL)||(dambase==NULL)) return 0;
-
-  for(i=0;i<ne0;i++){
-    if(ipkon[i]<0) continue;
-    if(lakon[8*i]!='C') continue;
-
-    imat=ielmat[mi2*i];
-    if(!damage_progressive_material(imat,ndmcon,dmcon,ndmat,ntmat))
-      continue;
-
-    nip=topo_element_nip(&lakon[8*i],mi0);
-    if(nip<1) nip=1;
-    if(nip>mi0) nip=mi0;
-    elementsoft=0;
-
-    for(j=0;j<nip;j++){
-      dtrial=dam[mi0*i+j]-1.;
-      dbase=dambase[mi0*i+j]-1.;
-      if(dtrial<0.) dtrial=0.;
-      if(dbase<0.) dbase=0.;
-      dd=dtrial-dbase;
-      if(dd>DAMAGE_SLOW_NEWTON_D_TOL){
-        elementsoft=1;
-        if(dd>*maxdd) *maxdd=dd;
-      }
-    }
-    if(elementsoft) (*nsoft)++;
-  }
-
-  return (*nsoft>0)?1:0;
-}
 
 /* Geometric estimate of the total iteration number required for value to
    reach target at the contraction measured over the latest Newton step.
@@ -1142,366 +1072,11 @@ static ITG damage_slow_newton_allow(ITG iit,const double *ram,
   return 1;
 }
 
-/* Mark a bounded batch of DE1.2 C3D4 elements for terminal deletion.
-   DE1 uses dam = 1 + D after initiation, so D is recovered locally without
-   changing the public history layout.  Both Rice-Tracey DE1 and DM2.0
-   tabulated ductile progressive materials are eligible.  The element is only
-   marked here; remastruct and transactional
-   commit/rollback remain under nonlingeo's existing A3 machinery. */
-/* Terminal deletion can be restricted to named materials.
-
-   The TP1 ladder needs its rungs to differ ONLY in which phase is allowed
-   to erode, with the constitutive routines untouched:
-
-     CCX_DAMAGE_DELETE_MAT=NONE   continuous damage, no topology change
-     CCX_DAMAGE_DELETE_MAT=ZrH    only the hydride erodes
-     CCX_DAMAGE_DELETE_MAT=ALL    stock behaviour (default when unset)
-
-   The list is comma separated and matched case-insensitively against the
-   *MATERIAL names.  A rejected element is removed from the terminal scan
-   only; its damage keeps evolving exactly as before, so the comparison
-   isolates the topology change and nothing else. */
-
-static ITG damage_delete_allowed(ITG imat,const char *matname,
-                                 const char *filter)
-{
-  const char *p,*q;
-  char nm[81];
-  ITG i,n;
-
-  if(filter==NULL) return 1;
-  if((strcmp(filter,"ALL")==0)||(strcmp(filter,"all")==0)) return 1;
-  if((strcmp(filter,"NONE")==0)||(strcmp(filter,"none")==0)) return 0;
-  if((matname==NULL)||(imat<1)) return 1;
-
-  n=0;
-  for(i=0;i<80;i++){
-    if(matname[80*(imat-1)+i]==' ') break;
-    nm[i]=matname[80*(imat-1)+i];
-    n++;
-  }
-  nm[n]=0;
-  if(n==0) return 1;
-
-  p=filter;
-  while(*p!=0){
-    q=strchr(p,',');
-    if(q==NULL) q=p+strlen(p);
-    if((ITG)(q-p)==n){
-      for(i=0;i<n;i++){
-        if(tolower((unsigned char)p[i])!=tolower((unsigned char)nm[i])) break;
-      }
-      if(i==n) return 1;
-    }
-    p=(*q==0)?q:q+1;
-  }
-  return 0;
-}
 
 
 
-/* Deletes a DEAD element that is the SOLE support of a node.
 
-   Measured configuration (E-61): on m14_fine node 776 had exactly one live
-   element, that element stood at D = 1.0000, and the node travelled 9.63 mm
-   while the other three nodes of the same element moved 0.44.  The element's
-   longest edge went from 0.0974 to 9.809 - a stretch of 101x on a 4 mm
-   specimen.  An element below a per cent of its stiffness carries almost
-   nothing, so a node whose whole support is one such element is very nearly
-   free and Newton solves for it.
 
-   Holding that node with a diagonal term was tried and does not cure it
-   (E-61): the added stiffness would have to be non-perturbative to compete
-   with the element itself.  Removing the dead element instead is physically
-   near-free - it was carrying under 1% - and it hands the node to the
-   existing BK4 / damfloat machinery, which is built for a node that has lost
-   all its bulk.
-
-   This is NOT damdangle.  damdangle counted support without ever reading
-   degradation, so it deleted healthy load-bearing material and emptied small
-   meshes (E-22).  Here the element must itself be dead, and it must be the
-   only thing a node has.  Both conditions are necessary and both are
-   measured, not assumed.
-
-   The batch is bounded exactly like the terminal batch, and marking uses the
-   same ipkon -> -ipkon-2 convention. */
-static ITG damage_de13_mark_deadsole(const double *dam,const double *visc,
-                                     ITG usevisc,ITG *ipkon,const char *lakon,
-                                     const ITG *kon,ITG nk,ITG ne0,ITG mi0,
-                                     double gdead,ITG batchmax)
-{
-  ITG i,j,n,nip,nnew=0,usedam,*nlive=NULL;
-  const double *src;
-  double dmx,g;
-
-  if((nk<=0)||(batchmax<=0)) return 0;
-  usedam=((usevisc&&(visc!=NULL))?0:1);
-  src=usedam?dam:visc;
-
-  NNEW(nlive,ITG,nk);
-  for(i=0;i<ne0;i++){
-    if(ipkon[i]<0) continue;
-    if(strcmp1(&lakon[8*i],"C3D4")!=0) continue;
-    /* kon is 0-based here: the nodes of element i are kon[ipkon[i]+0] to
-       kon[ipkon[i]+nope-1].  frd.c:1684 takes the last node as
-       kon[ipkon[i]+nope-1], and the VTK writer below (which uses j=0..3)
-       reproduces the deck connectivity exactly - 27359 of 27359 cells on
-       m12_eta15.  An earlier version of this loop ran j=1..4, which skips
-       node 1 and picks up node 1 of the NEXT element instead. */
-    for(j=0;j<4;j++){
-      n=kon[ipkon[i]+j]-1;
-      if((n>=0)&&(n<nk)) nlive[n]++;
-    }
-  }
-
-  for(i=0;i<ne0;i++){
-    if(nnew>=batchmax) break;
-    if(ipkon[i]<0) continue;
-    if(strcmp1(&lakon[8*i],"C3D4")!=0) continue;
-    nip=topo_element_nip(&lakon[8*i],mi0);
-    if(nip<1) nip=1;
-    if(nip>mi0) nip=mi0;
-    dmx=0.;
-    for(j=0;j<nip;j++){
-      /* dam holds 1+D (the integer part flags initiation); visc holds D
-         directly.  Reading dam raw gives 1.0024 for D=0.0024 and deletes a
-         healthy element - measured, and it is exactly how damdangle went
-         wrong.  mark_terminal decodes it the same way. */
-      double dd=usedam?(src[mi0*i+j]-1.):src[mi0*i+j];
-      if(dd<0.) dd=0.;
-      if(dd>1.) dd=1.;
-      if(dd>dmx) dmx=dd;
-    }
-    g=1.-dmx; if(g<0.) g=0.;
-    if(g>=gdead) continue;
-    for(j=0;j<4;j++){
-      n=kon[ipkon[i]+j]-1;
-      if((n<0)||(n>=nk)) continue;
-      if(nlive[n]==1){
-        printf("[DAMAGE DEADSOLE]   element %" ITGFORMAT " g=%.6e sole "
-               "support of node %" ITGFORMAT "\n",
-               i+1,g,n+1);
-        ipkon[i]=-ipkon[i]-2;
-        nnew++;
-        /* the node counts are now stale for this element's nodes; drop them
-           so a second element at the same node cannot also be taken in the
-           same pass */
-        for(j=0;j<4;j++){
-          n=kon[(-ipkon[i]-2)+j]-1;
-          if((n>=0)&&(n<nk)) nlive[n]=0;
-        }
-        break;
-      }
-    }
-  }
-  SFREE(nlive);
-  return nnew;
-}
-
-/* DEADALL - the Class A artefact (E-69).
- *
- * DEADSOLE above asks whether a dead element is the SOLE support of a node.
- * The three runs that died by divergence died on a node with TWO, not one:
- *
- *   uf50   node 2471  2 live tets, 0 facets, both D=1.0000, edge stretch 22.2
- *   eta1e4 node 3354  2 live tets, 0 facets, both D=1.0000, edge stretch 49.8
- *   eta15  node 1581  2 live tets, 0 facets, both D=1.0000, edge stretch 35.5
- *
- * In each of those models exactly ONE node in the whole mesh had its entire
- * live support dead - out of 17, 145 and 65 low-support nodes respectively -
- * and it was the node the solver threw.  Three out of three, with a
- * selectivity of one in seventeen to one in a hundred and forty-five.
- *
- * The node is a free swinging point: everything holding it carries only gmin,
- * so Newton solves it almost unconstrained and draws the elements out into a
- * needle.  Note that a needle PRESERVES VOLUME - it stretches along one
- * direction and collapses across the other two - so V/V0 does not see it
- * (1.2 on eta15 while an edge went 0.120 -> 4.151 mm).  Do not look for this
- * with a volume ratio.
- *
- * SAFETY.  A node qualifies only when every live element at it is dead, so
- * every element this routine deletes is itself dead: element i is live and
- * touches a qualifying node n, and n qualifies only if all its live elements
- * are dead.  Nothing load-bearing can be removed.  That is the property
- * damdangle did not have (E-22), and it is what makes this different.
- *
- * The facet guard is the second half.  A node still tied to the other side of
- * an interface is not free, whatever its bulk looks like, and the
- * cohesive-only node is Class B - a CONDITIONING defect (E-67, E-68) that must
- * not be answered by deleting material.  286 of 318 cohesive-only nodes on
- * m12_epsf50 are perfectly well supported.
- *
- * A NARROWED GUARD WAS TRIED AND RETIRED.  The count includes facets that
- * have SEPARATED, and a separated facet ties nothing - so counting only
- * LIVE facets looks like a correction rather than a loosening.  It was
- * implemented as CCX_DAMAGE_DEADALL_FACET and measured on seven s3rad arms
- * built from one binary.  It bought nothing: the
- * arm carrying it lands where the arm without it lands, to four figures on
- * the terminal grip reaction.  Worse, in one configuration it was the only
- * difference between a run reaching theta 0.5569 and one stopping at
- * 0.2550 - the twelve extra elements it deleted put the trajectory into a
- * trap that a ONE-element perturbation decides.  It is gone.  The count
- * lives in damstate_facet_support() with its own self test; this comment
- * exists so the idea is not re-derived without the measurement.
- */
-static ITG damage_de13_mark_deadall(const double *dam,const double *visc,
-                                    ITG usevisc,ITG *ipkon,const char *lakon,
-                                    const ITG *kon,ITG nk,ITG ne,ITG ne0,
-                                    ITG mi0,double gdead,ITG batchmax,
-                                    ITG *nnodes)
-{
-  ITG i,j,n,nip,nnew=0,usedam;
-  ITG *nlive=NULL,*ndead=NULL,*nfac=NULL,*take=NULL;
-  const double *src;
-  double dmx,g;
-
-  if(nnodes!=NULL) *nnodes=0;
-  if((nk<=0)||(batchmax<=0)) return 0;
-  usedam=((usevisc&&(visc!=NULL))?0:1);
-  src=usedam?dam:visc;
-
-  NNEW(nlive,ITG,nk);
-  NNEW(ndead,ITG,nk);
-  NNEW(nfac,ITG,nk);
-
-  /* cohesive support per node - damstate.c owns the count and its self test */
-  damstate_facet_support(ipkon,lakon,kon,ne,nk,nfac);
-
-  for(i=0;i<ne0;i++){
-    if(ipkon[i]<0) continue;
-    if(strcmp1(&lakon[8*i],"C3D4")!=0) continue;
-    nip=topo_element_nip(&lakon[8*i],mi0);
-    if(nip<1) nip=1;
-    if(nip>mi0) nip=mi0;
-    dmx=0.;
-    for(j=0;j<nip;j++){
-      /* dam holds 1+D, visc holds D - same decode as mark_deadsole. */
-      double dd=usedam?(src[mi0*i+j]-1.):src[mi0*i+j];
-      if(dd<0.) dd=0.;
-      if(dd>1.) dd=1.;
-      if(dd>dmx) dmx=dd;
-    }
-    g=1.-dmx; if(g<0.) g=0.;
-    for(j=0;j<4;j++){
-      n=kon[ipkon[i]+j]-1;
-      if((n<0)||(n>=nk)) continue;
-      nlive[n]++;
-      if(g<gdead) ndead[n]++;
-    }
-  }
-
-  NNEW(take,ITG,nk);
-  for(n=0;n<nk;n++){
-    if(nfac[n]>0) continue;
-    if(nlive[n]<1) continue;
-    if(ndead[n]!=nlive[n]) continue;
-    take[n]=1;
-    if(nnodes!=NULL) (*nnodes)++;
-  }
-
-  /* The qualifying set is a SNAPSHOT.  Deleting an element also takes support
-     away from its other three nodes, and resolving that here would need a
-     fixed point; the next increment picks it up instead, which is how every
-     other batch in this file behaves. */
-  for(i=0;i<ne0;i++){
-    if(nnew>=batchmax) break;
-    if(ipkon[i]<0) continue;
-    if(strcmp1(&lakon[8*i],"C3D4")!=0) continue;
-    for(j=0;j<4;j++){
-      n=kon[ipkon[i]+j]-1;
-      if((n<0)||(n>=nk)) continue;
-      if(take[n]==0) continue;
-      printf("[DAMAGE DEADALL]   element %" ITGFORMAT " deleted: node %"
-             ITGFORMAT " has %" ITGFORMAT " live element(s), all dead, "
-             "no cohesive facet\n",i+1,n+1,nlive[n]);
-      ipkon[i]=-ipkon[i]-2;
-      nnew++;
-      break;
-    }
-  }
-
-  SFREE(take);SFREE(nfac);SFREE(ndead);SFREE(nlive);
-  return nnew;
-}
-
-static ITG damage_de13_mark_terminal(double *dam,ITG *ipkon,
-                                     const char *lakon,const ITG *ielmat,
-                                     ITG mi2,const ITG *ndmcon,
-                                     const double *dmcon,ITG ndmat,ITG ntmat,
-                                     ITG ne0,ITG mi0,double ddelete,
-                                     ITG batchmax,double *batch_dmax,
-                                     double *trigger_value,ITG *trigger_ip,
-                                     const char *matname,
-                                     const char *delfilter,
-                                     const double *visc,ITG usevisc,
-                                     double *batch_vmin)
-{
-  ITG i,j,nip,imat,nnew=0;
-  double de,demax,dv,dvmax,dtrig;
-
-  *batch_dmax=0.;
-  if(batch_vmin!=NULL) *batch_vmin=1.;
-
-  for(i=0;i<ne0;i++){
-    if(nnew>=batchmax) break;
-    if(ipkon[i]<0) continue;
-    if(strncmp(&lakon[8*i],"C3D4",4)!=0) continue;
-
-    imat=ielmat[mi2*i];
-    if(imat<1) continue;
-    if(!damage_progressive_material(imat,ndmcon,dmcon,ndmat,ntmat)) continue;
-    if(!damage_delete_allowed(imat,matname,delfilter)) continue;
-
-    nip=topo_element_nip(&lakon[8*i],mi0);
-    if(nip<1) nip=1;
-    if(nip>mi0) nip=mi0;
-
-    demax=0.;
-    dvmax=0.;
-    for(j=0;j<nip;j++){
-      de=dam[mi0*i+j]-1.;
-      if(de<0.) de=0.;
-      if(de>1.) de=1.;
-      if(de>demax) demax=de;
-      if(visc!=NULL){
-        dv=visc[mi0*i+j];
-        if(dv<0.) dv=0.;
-        if(dv>1.) dv=1.;
-        if(dv>dvmax) dvmax=dv;
-      }
-    }
-
-    /* The stress is scaled by 1-Dvis, not by 1-D: resultsmech.f uses
-       damvisc whenever the viscosity is on.  Triggering deletion on D
-       therefore removes an element that is still carrying 1-Dvis of its
-       effective stress, and releases that force in one increment at
-       constant load.  It also explains why cutting the step never helped
-       and sometimes hurt: beta=dt/(eta+dt), so a smaller step makes Dvis
-       lag further behind D and the deleted element carries more.
-       usevisc makes the trigger read the same variable the stress does. */
-    dtrig=demax;
-    if((usevisc==1)&&(visc!=NULL)) dtrig=dvmax;
-
-    if(dtrig>=ddelete){
-      if(batch_vmin!=NULL){
-        if(dvmax<*batch_vmin) *batch_vmin=dvmax;
-      }
-      /* DE1.3.1: capture the terminal trigger at the instant the element
-         first changes topology.  Later same-load redistribution can alter
-         dam for already deleted elements, so .damage must not reconstruct
-         this value from the current constitutive state. */
-      if((trigger_value!=NULL)&&(trigger_ip!=NULL)){
-        trigger_value[i]=demax;
-        trigger_ip[i]=1;
-      }
-      ipkon[i]=-ipkon[i]-2;
-      nnew++;
-      if(demax>*batch_dmax) *batch_dmax=demax;
-    }
-  }
-
-  return nnew;
-}
 
 
 /* Exact DE1 element statistics.
@@ -1773,7 +1348,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     damagefilename[160]="",*sideloadf=NULL,cflag[1]=" ",
     *damage_tangent_env=NULL,*damage_reeq_scale_env=NULL,
     *damage_linesearch_env=NULL,*damage_topology_env=NULL,
-    *damage_de13_env=NULL,*damage_delete_filter=NULL,
+    *damage_de13_env=NULL,
     *damage_visc_env=NULL,*damage_diss_env=NULL,
     *damage_fracture_env=NULL,
     *damage_fracture_seta=NULL,*damage_fracture_setb=NULL;
@@ -1877,7 +1452,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     damage_ray_ninc=0,damage_ray_incok=1,damage_ray_inc[4]={0,0,0,0},
     damage_bt_window=1,
     damage_release_probe=0,damage_release_armed=0,damage_release_pass=0,
-    damage_de13_term_only=0,damage_release_rebuild=0,
+    damage_release_rebuild=0,
     damage_release_nterm=0,damage_release_nother=0,
     damage_release_nisl=0,damage_release_ncoh=0,damage_release_iforbou=0,
     damage_batch=0,damage_scan_count=0,damage_nip_local=0,
@@ -1911,12 +1486,11 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
        far larger redistribution than the same-load solve can absorb */
     damage_float_batch=DAMAGE_DE13_BATCH_MAX,
     damage_dangle_new=0,damage_dangle_weak=0,damage_dangle_total=0,
-    damage_dangle_max=0,damage_stiff_probe=0,damage_delete_visc=1,damage_path_on=0,damage_path_retry=0,damage_path_desc=0,
+    damage_dangle_max=0,damage_stiff_probe=0,damage_path_on=0,damage_path_retry=0,damage_path_desc=0,
     damage_path_nstep=20,damage_path_arm=3,damage_path_used=0,
     damage_path_att=0,damage_null_inc=0,damage_null_it=0,
     damage_null_cnt=0,damage_null_seed=987654321,damage_null_nit=4,
     damage_stab_maxdof=0,damage_stab_maxdead=0,*damage_stab_node=NULL,
-    damage_deadsole_total=0,damage_deadall_total=0,damage_deadall_nodes=0,
     damage_fracture_link=0,damage_deadfacet=0,damage_facetdel=0,
     damage_facetdel_new=0,damage_facetdel_total=0,damage_arc=0,damage_diss_step=1,damage_spc_neg=0,damage_census_ok=1,
     damage_ls_trials=DAMAGE_LINESEARCH_MAX_TRIALS,
@@ -1936,7 +1510,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     *damage_stiff_haz=NULL,
     damage_topology_orphans=0,damage_indexe=0,
     damage_ls_bestused=0,damage_ls_legacy=0,damage_lsr=0,
-    damage_de13_new=0,damage_de13_transaction=0,
+    damage_de13_transaction=0,
     damage_slow_active=0,damage_slow_extended=0,damage_slow_nsoft=0,
     damage_slow_allow=0,damage_slow_estres=0,damage_slow_estcorr=0,
     damage_slow_esttotal=0,damage_slow_maxiters=0;
@@ -2042,7 +1616,6 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     damage_diss_dgold=0.,damage_diss_g=0.,damage_diss_slope=0.,
     damage_diss_dlam=0.,damage_diss_kpp=0.,damage_diss_fr=0.,
     damage_diss_ff=0.,damage_diss_den=0.,
-    damage_de13_batch_vmin=1.,
     damage_stiff_min=0.,damage_path_lam=0.,damage_path_dev=0.,
     damage_fd_h=1.e-7,damage_fd_dmax=0.,damage_fd_udmax=-1.,
     *damage_fd_vsav=NULL,*damage_fd_vtrue=NULL,
@@ -2054,12 +1627,11 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     damage_null_amax=0.,damage_null_nn=0.,
     *damage_free_g=NULL,damage_free_gm=0.,damage_free_dv=0.,
     damage_dump_dv=0.,
-    damage_de13_delete_d=DAMAGE_DE13_DELETE_D,
     damage_dmax=0.,
     damage_alphaevent=2.,damage_event_dtheta=0.,
     damage_event_raw=0.,damage_event_floor=0.,
     damage_de1_dmax=0.,damage_de1_maxdelta=0.,
-    damage_de13_batch_dmax=0.,damage_slow_maxdd=0.,
+    damage_slow_maxdd=0.,
     damage_slow_camprev1=1.e300,damage_slow_camprev2=1.e300,
     damage_slow_rratio=0.,damage_slow_cratio=0.,
     damage_reeq_uam_ref[2]={0.,0.},damage_reeq_uam_actual[2]={0.,0.},
@@ -2083,8 +1655,12 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
   ITG damage_nl_mode=0;
   double damage_qam_floor=0.;
   converge damage_cvg;
-  double damage_stab_alpha=0.,damage_deadsole_g=0.,damage_deadall_g=0.,
-    damage_spc_g=0.;
+  double damage_stab_alpha=0.,damage_spc_g=0.;
+  /* [EROSION] who leaves the assembly, and what the run has taken so
+     far: two objects instead of twelve locals with no owner. */
+  erosion_policy damage_epol={DAMAGE_DE13_DELETE_D,1,NULL,0.,0.,
+                              DAMAGE_DE13_BATCH_MAX};
+  erosion_batch damage_ebatch;
   char *damage_stab_env=NULL,*damage_deadsole_env=NULL,
     *damage_deadall_env=NULL;
 
@@ -3760,7 +3336,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
          is never allocated and the trigger falls back to D, so
          this is a no-op there - verified on SP1. */
       if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_DELETE_VISC"))!=NULL){
-        damage_delete_visc=(strcmp(damage_de13_env,"0")==0)?0:1;
+        damage_epol.delete_visc=(strcmp(damage_de13_env,"0")==0)?0:1;
       }
       if(ccxopt_getenv("CCX_DAMAGE_FREE_PROBE")!=NULL) damage_free_probe=1;
       if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_NODE_DUMP"))!=NULL)
@@ -3921,24 +3497,24 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
       }
       damage_deadall_env=ccxopt_getenv("CCX_DAMAGE_DEADALL");
       if(damage_deadall_env!=NULL){
-        damage_deadall_g=atof(damage_deadall_env);
-        if(damage_deadall_g<0.) damage_deadall_g=0.;
-        if(damage_deadall_g>0.5) damage_deadall_g=0.5;
-        if(damage_deadall_g>0.){
+        damage_epol.deadall_g=atof(damage_deadall_env);
+        if(damage_epol.deadall_g<0.) damage_epol.deadall_g=0.;
+        if(damage_epol.deadall_g>0.5) damage_epol.deadall_g=0.5;
+        if(damage_epol.deadall_g>0.){
           printf("[DAMAGE DEADALL] a node whose ENTIRE live support is dead "
                  "(g < %.1e) and which no cohesive facet holds has that "
                  "support deleted; only dead elements can be taken\n",
-                 damage_deadall_g);
+                 damage_epol.deadall_g);
         }
       }
       damage_deadsole_env=ccxopt_getenv("CCX_DAMAGE_DEADSOLE");
       if(damage_deadsole_env!=NULL){
-        damage_deadsole_g=atof(damage_deadsole_env);
-        if(damage_deadsole_g<0.) damage_deadsole_g=0.;
-        if(damage_deadsole_g>0.5) damage_deadsole_g=0.5;
-        if(damage_deadsole_g>0.){
+        damage_epol.deadsole_g=atof(damage_deadsole_env);
+        if(damage_epol.deadsole_g<0.) damage_epol.deadsole_g=0.;
+        if(damage_epol.deadsole_g>0.5) damage_epol.deadsole_g=0.5;
+        if(damage_epol.deadsole_g>0.){
           printf("[DAMAGE DEADSOLE] a dead element (g < %.1e) that is the sole "
-                 "support of a node is deleted\n",damage_deadsole_g);
+                 "support of a node is deleted\n",damage_epol.deadsole_g);
         }
       }
       damage_stab_env=ccxopt_getenv("CCX_DAMAGE_STABILISE");
@@ -4048,16 +3624,16 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         }
       }
 
-      damage_delete_filter=ccxopt_getenv("CCX_DAMAGE_DELETE_MAT");
+      damage_epol.filter=ccxopt_getenv("CCX_DAMAGE_DELETE_MAT");
 
       damage_de13_env=ccxopt_getenv("CCX_DAMAGE_DELETE_D");
       if(damage_de13_env!=NULL){
-        damage_de13_delete_d=atof(damage_de13_env);
-        if((damage_de13_delete_d<0.5)||(damage_de13_delete_d>0.9999)){
+        damage_epol.delete_d=atof(damage_de13_env);
+        if((damage_epol.delete_d<0.5)||(damage_epol.delete_d>0.9999)){
           printf("[DAMAGE DE1.3.1] *WARNING: CCX_DAMAGE_DELETE_D=%s is "
                  "outside [0.5,0.9999]; keeping %.4f\n",
                  damage_de13_env,(double)DAMAGE_DE13_DELETE_D);
-          damage_de13_delete_d=DAMAGE_DE13_DELETE_D;
+          damage_epol.delete_d=DAMAGE_DE13_DELETE_D;
         }
       }
 
@@ -4165,6 +3741,15 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
            " An instrument that has not been checked cannot be used to "
            "justify deleting a mechanism, which is what this one exists "
            "for, so the run stops here.\n");
+    fflush(stdout);
+    FORTRAN(stop,());
+  }
+
+  erosion_batch_init(&damage_ebatch);
+  if(erosion_selftest()!=0){
+    printf("*ERROR: the erosion rules failed their own self test.  They\n"
+           "        decide which elements leave the assembly, so a run\n"
+           "        made with them wrong is not a measurement of anything.\n");
     fflush(stdout);
     FORTRAN(stop,());
   }
@@ -4489,7 +4074,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
       }
       printf("[DAMAGE DE1.3.1] terminal failure enabled "
              "(Ddelete=%.4f batch_max=%d); transactional A3 topology "
-             "backend\n",damage_de13_delete_d,DAMAGE_DE13_BATCH_MAX);
+             "backend\n",damage_epol.delete_d,DAMAGE_DE13_BATCH_MAX);
       printf("[DAMAGE SOLVER NC1] adaptive slow-Newton controller enabled "
              "(stock_ic=%" ITGFORMAT " cap=%d max_extra=%d); "
              "final stock convergence criteria unchanged\n",
@@ -11617,7 +11202,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
            (isfinite(damage_linesearch_fullnorm))&&
            (damage_linesearch_fullnorm>
               DAMAGE_LINESEARCH_GROWTH*damage_linesearch_oldnorm)){
-          damage_linesearch_active=damage_de12_trial_softening(
+          damage_linesearch_active=erosion_softening(
               dam,damdamageini,ipkon,lakon,ielmat,mi[2],ndmcon,dmcon,
               *ndmat_,*ntmat_,ne0,mi[0],&damage_linesearch_nsoft,
               &damage_linesearch_maxdd);
@@ -12618,7 +12203,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
             damage_slow_active=1;
             damage_slow_nsoft=dtxn.count;
           }else{
-            damage_slow_active=damage_de12_trial_softening(
+            damage_slow_active=erosion_softening(
                 dam,damdamageini,ipkon,lakon,ielmat,mi[2],ndmcon,dmcon,
                 *ndmat_,*ntmat_,ne0,mi[0],&damage_slow_nsoft,
                 &damage_slow_maxdd);
@@ -13138,53 +12723,22 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
          equilibrium may have driven additional surviving DE1.2 elements
          to terminal degradation.  Mark only a bounded batch; the next
          same-load solve will expose any further terminal candidates. */
-      damage_de13_new=0;
-      damage_de13_batch_dmax=0.;
+      damage_ebatch.marked=0;
+      damage_ebatch.batch_dmax=0.;
       if(damage_de12_enabled){
-        damage_de13_new=damage_de13_mark_terminal(
-            dam,ipkon,lakon,ielmat,mi[2],ndmcon,dmcon,*ndmat_,*ntmat_,
-            ne0,mi[0],damage_de13_delete_d,DAMAGE_DE13_BATCH_MAX,
-            &damage_de13_batch_dmax,damage_de13_trigger_value,
-            damage_de13_trigger_ip,matname,damage_delete_filter,
-            damage_damvisc,damage_delete_visc,&damage_de13_batch_vmin);
-        damage_de13_term_only=damage_de13_new;
-        if((damage_deadall_g>0.)&&(damage_de13_new<DAMAGE_DE13_BATCH_MAX)){
-          ITG nda=damage_de13_mark_deadall(
-              dam,damage_damvisc,damage_delete_visc,ipkon,lakon,kon,*nk,
-              *ne,ne0,mi[0],damage_deadall_g,
-              DAMAGE_DE13_BATCH_MAX-damage_de13_new,&damage_deadall_nodes);
-          if(nda>0){
-            damage_de13_new+=nda;
-            damage_deadall_total+=nda;
-            printf("[DAMAGE DEADALL] inc=%" ITGFORMAT " time=%.12e "
-                   "nodes=%" ITGFORMAT " deleted=%" ITGFORMAT " total=%"
-                   ITGFORMAT "\n",iinc,theta**tper,damage_deadall_nodes,
-                   nda,damage_deadall_total);
-            fflush(stdout);
-          }
-        }
-        if((damage_deadsole_g>0.)&&(damage_de13_new<DAMAGE_DE13_BATCH_MAX)){
-          ITG nds=damage_de13_mark_deadsole(
-              dam,damage_damvisc,damage_delete_visc,ipkon,lakon,kon,*nk,
-              ne0,mi[0],damage_deadsole_g,
-              DAMAGE_DE13_BATCH_MAX-damage_de13_new);
-          if(nds>0){
-            damage_de13_new+=nds;
-            damage_deadsole_total+=nds;
-            printf("[DAMAGE DEADSOLE] inc=%" ITGFORMAT " time=%.12e "
-                   "deleted=%" ITGFORMAT " total=%" ITGFORMAT "\n",
-                   iinc,theta**tper,nds,damage_deadsole_total);
-            fflush(stdout);
-          }
-        }
-        if(damage_de13_new>0){
+        erosion_mark(&damage_epol,&damage_ebatch,
+                     dam,damage_damvisc,ipkon,lakon,kon,ielmat,matname,
+                     ndmcon,dmcon,*ndmat_,*ntmat_,*nk,*ne,ne0,mi[0],mi[2],
+                     damage_de13_trigger_value,damage_de13_trigger_ip,
+                     iinc,theta**tper);
+        if(damage_ebatch.marked>0){
           damage_de13_transaction=1;
-          idamage+=damage_de13_new;
+          idamage+=damage_ebatch.marked;
           printf("[DAMAGE DE1.3 EXTEND] inc=%" ITGFORMAT
                  " pass=%" ITGFORMAT " time=%.12e new_terminal=%"
                  ITGFORMAT " batch_Dmax=%.6e batch_Dvis=%.6e\n",
-                 iinc,damage_active_pass+1,theta**tper,damage_de13_new,
-                 damage_de13_batch_dmax,damage_de13_batch_vmin);
+                 iinc,damage_active_pass+1,theta**tper,damage_ebatch.marked,
+                 damage_ebatch.batch_dmax,damage_ebatch.batch_vmin);
           fflush(stdout);
         }
       }
@@ -13704,8 +13258,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           damage_release_dt=dtime;
           damage_release_rebuild=damage_topology_rebuild;
           damage_release_iforbou=iforbou;
-          damage_release_nterm=damage_de13_term_only;
-          damage_release_nother=damage_de13_new-damage_de13_term_only;
+          damage_release_nterm=damage_ebatch.terminal;
+          damage_release_nother=damage_ebatch.marked-damage_ebatch.terminal;
           damage_release_nisl=damage_float_isl;
           damage_release_ncoh=damage_float_coh;
 
@@ -13742,7 +13296,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                   if(pdv>pdvmax) pdvmax=pdv;
                 }
               }
-              ptrig=((damage_delete_visc==1)&&(damage_damvisc!=NULL))
+              ptrig=((damage_epol.delete_visc==1)&&(damage_damvisc!=NULL))
                     ?pdvmax:pdmax;
               /* The bulk damage variable exists ONLY for bulk elements.
                  calcdamage.f:135 skips every lakon(1:1) != 'C', so dam is
@@ -13769,7 +13323,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                      " below_delete_d=%s%s",
                      iinc,damage_release_pass,dtxn.elem[pe],
                      dtxn.mat[pe],&lakon[8*pel],pdmax,pdvmax,1.-ptrig,
-                     (ptrig<damage_de13_delete_d)?"YES-not-terminal":"no",
+                     (ptrig<damage_epol.delete_d)?"YES-not-terminal":"no",
                      "\n");
             }
             fflush(stdout);
@@ -14542,46 +14096,13 @@ damage_controller_done:
     if((damage_de12_enabled)&&(icutb==0)&&(idamagereeq==0)&&
        (damdamageini!=NULL)){
 
-      damage_de13_batch_dmax=0.;
-      damage_de13_new=damage_de13_mark_terminal(
-          dam,ipkon,lakon,ielmat,mi[2],ndmcon,dmcon,*ndmat_,*ntmat_,
-            ne0,mi[0],damage_de13_delete_d,DAMAGE_DE13_BATCH_MAX,
-          &damage_de13_batch_dmax,damage_de13_trigger_value,
-          damage_de13_trigger_ip,matname,damage_delete_filter,
-          damage_damvisc,damage_delete_visc,&damage_de13_batch_vmin);
-      damage_de13_term_only=damage_de13_new;
+      erosion_mark(&damage_epol,&damage_ebatch,
+                   dam,damage_damvisc,ipkon,lakon,kon,ielmat,matname,
+                   ndmcon,dmcon,*ndmat_,*ntmat_,*nk,*ne,ne0,mi[0],mi[2],
+                   damage_de13_trigger_value,damage_de13_trigger_ip,
+                   iinc,theta**tper);
 
-      if((damage_deadall_g>0.)&&(damage_de13_new<DAMAGE_DE13_BATCH_MAX)){
-        ITG nda=damage_de13_mark_deadall(
-            dam,damage_damvisc,damage_delete_visc,ipkon,lakon,kon,*nk,
-            *ne,ne0,mi[0],damage_deadall_g,
-            DAMAGE_DE13_BATCH_MAX-damage_de13_new,&damage_deadall_nodes);
-        if(nda>0){
-          damage_de13_new+=nda;
-          damage_deadall_total+=nda;
-          printf("[DAMAGE DEADALL] inc=%" ITGFORMAT " time=%.12e "
-                 "nodes=%" ITGFORMAT " deleted=%" ITGFORMAT " total=%"
-                 ITGFORMAT "\n",iinc,theta**tper,damage_deadall_nodes,
-                 nda,damage_deadall_total);
-          fflush(stdout);
-        }
-      }
-      if((damage_deadsole_g>0.)&&(damage_de13_new<DAMAGE_DE13_BATCH_MAX)){
-        ITG nds=damage_de13_mark_deadsole(
-            dam,damage_damvisc,damage_delete_visc,ipkon,lakon,kon,*nk,
-            ne0,mi[0],damage_deadsole_g,
-            DAMAGE_DE13_BATCH_MAX-damage_de13_new);
-        if(nds>0){
-          damage_de13_new+=nds;
-          damage_deadsole_total+=nds;
-          printf("[DAMAGE DEADSOLE] inc=%" ITGFORMAT " time=%.12e "
-                 "deleted=%" ITGFORMAT " total=%" ITGFORMAT "\n",
-                 iinc,theta**tper,nds,damage_deadsole_total);
-          fflush(stdout);
-        }
-      }
-
-      if(damage_de13_new>0){
+      if(damage_ebatch.marked>0){
         damage_de13_transaction=1;
         damage_soft_reeq=0;
         damage_active_pass=1;
@@ -14833,8 +14354,8 @@ damage_controller_done:
                " tentative=%" ITGFORMAT " batch_Dmax=%.6e "
                "batch_Dvis=%.6e "
                "orphan_nodes=%" ITGFORMAT " action=%s+same-load-Newton\n",
-               iinc,theta**tper,damage_de13_new,dtxn.count,
-               damage_de13_batch_dmax,damage_de13_batch_vmin,
+               iinc,theta**tper,damage_ebatch.marked,dtxn.count,
+               damage_ebatch.batch_dmax,damage_ebatch.batch_vmin,
                damage_topology_orphans,
                damage_topology_rebuild?"remastruct":"reuse-sparse-graph");
         fflush(stdout);
@@ -14863,8 +14384,8 @@ damage_controller_done:
           damage_release_dt=dtime;
           damage_release_rebuild=damage_topology_rebuild;
           damage_release_iforbou=iforbou;
-          damage_release_nterm=damage_de13_term_only;
-          damage_release_nother=damage_de13_new-damage_de13_term_only;
+          damage_release_nterm=damage_ebatch.terminal;
+          damage_release_nother=damage_ebatch.marked-damage_ebatch.terminal;
           damage_release_nisl=damage_float_isl;
           damage_release_ncoh=damage_float_coh;
 
@@ -14901,7 +14422,7 @@ damage_controller_done:
                   if(pdv>pdvmax) pdvmax=pdv;
                 }
               }
-              ptrig=((damage_delete_visc==1)&&(damage_damvisc!=NULL))
+              ptrig=((damage_epol.delete_visc==1)&&(damage_damvisc!=NULL))
                     ?pdvmax:pdmax;
               /* The bulk damage variable exists ONLY for bulk elements.
                  calcdamage.f:135 skips every lakon(1:1) != 'C', so dam is
@@ -14928,7 +14449,7 @@ damage_controller_done:
                      " below_delete_d=%s%s",
                      iinc,damage_release_pass,dtxn.elem[pe],
                      dtxn.mat[pe],&lakon[8*pel],pdmax,pdvmax,1.-ptrig,
-                     (ptrig<damage_de13_delete_d)?"YES-not-terminal":"no",
+                     (ptrig<damage_epol.delete_d)?"YES-not-terminal":"no",
                      "\n");
             }
             fflush(stdout);

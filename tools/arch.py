@@ -29,7 +29,10 @@ about LOCALITY, and locality is measurable.  Three numbers say it:
 The budget file makes them a ratchet.  A number that is allowed to drift
 back up is not a measurement, it is a mood.
 """
-import argparse,json,pathlib,re,sys
+import argparse,json,pathlib,re,signal,sys
+
+try: signal.signal(signal.SIGPIPE,signal.SIG_DFL)   # `| head` is not an error
+except Exception: pass
 
 ROOT=pathlib.Path(__file__).resolve().parent.parent
 SRC=ROOT/'src'
@@ -87,9 +90,18 @@ def functions(path):
         i+=1
     return out
 
+def typedef_names():
+    """Every struct typedef CalculiX.h declares.
+
+    Read rather than listed: a hand-kept list silently stops recognising the
+    next module's type, the declaration scan then stops at its first use,
+    and the locals count drops by ninety for no reason at all.  Measured the
+    hard way."""
+    h=(SRC/'CalculiX.h').read_text(errors='replace')
+    return sorted(set(re.findall(r'^\}\s*([A-Za-z_]\w*)\s*;',h,re.M)))
+
 DECLTYPES=(r'char|double|ITG|FILE|int|float|long|unsigned|size_t|'
-           r'topo_txn|glob_census|converge|lsladder|crackcontrol_census|'
-           r'topodiag_report|damstate|damcfg|damct|damdiag_ray')
+           +"|".join(typedef_names()))
 
 def locals_of(path,first,last):
     """Every name the function declares.

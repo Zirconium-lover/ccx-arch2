@@ -1039,6 +1039,7 @@ dynboun.c \
 electromagnetics.c \
 elementcpuload.c \
 expand.c \
+erosion.c \
 external.c \
 feasibledirection.c \
 filterbackwardmain.c \
