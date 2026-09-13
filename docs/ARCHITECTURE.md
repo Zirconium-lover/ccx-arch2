@@ -68,6 +68,21 @@ alone. Concretely, all four of:
    the self test has been *observed failing* — see "How a change is
    accepted" below.
 
+Where the shapes come from. None of this is invented here, and the files
+name their sources the way `topology.c` already named PETSc's `DMLabel`
+and `globalize.c` named `SNESLineSearchReason`:
+
+- `trialctx` is PETSc's SNES application context (`SNESSetFunction`'s
+  `ctx`) and deal.II's `ScratchData` — both exist so that an evaluation
+  routine does not take many individual arguments, and both are documented
+  as the way those libraries avoid global state.
+- the policy / workspace / census split inside `dogleg` and `damcont` is
+  the ordinary shape of a trust-region or continuation object: what it is
+  configured to do, what it works in, what it has spent.
+- keeping the **guard** with the caller and moving only the body is what
+  lets a mechanism stay opt-in without the object having to know about
+  increments at all.
+
 Two things that are **not** reasons to make an object: that some lines are
 long, and that some lines look alike. Duplication is evidence, not a
 verdict; the forty-line deletion block appearing twice mattered because

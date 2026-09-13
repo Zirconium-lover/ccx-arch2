@@ -56,6 +56,30 @@
    macro forgot is caught by one loop at arming instead of by a wrong
    answer at increment 300.
 
+   Where this shape comes from
+   ---------------------------
+   It is the standard answer in this field and it is worth naming the
+   places it is already load-bearing, because none of them is a nonlinear
+   FE solver that got away with 130 loose arguments either.
+
+     - PETSc's SNES passes application state to the residual evaluation
+       through one opaque `ctx' pointer (SNESSetFunction, petscsnes.h).
+       Their own documentation states the purpose in as many words: a
+       user-defined context is a structure in which objects are stashed,
+       and it is how the library avoids global variables while the solver
+       never sees application data.  trialctx is that context, with the
+       opacity dropped because here the caller and the callee are the same
+       program;
+     - deal.II's WorkStream carries per-cell state in a ScratchData object
+       for exactly this reason - so the worker does not take many
+       individual arguments - and its CopyData is the output half.  The
+       split here is the same: the context is what the evaluation reads,
+       `dst' is where the answer goes.
+
+   This file borrows the shape, not the ambition.  Neither of those
+   libraries would write a 180-field struct; neither of them has a
+   results() with 130 parameters to write it about.
+
    Contract
    --------
      - trial_results() is the results() call and nothing else.  No
