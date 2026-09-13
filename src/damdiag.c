@@ -420,3 +420,27 @@ ITG damage_wall_setdiff(const ITG *cat,const double *xstate,
   }
   return n;
 }
+
+/* The values the fifty driver locals carried at their declarations in
+   nonlingeo().  Every probe here is opt-in; none of them is armed unless a
+   switch says so, which is why the defaults are almost all zero. */
+void probedrv_init(probedrv *p)
+{
+  memset(p,0,sizeof(*p));
+  p->ray_cat=NULL;
+  p->ray_growth=1.10;
+  p->ray_incok=1;
+  p->ray_max=8;
+  p->ray_p=NULL;
+  p->ray_r0=NULL;
+  p->ray_res=NULL;
+  p->wall_cat=NULL;
+  p->wall_def=NULL;
+  p->wall_theta=-1.;
+  p->aba_a=0.25;
+  p->evt_sgn=NULL;
+  p->dump_inc=1;
+  p->null_nit=4;
+  p->null_seed=987654321;
+  p->null_x=NULL;
+}

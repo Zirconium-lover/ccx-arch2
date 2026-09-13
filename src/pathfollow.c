@@ -945,3 +945,50 @@ ITG pathfollow_cod_step(double *b,const double *uf,double cu,double *lam,
   if(dlamout!=NULL) *dlamout=dlam;
   return 1;
 }
+
+/* ---- two helpers the driver in nonlingeo() used ------------------------
+   They were file-statics there, and both are pure: a dot product over the
+   equation space, and the projection of an equation-space vector onto a
+   nodal displacement difference.  The projection is how the method reads
+   the model instead of shadowing it, which is a property of the method and
+   so belongs here.                                               */
+
+/* Project f_hat (equation space) onto a nodal displacement difference.
+   Only free dofs contribute, and j starts at 1 because j=0 is the thermal
+   dof, exactly as resultsini.c applies the correction.  This is how the
+   path following reads the model instead of shadowing it. */
+
+double pathfollow_dot(const double *a,const double *b,ITG n){
+  ITG i;
+  double s=0.;
+  for(i=0;i<n;i++) s+=a[i]*b[i];
+  return s;
+}
+
+double pathfollow_project(const double *fh,const double *a,const double *c,
+                         const ITG *nactdof,ITG nk,ITG mt){
+  ITG i,j,k;
+  double p=0.;
+  for(i=0;i<nk;i++){
+    for(j=1;j<mt;j++){
+      k=nactdof[mt*i+j];
+      if(k>0) p+=fh[k-1]*(a[mt*i+j]-c[mt*i+j]);
+    }
+  }
+  return p;
+}
+
+/* The values the sixty-three driver locals carried at their declarations. */
+void pathdrv_init(pathdrv *p)
+{
+  memset(p,0,sizeof(*p));
+  p->env=NULL;
+  p->cvec=NULL; p->lhs=NULL; p->rhs=NULL; p->rhs0=NULL; p->p=NULL;
+  p->q=NULL;    p->r0=NULL;  p->r1=NULL;  p->uf=NULL;   p->uref=NULL;
+  p->y=NULL;    p->sv=NULL;  p->sxs=NULL; p->sxst=NULL; p->sf=NULL;
+  p->sfn=NULL;  p->sstx=NULL;p->sdam=NULL;p->sxb=NULL;
+  p->clip=0.05;
+  p->eps=1.e-5;
+  p->dtheta_eng=1.e-3;
+  p->ccgrow=1.1;
+}

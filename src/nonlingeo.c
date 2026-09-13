@@ -53,10 +53,7 @@
    one physical increment repeat indefinitely.  Use an engineering tolerance
    on the largest element damage correction, allow a slightly relaxed closure
    at the pass limit, and otherwise cut the physical increment back. */
-#define DAMAGE_DE1_FP_TOL 1.e-4
-#define DAMAGE_DE1_FP_RELAX_TOL 5.e-4
-#define DAMAGE_DE1_MAX_PASSES 8
-#define DAMAGE_DE1_CUTBACK_FACTOR 0.50
+/* the four now live in CalculiX.h, beside damstats. */
 
 /* DE1.3 terminal-failure controller.
    Continuous DE1.2 degradation remains fully Newton-integrated.  Topology
@@ -91,10 +88,8 @@
    evolves.  Permit a bounded extension only for that state.  The ordinary
    checkconvergence() residual/correction criteria and all of its divergence
    paths remain unchanged. */
-#define DAMAGE_SLOW_NEWTON_MAX_ITERS 40
-#define DAMAGE_SLOW_NEWTON_MAX_EXTRA 20
-#define DAMAGE_SLOW_NEWTON_D_TOL 1.e-12
-#define DAMAGE_SLOW_NEWTON_INVALID_EST 1000000000
+/* the three numbers now live in CalculiX.h, next to the decision they
+   bound; the fourth, D_TOL, went with erosion_softening(). */
 
 /* Damage-specific Newton globalization.
    A full Newton correction is retained whenever it contracts the force
@@ -102,11 +97,7 @@
    softening trial triggers one safeguarded secant line-search correction.
    This adds a constitutive/residual evaluation, but no PARDISO
    factorization.  Final convergence tolerances remain the stock ones. */
-#define DAMAGE_LINESEARCH_GROWTH 1.10
-#define DAMAGE_LINESEARCH_MIN 0.10
-#define DAMAGE_LINESEARCH_MAX 0.80
-#define DAMAGE_LINESEARCH_FALLBACK 0.50
-#define DAMAGE_LINESEARCH_MAX_TRIALS 3
+/* the five now live in CalculiX.h, beside the rescue state. */
 
 /* AUTOSPC.  Nodes whose assembled diagonal has collapsed relative to their
    own intact value are excluded from the DISPLACEMENT convergence norm.
@@ -137,767 +128,42 @@ damstate damage_dstate={0,NULL,NULL,NULL,NULL,0,0.,0};
 
 
 
-/* Project f_hat (equation space) onto a nodal displacement difference.
-   Only free dofs contribute, and j starts at 1 because j=0 is the thermal
-   dof, exactly as resultsini.c applies the correction.  This is how the
-   path following reads the model instead of shadowing it. */
 
-static double damage_fd_dot(const double *a,const double *b,ITG n){
-  ITG i;
-  double s=0.;
-  for(i=0;i<n;i++) s+=a[i]*b[i];
-  return s;
-}
-
-static double pf_project(const double *fh,const double *a,const double *c,
-                         const ITG *nactdof,ITG nk,ITG mt){
-  ITG i,j,k;
-  double p=0.;
-  for(i=0;i<nk;i++){
-    for(j=1;j<mt;j++){
-      k=nactdof[mt*i+j];
-      if(k>0) p+=fh[k-1]*(a[mt*i+j]-c[mt*i+j]);
-    }
-  }
-  return p;
-}
 
 ITG ccx_rescue_active=0,ccx_rescue_arm=0,ccx_rescue_req=0;
 
-/* ==================================================================
-   [DAMAGE CT] bounded experimental coupled local continuation (SPEC
-   FREEZE v1).  Opt-in, arms only as rescue LEVEL 4 after Rescue2 and the
-   dogleg have both failed on one wall.  Everything below is inert unless
-   CCX_DAMAGE_CONTINUATION is set.
-   ================================================================== */
-
-/* Exact UC6 kinematics, mirroring cohesive_uc6.f:96-160.  rmat rows map a
-   global vector to (normal, shear-1, shear-2) and are built from the
-   REFERENCE geometry co alone, so they are a mesh constant.  shape is the
-   integration-point specific weight set: 1/6 off-point, 2/3 on-point. */
-
-static void damage_ct_kin(const double *co,const ITG *kon,ITG indexe,
-                          const double *v,ITG mt,ITG mint,
-                          double *dl,double *rmat,double *shape)
-{
-  double e1[3],e2[3],cv[3],jump[3],n1,nc;
-  ITG i,k,nm,np;
-
-  for(k=0;k<3;k++){
-    e1[k]=co[3*(kon[indexe+1]-1)+k]-co[3*(kon[indexe]-1)+k];
-    e2[k]=co[3*(kon[indexe+2]-1)+k]-co[3*(kon[indexe]-1)+k];
-  }
-  cv[0]=e1[1]*e2[2]-e1[2]*e2[1];
-  cv[1]=e1[2]*e2[0]-e1[0]*e2[2];
-  cv[2]=e1[0]*e2[1]-e1[1]*e2[0];
-  n1=sqrt(e1[0]*e1[0]+e1[1]*e1[1]+e1[2]*e1[2]);
-  nc=sqrt(cv[0]*cv[0]+cv[1]*cv[1]+cv[2]*cv[2]);
-  if((n1<=1.e-30)||(nc<=1.e-30)){
-    for(i=0;i<3;i++){dl[i]=0.;for(k=0;k<3;k++) rmat[3*i+k]=0.;}
-    return;
-  }
-  for(k=0;k<3;k++){rmat[k]=cv[k]/nc;rmat[3+k]=e1[k]/n1;}
-  rmat[6]=rmat[1]*rmat[5]-rmat[2]*rmat[4];
-  rmat[7]=rmat[2]*rmat[3]-rmat[0]*rmat[5];
-  rmat[8]=rmat[0]*rmat[4]-rmat[1]*rmat[3];
-
-  for(i=0;i<3;i++) shape[i]=1./6.;
-  shape[mint]=2./3.;
-  for(k=0;k<3;k++){
-    jump[k]=0.;
-    for(i=0;i<3;i++){
-      nm=kon[indexe+i]-1;
-      np=kon[indexe+i+3]-1;
-      jump[k]+=shape[i]*(v[mt*np+k+1]-v[mt*nm+k+1]);
-    }
-  }
-  for(i=0;i<3;i++){
-    dl[i]=0.;
-    for(k=0;k<3;k++) dl[i]+=rmat[3*i+k]*jump[k];
-  }
-}
-
-/* One committed endpoint of the ring: the three local separations of every
-   live UC6 integration point, plus its failed flag and its compression
-   category.  Both flags are needed because the historical admissibility
-   guards test them at BOTH endpoints of an interval. */
-
-static void damage_ct_snap(const double *co,const ITG *kon,const ITG *ipkon,
-                           const char *lakon,const double *v,
-                           const double *stx,const double *xstate,
-                           ITG ne0,ITG mi0,ITG nstate,ITG mt,
-                           double *ring,ITG *fl)
-{
-  double dl[3],rmat[9],shape[3];
-  ITG i,j,np,idx;
-
-  np=(mi0<3)?mi0:3;
-  for(i=0;i<ne0;i++){
-    for(j=0;j<mi0;j++){
-      idx=mi0*i+j;
-      ring[3*idx]=0.;ring[3*idx+1]=0.;ring[3*idx+2]=0.;
-      fl[idx]=-1;                                  /* -1: not a live UC6 ip */
-    }
-    if(ipkon[i]<0) continue;
-    if(lakon[8*i]!='U') continue;
-    for(j=0;j<np;j++){
-      idx=mi0*i+j;
-      damage_ct_kin(co,kon,ipkon[i],v,mt,j,dl,rmat,shape);
-      ring[3*idx]=dl[0];ring[3*idx+1]=dl[1];ring[3*idx+2]=dl[2];
-      fl[idx]=((xstate[nstate*idx+3]>=0.5)?1:0)
-             |((stx[6*idx]<0.)?2:0);              /* bit0 failed, bit1 comp */
-    }
-  }
-}
-
-/* Predicted reduction is not used here; the continuation needs only the
-   bordered algebra.  Isolated so the self-test exercises the same code.
-
-   den = c_lambda + c_u^T y ,  dlambda = (-c - c_u^T z)/den
-   Returns 0 on a degenerate or non-finite input - a REFUSAL, never a step
-   of zero length.  Every test is written positively so NaN falls through
-   to the refusal branch. */
-
-static ITG damage_ct_bordered(double clam,double cuz,double cuy,double c,
-                              double *den,double *dlam)
-{
-  *den=clam+cuy;
-  if(!(*den==*den)) return 0;
-  if(!(fabs(*den)>0.)) return 0;
-  *dlam=(-c-cuz)/(*den);
-  if(!(*dlam==*dlam)) return 0;
-  return 1;
-}
-
-/* Conditioning of the constraint row, measured on the constraint SUPPORT
-   only: the raw |den| is not comparable between candidates. */
-
-static double damage_ct_rhoden(double clam,double cunorm,double ysupp,
-                               double den)
-{
-  double d=fabs(clam)+cunorm*ysupp;
-  if(!(d>0.)) return 0.;
-  return fabs(den)/d;
-}
-
-/* [DAMAGE CT] candidate scan.  Uses ONLY committed ring data, so it can be
-   evaluated BEFORE the level-4 retry is granted: a refusal then costs the
-   stock path nothing at all and the wall goes to the ORIGINAL stock stop
-   byte-identically.  Returns 1 and fills the frozen quantities on success,
-   0 on refusal.  reason: 1 no candidate, 2 kappa unstable. */
-
-static ITG damage_ct_select(const double *ring,const ITG *fl,
-                            const double *dtr,const ITG *ipkon,
-                            const char *lakon,const ITG *ielprop,
-                            const double *prop,ITG ne0,ITG mi0,ITG head,
-                            ITG *belem,ITG *bip,double *m,double *kappa,
-                            double *ds0,double *tau,ITG *ncand,ITG *reason,
-                            double kaptol,const ITG *bl,ITG nbl)
-{
-  ITG i,j,k,n,s0,s1,f0,f1,ok,cnt=0;
-  double tn0,ts0,gc,beta,df,atau,d0[3],d1[3],mm[3],deff,adv,best=-1.;
-  double q[5],kp[5],sq[5],sk[5],t;
-
-  n=mi0*ne0;*ncand=0;*reason=1;*belem=-1;*bip=-1;
-  for(i=0;i<ne0;i++){
-    if(ipkon[i]<0) continue;
-    if(lakon[8*i]!='U') continue;
-    if(ielprop[i]<0) continue;
-    tn0=prop[ielprop[i]+1];ts0=prop[ielprop[i]+2];gc=prop[ielprop[i]+3];
-    if((tn0<=0.)||(ts0<=0.)||(gc<=0.)) continue;
-    beta=(ts0/tn0)*(ts0/tn0);
-    df=2.*gc/tn0;
-    atau=1.e-9*df;
-    for(j=0;j<3;j++){
-      if(j>=mi0) break;
-      f1=fl[n*head+mi0*i+j];
-      if(f1<0) continue;
-      if(f1&1) continue;
-      {ITG bk,skip=0;
-       for(bk=0;bk<nbl;bk++) if(bl[bk]==4*i+j){skip=1;break;}
-       if(skip) continue;}
-      for(k=0;k<3;k++) d1[k]=ring[3*(n*head+mi0*i+j)+k];
-      deff=(d1[0]>0.?d1[0]*d1[0]:0.)+beta*(d1[1]*d1[1]+d1[2]*d1[2]);
-      deff=(deff>0.)?sqrt(deff):0.;
-      if(!(deff>0.)) continue;
-      if(fabs(d1[0])<0.05*deff) continue;
-      mm[0]=(d1[0]>0.?d1[0]:0.)/deff;
-      mm[1]=beta*d1[1]/deff;
-      mm[2]=beta*d1[2]/deff;
-      ok=1;
-      for(k=0;k<5;k++){
-        s1=(head-k+6)%6;s0=(head-k-1+6)%6;
-        f1=fl[n*s1+mi0*i+j];f0=fl[n*s0+mi0*i+j];
-        if((f1<0)||(f0<0)){ok=0;break;}
-        if((f1&1)||(f0&1)){ok=0;break;}
-        if((f1&2)!=(f0&2)){ok=0;break;}
-        if((ring[3*(n*s1+mi0*i+j)]>0.)!=(ring[3*(n*s0+mi0*i+j)]>0.)){
-          ok=0;break;}
-        adv=mm[0]*(ring[3*(n*s1+mi0*i+j)]-ring[3*(n*s0+mi0*i+j)])
-           +mm[1]*(ring[3*(n*s1+mi0*i+j)+1]-ring[3*(n*s0+mi0*i+j)+1])
-           +mm[2]*(ring[3*(n*s1+mi0*i+j)+2]-ring[3*(n*s0+mi0*i+j)+2]);
-        if(!(adv>atau)){ok=0;break;}
-        if(!(dtr[s1]>0.)){ok=0;break;}
-        q[k]=adv;kp[k]=dtr[s1]/adv;
-        if(!(kp[k]>0.)){ok=0;break;}
-      }
-      if(ok==0) continue;
-      cnt++;
-      if(q[0]>best){
-        ITG b1,b2;
-        best=q[0];*belem=i;*bip=j;
-        for(k=0;k<3;k++) m[k]=mm[k];
-        for(k=0;k<5;k++){sq[k]=q[k];sk[k]=kp[k];}
-        for(b1=1;b1<5;b1++){
-          t=sq[b1];for(b2=b1;(b2>0)&&(sq[b2-1]>t);b2--) sq[b2]=sq[b2-1];
-          sq[b2]=t;
-          t=sk[b1];for(b2=b1;(b2>0)&&(sk[b2-1]>t);b2--) sk[b2]=sk[b2-1];
-          sk[b2]=t;
-        }
-        *ds0=sq[2];*kappa=sk[2];
-        *tau=(sk[0]>0.)?sk[4]/sk[0]:1.e30;
-      }
-    }
-  }
-  *ncand=cnt;
-  if((cnt==0)||(*belem<0)){*reason=1;return 0;}
-  if(!(*tau<=kaptol)){*reason=2;return 0;}
-  *reason=0;
-  return 1;
-}
-
-/* [DAMAGE CT SELFTEST] bordered algebra on a case with a closed-form
-   answer.  Returns the number of failures; a non-zero result stops the run
-   before the first increment. */
-
-static ITG damage_ct_selftest(void)
-{
-  double den,dlam,r;
-  ITG k,nbad=0;
-
-  /* c_lambda=0, c_u^T y = 4, c_u^T z = 1, c = 2  ->  den=4, dlam=-3/4 */
-  k=damage_ct_bordered(0.,1.,4.,2.,&den,&dlam);
-  printf("[DAMAGE CT SELFTEST] den=%.12e (want 4) dlam=%.12e (want -0.75) "
-         "rc=%" ITGFORMAT " %s\n",den,dlam,k,
-         ((k==1)&&(fabs(den-4.)<1.e-14)&&(fabs(dlam+0.75)<1.e-14))?
-         "PASS":"FAIL");
-  if(!((k==1)&&(fabs(den-4.)<1.e-14)&&(fabs(dlam+0.75)<1.e-14))) nbad++;
-
-  /* c_lambda non-zero must enter den */
-  k=damage_ct_bordered(3.,0.,1.,-8.,&den,&dlam);
-  printf("[DAMAGE CT SELFTEST] den=%.12e (want 4) dlam=%.12e (want 2) "
-         "rc=%" ITGFORMAT " %s\n",den,dlam,k,
-         ((k==1)&&(fabs(den-4.)<1.e-14)&&(fabs(dlam-2.)<1.e-14))?
-         "PASS":"FAIL");
-  if(!((k==1)&&(fabs(den-4.)<1.e-14)&&(fabs(dlam-2.)<1.e-14))) nbad++;
-
-  /* c=0 at a converged constraint must give dlam = -c_u^T z / den */
-  k=damage_ct_bordered(0.,2.,2.,0.,&den,&dlam);
-  printf("[DAMAGE CT SELFTEST] c=0 -> dlam=%.12e (want -1) %s\n",dlam,
-         ((k==1)&&(fabs(dlam+1.)<1.e-14))?"PASS":"FAIL");
-  if(!((k==1)&&(fabs(dlam+1.)<1.e-14))) nbad++;
-
-  /* degenerate and non-finite input must REFUSE */
-  {
-    double z=0.,dn=z/z;
-    ITG k1,k2,k3;
-    k1=damage_ct_bordered(0.,1.,0.,1.,&den,&dlam);      /* den=0     */
-    k2=damage_ct_bordered(dn,1.,1.,1.,&den,&dlam);      /* clam=NaN  */
-    k3=damage_ct_bordered(0.,dn,1.,1.,&den,&dlam);      /* cuz=NaN   */
-    printf("[DAMAGE CT SELFTEST] refusals: den=0 -> %" ITGFORMAT
-           ", clam=NaN -> %" ITGFORMAT ", cuz=NaN -> %" ITGFORMAT
-           " (all want 0) %s\n",k1,k2,k3,
-           ((k1==0)&&(k2==0)&&(k3==0))?"PASS":"FAIL");
-    if(!((k1==0)&&(k2==0)&&(k3==0))) nbad++;
-  }
-
-  /* rho_den is a cancellation measure in [0,1] and 0 on a null row */
-  r=damage_ct_rhoden(0.,1.,4.,4.);
-  printf("[DAMAGE CT SELFTEST] rho_den=%.12e (want 1) ; null row -> %.12e "
-         "(want 0) %s\n",r,damage_ct_rhoden(0.,0.,0.,0.),
-         ((fabs(r-1.)<1.e-14)&&(damage_ct_rhoden(0.,0.,0.,0.)==0.))?
-         "PASS":"FAIL");
-  if(!((fabs(r-1.)<1.e-14)&&(damage_ct_rhoden(0.,0.,0.,0.)==0.))) nbad++;
-
-  printf("[DAMAGE CT SELFTEST] %" ITGFORMAT " failure(s)\n",nbad);
-  fflush(stdout);
-  return nbad;
-}
-
-/* ---- [DAMAGE TR] the dogleg step, isolated ------------------------------
-
-   Given the trust radius dl and the five scalars the trust region works in
-   (nd2=|d|^2, nw2=|Jd|^2, npn2=|p_N|^2, dtpn=dot(d,p_N), and tc=nd2/nw2 for
-   the Cauchy point), return the step as p = (*pa)*d + (*pb)*p_N and its norm.
-
-   Return value: 1 NEWTON (the full step is inside the radius), 2 CAUCHY (the
-   Cauchy point is already outside it), 3 DOGLEG (the blend that meets the
-   boundary), 0 REFUSE - a degenerate or non-finite input, which the caller
-   must treat as "no step", never as a step of zero length.
-
-   Every test is written as a POSITIVE comparison (!(x>0.) rather than x<=0.)
-   so that a NaN falls into the refusal branch instead of silently passing. */
-
-static ITG damage_dl_pick(double dl,double nd2,double nw2,double npn2,
-                          double dtpn,double *pa,double *pb,double *nrm)
-{
-  double tc,pcn,pnn,uu,uv,vv,disc,tau,q;
-
-  *pa=0.;*pb=0.;*nrm=0.;
-  if(!(dl>0.)) return 0;
-  if(!(nw2>0.)) return 0;
-  if(!(nd2>0.)) return 0;
-  if(!(npn2>0.)) return 0;
-  if(!(dtpn==dtpn)) return 0;
-
-  tc=nd2/nw2;
-  if(!(tc>0.)) return 0;
-  pnn=sqrt(npn2);
-  pcn=tc*sqrt(nd2);
-  if(!(pnn>0.)||!(pcn>0.)) return 0;
-
-  if(pnn<=dl){
-    *pa=0.;*pb=1.;
-  }else if(pcn>=dl){
-    *pa=dl/sqrt(nd2);*pb=0.;
-  }else{
-    uu=pcn*pcn;
-    uv=tc*dtpn-uu;
-    vv=npn2-2.*tc*dtpn+uu;
-    if(!(vv>0.)){
-      *pa=0.;*pb=1.;
-      q=npn2;
-      *nrm=sqrt(q);
-      return 1;
-    }
-    disc=uv*uv-vv*(uu-dl*dl);
-    if(!(disc>=0.)) disc=0.;
-    tau=(-uv+sqrt(disc))/vv;
-    if(!(tau==tau)) return 0;
-    if(tau<0.) tau=0.;
-    if(tau>1.) tau=1.;
-    *pa=(1.-tau)*tc;*pb=tau;
-    q=(*pa)*(*pa)*nd2+2.*(*pa)*(*pb)*dtpn+(*pb)*(*pb)*npn2;
-    *nrm=(q>0.)?sqrt(q):0.;
-    if(!((*nrm)>0.)) return 0;
-    return 3;
-  }
-  q=(*pa)*(*pa)*nd2+2.*(*pa)*(*pb)*dtpn+(*pb)*(*pb)*npn2;
-  *nrm=(q>0.)?sqrt(q):0.;
-  if(!((*nrm)>0.)) return 0;
-  return (*pb>0.)?1:2;
-}
-
-/* predicted reduction of phi=1/2|R|^2 for p = pa*d + pb*p_N, using
-   J p = pa*w + pb*r0 and R = -r0:  phi(u) - 1/2|R+Jp|^2 */
-
-static double damage_dl_pred(double pa,double pb,double nb2,double nd2,
-                             double nw2)
-{
-  return 0.5*nb2-0.5*((pb-1.)*(pb-1.)*nb2+2.*pa*(pb-1.)*nd2+pa*pa*nw2);
-}
-
-/* ---- [DAMAGE TR] geometry self-test ------------------------------------
-
-   Runs on a J whose answer is known in closed form, so a wrong branch is a
-   failure of arithmetic and not of the model:  J=diag(1,10), r0=(1,1).
-       p_N = (1, 0.1)      |p_N|^2 = 1.01
-       d   = J^T r0 = (1,10)   |d|^2   = 101
-       w   = J d    = (1,100)  |w|^2   = 10001
-       |r0|^2 = 2  and  dot(d,p_N) = 2   - the same identity the run checks.
-   Prints PASS/FAIL per case and returns the number of failures. */
-
-static ITG damage_dl_selftest(void)
-{
-  const double nb2=2.,nd2=101.,nw2=10001.,npn2=1.01,dtpn=2.;
-  double pa,pb,nr,pr,pnn,pcn,tc;
-  ITG k,nbad=0;
-
-  tc=nd2/nw2;pnn=sqrt(npn2);pcn=tc*sqrt(nd2);
-  printf("[DAMAGE TR SELFTEST] closed-form case: |p_N|=%.12e |p_C|=%.12e\n",
-         pnn,pcn);
-
-  /* 1. the full Newton step lies inside the radius */
-  k=damage_dl_pick(2.,nd2,nw2,npn2,dtpn,&pa,&pb,&nr);
-  pr=damage_dl_pred(pa,pb,nb2,nd2,nw2);
-  printf("[DAMAGE TR SELFTEST] Delta=2 -> kind=%" ITGFORMAT
-         " (want 1 NEWTON) pa=%.6e pb=%.6e |p|=%.12e (want %.12e) "
-         "pred=%.12e %s\n",k,pa,pb,nr,pnn,pr,
-         ((k==1)&&(fabs(nr-pnn)<=1.e-12*pnn)&&(pr>0.))?"PASS":"FAIL");
-  if(!((k==1)&&(fabs(nr-pnn)<=1.e-12*pnn)&&(pr>0.))) nbad++;
-
-  /* 2. the Cauchy point is already outside the radius */
-  k=damage_dl_pick(0.05,nd2,nw2,npn2,dtpn,&pa,&pb,&nr);
-  pr=damage_dl_pred(pa,pb,nb2,nd2,nw2);
-  printf("[DAMAGE TR SELFTEST] Delta=0.05 -> kind=%" ITGFORMAT
-         " (want 2 CAUCHY) pa=%.6e pb=%.6e |p|=%.12e (want 5.0e-02) "
-         "pred=%.12e %s\n",k,pa,pb,nr,pr,
-         ((k==2)&&(pb==0.)&&(fabs(nr-0.05)<=1.e-12*0.05)&&(pr>0.))?
-         "PASS":"FAIL");
-  if(!((k==2)&&(pb==0.)&&(fabs(nr-0.05)<=1.e-12*0.05)&&(pr>0.))) nbad++;
-
-  /* 3. the intermediate step must sit exactly ON the boundary */
-  k=damage_dl_pick(0.5,nd2,nw2,npn2,dtpn,&pa,&pb,&nr);
-  pr=damage_dl_pred(pa,pb,nb2,nd2,nw2);
-  printf("[DAMAGE TR SELFTEST] Delta=0.5 -> kind=%" ITGFORMAT
-         " (want 3 DOGLEG) pa=%.6e pb=%.6e |p|=%.12e (want 5.0e-01) "
-         "pred=%.12e %s\n",k,pa,pb,nr,pr,
-         ((k==3)&&(fabs(nr-0.5)<=1.e-10*0.5)&&(pr>0.)&&(pa>0.)&&(pb>0.))?
-         "PASS":"FAIL");
-  if(!((k==3)&&(fabs(nr-0.5)<=1.e-10*0.5)&&(pr>0.)&&(pa>0.)&&(pb>0.))) nbad++;
-
-  /* 4. the model prediction is exact for the full Newton step */
-  pr=damage_dl_pred(0.,1.,nb2,nd2,nw2);
-  printf("[DAMAGE TR SELFTEST] pred(full Newton)=%.12e (want %.12e, i.e. the "
-         "linear model predicts phi=0) %s\n",pr,0.5*nb2,
-         (fabs(pr-0.5*nb2)<=1.e-14*nb2)?"PASS":"FAIL");
-  if(!(fabs(pr-0.5*nb2)<=1.e-14*nb2)) nbad++;
-
-  /* 5. the Cauchy point is the exact minimiser along d */
-  pr=damage_dl_pred(tc,0.,nb2,nd2,nw2);
-  printf("[DAMAGE TR SELFTEST] pred(Cauchy point)=%.12e (want %.12e = "
-         "|d|^4/(2|Jd|^2)) %s\n",pr,0.5*nd2*nd2/nw2,
-         (fabs(pr-0.5*nd2*nd2/nw2)<=1.e-12*fabs(pr))?"PASS":"FAIL");
-  if(!(fabs(pr-0.5*nd2*nd2/nw2)<=1.e-12*fabs(pr))) nbad++;
-
-  /* 6-9. degenerate and non-finite input must REFUSE, not return a step */
-  {
-    double dnan=0.,dzero=0.;
-    ITG k6,k7,k8,k9;
-    dnan=dzero/dzero;                       /* NaN without a literal */
-    k6=damage_dl_pick(0.,nd2,nw2,npn2,dtpn,&pa,&pb,&nr);
-    k7=damage_dl_pick(0.5,nd2,0.,npn2,dtpn,&pa,&pb,&nr);
-    k8=damage_dl_pick(dnan,nd2,nw2,npn2,dtpn,&pa,&pb,&nr);
-    k9=damage_dl_pick(0.5,nd2,nw2,npn2,dnan,&pa,&pb,&nr);
-    printf("[DAMAGE TR SELFTEST] refusals: Delta=0 -> %" ITGFORMAT
-           ", |Jd|^2=0 -> %" ITGFORMAT ", Delta=NaN -> %" ITGFORMAT
-           ", dot(d,p_N)=NaN -> %" ITGFORMAT " (all want 0) %s\n",
-           k6,k7,k8,k9,
-           ((k6==0)&&(k7==0)&&(k8==0)&&(k9==0))?"PASS":"FAIL");
-    if(!((k6==0)&&(k7==0)&&(k8==0)&&(k9==0))) nbad++;
-  }
-
-  printf("[DAMAGE TR SELFTEST] %" ITGFORMAT " failure(s)\n",nbad);
-  fflush(stdout);
-  return nbad;
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-/* Geometric estimate of the total iteration number required for value to
-   reach target at the contraction measured over the latest Newton step.
-   Invalid/non-contracting data deliberately returns a large sentinel so the
-   stock cutback is not postponed. */
-static ITG damage_slow_newton_estimate(ITG iit,double value,
-                                       double previous,double target)
-{
-  double ratio,nextra,iest;
-
-  if((!isfinite(value))||(!isfinite(previous))||(!isfinite(target))||
-     (value<0.)||(previous<=0.)||(target<=0.))
-    return DAMAGE_SLOW_NEWTON_INVALID_EST;
-  if(value<=target) return iit;
-  if(value>=previous) return DAMAGE_SLOW_NEWTON_INVALID_EST;
-
-  ratio=value/previous;
-  if((ratio<=0.)||(ratio>=1.)) return DAMAGE_SLOW_NEWTON_INVALID_EST;
-  nextra=ceil(log(target/value)/log(ratio));
-  if((!isfinite(nextra))||(nextra<0.)||
-     (nextra>(double)DAMAGE_SLOW_NEWTON_INVALID_EST-iit))
-    return DAMAGE_SLOW_NEWTON_INVALID_EST;
-
-  iest=(double)iit+nextra;
-  if(iest>(double)DAMAGE_SLOW_NEWTON_INVALID_EST)
-    return DAMAGE_SLOW_NEWTON_INVALID_EST;
-  return (ITG)iest;
-}
-
-/* Decide whether it is worth paying for more PARDISO factorizations.  The
-   direct stock force and correction targets are used.  Requiring two
-   consecutive contractions rejects residual oscillation and one-step noise;
-   the hard cap and remaining-iteration cap bound the cost. */
-static ITG damage_slow_newton_allow(ITG iit,const double *ram,
-                                    const double *ram1,const double *ram2,
-                                    const double *cam,const double *uam,
-                                    double camprev1,double camprev2,
-                                    const double *qa,const double *qam,
-                                    const double *ctrl,ITG maxiters,
-                                    ITG *iestres,ITG *iestcorr,
-                                    ITG *iesttotal,double *rratio,
-                                    double *cratio)
-{
-  ITG ip;
-  double ea,c1,c2,targetres,targetcorr;
-
-  *iestres=DAMAGE_SLOW_NEWTON_INVALID_EST;
-  *iestcorr=DAMAGE_SLOW_NEWTON_INVALID_EST;
-  *iesttotal=DAMAGE_SLOW_NEWTON_INVALID_EST;
-  *rratio=0.;
-  *cratio=0.;
-
-  if((iit<3)||(iit>=maxiters)) return 0;
-  if((ram[0]<=0.)||(ram1[0]<=0.)||(ram2[0]<=0.)||
-     (cam[0]<=0.)||(camprev1<=0.)||(camprev2<=0.)||(uam[0]<=0.))
-    return 0;
-
-  /* Strict two-step monotonicity.  ram2 still contains the genuine
-     two-iterations-old residual here; checkconvergence() has not yet folded
-     it into its running minimum. */
-  if(!((ram[0]<ram1[0])&&(ram1[0]<ram2[0])&&
-       (cam[0]<camprev1)&&(camprev1<camprev2))) return 0;
-
-  *rratio=ram[0]/ram1[0];
-  *cratio=cam[0]/camprev1;
-
-  ea=ctrl[23];
-  ip=(ITG)ctrl[2];
-  if(qa[0]>ea*qam[0]){
-    c1=(iit<=ip)?ctrl[18]:ctrl[22];
-    c2=ctrl[19];
-  }else{
-    c1=ea;
-    c2=ctrl[24];
-  }
-
-  targetres=c1*qam[0];
-  targetcorr=c2*uam[0];
-  *iestres=damage_slow_newton_estimate(iit,ram[0],ram1[0],targetres);
-  *iestcorr=damage_slow_newton_estimate(iit,cam[0],camprev1,targetcorr);
-  *iesttotal=(*iestres>*iestcorr)?*iestres:*iestcorr;
-
-  if(*iesttotal>maxiters) return 0;
-  if(*iesttotal-iit>DAMAGE_SLOW_NEWTON_MAX_EXTRA) return 0;
-  return 1;
-}
-
-
-
-
-
-
-
-
-/* Exact DE1 element statistics.
-   For each element the maximum degradation over its active integration
-   points is used.  In the present DE1 implementation only C3D4 is enabled,
-   therefore this is exactly the single integration-point value. */
-static void damage_de1_stats(const double *dam,const double *damold,
-                             const ITG *ipkon,const char *lakon,
-                             ITG ne0,ITG mi0,
-                             ITG *nactive,ITG *ngt01,ITG *ngt05,
-                             ITG *ngt09,ITG *nfull,ITG *nchanged,
-                             double *dmax,double *maxdelta)
-{
-  ITG i,j,nip;
-  double de,dold,delta,demax,delmax;
-
-  *nactive=0;*ngt01=0;*ngt05=0;*ngt09=0;*nfull=0;*nchanged=0;
-  *dmax=0.;*maxdelta=0.;
-
-  for(i=0;i<ne0;i++){
-    if(ipkon[i]<0) continue;
-    if(lakon[8*i]!='C') continue;
-
-    nip=topo_element_nip(&lakon[8*i],mi0);
-    if(nip<1) nip=1;
-    if(nip>mi0) nip=mi0;
-
-    demax=0.;delmax=0.;
-    for(j=0;j<nip;j++){
-      de=dam[mi0*i+j]-1.;
-      if(de<0.) de=0.;
-      if(de>1.) de=1.;
-      if(de>demax) demax=de;
-
-      if(damold!=NULL){
-        dold=damold[mi0*i+j]-1.;
-        if(dold<0.) dold=0.;
-        if(dold>1.) dold=1.;
-        delta=fabs(de-dold);
-        if(delta>delmax) delmax=delta;
-      }
-    }
-
-    if(demax>0.){
-      (*nactive)++;
-      if(demax>0.1) (*ngt01)++;
-      if(demax>0.5) (*ngt05)++;
-      if(demax>0.9) (*ngt09)++;
-      if(demax>=0.999) (*nfull)++;
-      if(demax>*dmax) *dmax=demax;
-    }
-
-    if(delmax>DAMAGE_DE1_FP_TOL) (*nchanged)++;
-    if(delmax>*maxdelta) *maxdelta=delmax;
-  }
-}
-
-/* Append one compact accepted-state record.  This file is intentionally
-   independent of the legacy .damage hard-deletion history. */
-static void damage_de1_append_stats(const char *jobnamec,ITG istep,ITG iinc,
-                                    double steptime,double totaltime,
-                                    ITG passes,ITG nactive,ITG ngt01,
-                                    ITG ngt05,ITG ngt09,ITG nfull,
-                                    double dmax,double maxdelta)
-{
-  char fname[200]="";
-  FILE *f=NULL;
-  static ITG de1stats_initialized=0;
-
-  strcpy2(fname,jobnamec,132);
-  strcat(fname,".de1stats");
-
-  /* DE1.3.1: one solver process == one fresh diagnostic history.
-     The first accepted damage state truncates stale data from an older run;
-     subsequent accepted states append normally. */
-  if(de1stats_initialized==0){
-    f=fopen(fname,"w");
-  }else{
-    f=fopen(fname,"a");
-  }
-  if(f==NULL) return;
-
-  if(de1stats_initialized==0){
-    fprintf(f,"# CalculiX DE1.3.1 accepted damage states\n");
-    fprintf(f,"# step increment step_time total_time passes active "
-              "Dgt0.1 Dgt0.5 Dgt0.9 Dfull Dmax max_dD\n");
-    de1stats_initialized=1;
-  }
-
-  fprintf(f,"%" ITGFORMAT " %" ITGFORMAT " %.15e %.15e "
-            "%" ITGFORMAT " %" ITGFORMAT " %" ITGFORMAT " "
-            "%" ITGFORMAT " %" ITGFORMAT " %" ITGFORMAT " "
-            "%.15e %.15e\n",
-          istep,iinc,steptime,totaltime,passes,nactive,ngt01,ngt05,
-          ngt09,nfull,dmax,maxdelta);
-  fclose(f);
-}
-
-/* Write the latest accepted DE1 state as an exact element-cell VTK snapshot.
-   The file is overwritten, so long calculations do not accumulate large
-   post-processing files.  All active C3D4 cells are written.  DE1_D and
-   DUCT_IP are CELL_DATA taken directly from the solver integration-point
-   history; no extrapolation or nodal averaging is involved.  Coordinates
-   are written in the current deformed configuration. */
-static void damage_de1_write_vtk(const char *jobnamec,
-                                 const double *co,const double *vold,
-                                 ITG nk,ITG mt,const ITG *kon,
-                                 const ITG *ipkon,const char *lakon,
-                                 const ITG *ielmat,ITG mi2,
-                                 const double *dam,ITG mi0,ITG ne0,
-                                 ITG istep,ITG iinc,double steptime)
-{
-  char fname[200]="",seq[32]="";
-  FILE *f=NULL;
-  ITG i,j,indexe,node,ncell=0;
-  double d,duct,x,y,z;
-  static ITG vtkseries=-1,vtkcount=0;
-
-  /* CCX_DAMAGE_VTK_SERIES keeps every accepted state as
-     <job>.de1.NNNNN.vtk instead of overwriting a single frame.  Needed to
-     show a sequence of damage rather than one final picture. */
-
-  if(vtkseries<0){
-    vtkseries=(ccxopt_getenv("CCX_DAMAGE_VTK_SERIES")!=NULL)?1:0;
-  }
-
-  for(i=0;i<ne0;i++){
-    if(ipkon[i]<0) continue;
-    if(strncmp(&lakon[8*i],"C3D4",4)==0) ncell++;
-  }
-
-  strcpy2(fname,jobnamec,132);
-  if(vtkseries==1){
-    sprintf(seq,".de1.%5.5d.vtk",(int)vtkcount);
-    strcat(fname,seq);
-    vtkcount++;
-  }else{
-    strcat(fname,".de1.vtk");
-  }
-  f=fopen(fname,"w");
-  if(f==NULL) return;
-
-  fprintf(f,"# vtk DataFile Version 3.0\n");
-  fprintf(f,"CalculiX DE1.3.1 exact cell damage step=%" ITGFORMAT
-            " inc=%" ITGFORMAT " time=%.12e\n",istep,iinc,steptime);
-  fprintf(f,"ASCII\n");
-  fprintf(f,"DATASET UNSTRUCTURED_GRID\n");
-
-  fprintf(f,"POINTS %" ITGFORMAT " double\n",nk);
-  for(i=0;i<nk;i++){
-    x=co[3*i];
-    y=co[3*i+1];
-    z=co[3*i+2];
-    if(vold!=NULL){
-      x+=vold[mt*i+1];
-      y+=vold[mt*i+2];
-      z+=vold[mt*i+3];
-    }
-    fprintf(f,"%.15e %.15e %.15e\n",x,y,z);
-  }
-
-  fprintf(f,"CELLS %" ITGFORMAT " %" ITGFORMAT "\n",ncell,5*ncell);
-  for(i=0;i<ne0;i++){
-    if(ipkon[i]<0) continue;
-    if(strncmp(&lakon[8*i],"C3D4",4)!=0) continue;
-    indexe=ipkon[i];
-    fprintf(f,"4");
-    for(j=0;j<4;j++){
-      node=kon[indexe+j]-1;
-      fprintf(f," %" ITGFORMAT,node);
-    }
-    fprintf(f,"\n");
-  }
-
-  fprintf(f,"CELL_TYPES %" ITGFORMAT "\n",ncell);
-  for(i=0;i<ncell;i++) fprintf(f,"10\n");
-
-  fprintf(f,"CELL_DATA %" ITGFORMAT "\n",ncell);
-
-  fprintf(f,"SCALARS DE1_D double 1\nLOOKUP_TABLE default\n");
-  for(i=0;i<ne0;i++){
-    if(ipkon[i]<0) continue;
-    if(strncmp(&lakon[8*i],"C3D4",4)!=0) continue;
-    d=dam[mi0*i]-1.;
-    if(d<0.) d=0.;
-    if(d>1.) d=1.;
-    fprintf(f,"%.15e\n",d);
-  }
-
-  fprintf(f,"SCALARS DUCT_IP double 1\nLOOKUP_TABLE default\n");
-  for(i=0;i<ne0;i++){
-    if(ipkon[i]<0) continue;
-    if(strncmp(&lakon[8*i],"C3D4",4)!=0) continue;
-    duct=dam[mi0*i];
-    fprintf(f,"%.15e\n",duct);
-  }
-
-  fprintf(f,"SCALARS ELEMENT_ID int 1\nLOOKUP_TABLE default\n");
-  for(i=0;i<ne0;i++){
-    if(ipkon[i]<0) continue;
-    if(strncmp(&lakon[8*i],"C3D4",4)!=0) continue;
-    fprintf(f,"%" ITGFORMAT "\n",i+1);
-  }
-
-  fprintf(f,"SCALARS MATERIAL_ID int 1\nLOOKUP_TABLE default\n");
-  for(i=0;i<ne0;i++){
-    if(ipkon[i]<0) continue;
-    if(strncmp(&lakon[8*i],"C3D4",4)!=0) continue;
-    fprintf(f,"%" ITGFORMAT "\n",ielmat[mi2*i]);
-  }
-
-  fclose(f);
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	       ITG *ne,
@@ -954,8 +220,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     *sideface=NULL,*labmpc=NULL,*lakonf=NULL,*env,*envsys,fneig[132]="",
     *sideloadref=NULL,*sideload=NULL,stiffmatrix[132]="",
     damagefilename[160]="",*sideloadf=NULL,cflag[1]=" ",
-    *damage_tangent_env=NULL,*damage_reeq_scale_env=NULL,
-    *damage_linesearch_env=NULL,*damage_topology_env=NULL,
+    *damage_tangent_env=NULL,*damage_topology_env=NULL,
     *damage_de13_env=NULL,
     *damage_visc_env=NULL,*damage_diss_env=NULL,
     *damage_fracture_env=NULL,
@@ -1010,55 +275,10 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     idispfrdonly,*inumcp=NULL,nmethodold=*nmethod,
     idamage=0,iitsav=0,idamagereeq=0,ilocalsubstep=0,*ipkondamageini=NULL,
     *damage_de13_trigger_ip=NULL,*damage_ract=NULL,
-    damage_ray_probe=0,damage_ray_shots=0,damage_ray_max=8,
-    *damage_ray_cat=NULL,damage_bt_mode=0,damage_bt_ntrial=0,
-    damage_rescue_mode=0,damage_rescue_bt_on=0,damage_rescue_used=0,
-    damage_rescue_nfired=0,damage_rescue_nok=0,damage_rescue_maxlevel=1,
-    damage_evt_on=0,damage_evt_nstep=0,*damage_evt_sgn=NULL,
-    damage_evt_nsw[8]={0,0,0,0,0,0,0,0},
-    damage_evt_fe[8]={0,0,0,0,0,0,0,0},
-    damage_evt_fp[8]={0,0,0,0,0,0,0,0},
     damage_reg_on=0,damage_reg_nlam=0,damage_reg_napply=0,
-    damage_reg_level=0,damage_rec_window=5,damage_rec_maxunrec=3,
-    damage_corr_mode=0,damage_corr_on=0,damage_corr_ninc=0,
-    damage_corr_nint=0,damage_corr_nfact=0,damage_corr_clean=0,
-    damage_corr_try=0,damage_corr_maxinc=60,damage_corr_exit=5,
-    damage_corr_tryevery=5,damage_corr_grace=10,damage_corr_dtn=0,
-    damage_corr_trial=0,damage_corr_nsince=0,damage_corr_stableneed=3,
-    damage_corr_nwallstab=0,damage_corr_maxesc=3,damage_corr_nwalltot=0,
-    damage_corr_maxwall=30,damage_dth_n=0,damage_dth_i=0,
+    damage_reg_level=0,damage_rec_window=5,damage_rec_maxunrec=3,damage_dth_n=0,damage_dth_i=0,
     damage_rec_healthy=0,damage_rec_unrec=0,damage_rec_used_in_inc=0,
     damage_rec_disarmed=0,
-    damage_ct_mode=0,damage_ct_on=0,damage_ct_have=0,damage_ct_nring=0,
-    damage_ct_elem=-1,damage_ct_ip=-1,damage_ct_nsupp=0,
-    damage_ct_supp[18],damage_ct_node[18],damage_ct_dir[18],
-    damage_ct_ncommit=0,damage_ct_nstep=0,damage_ct_ncorr=0,
-    damage_ct_nfact=0,damage_ct_neval=0,damage_ct_nretry=0,
-    damage_ct_nkink=0,damage_ct_partial=0,damage_ct_nbl=0,
-    *damage_ct_bl=NULL,*damage_ct_fl=NULL,damage_ct_maxstep=60,
-    damage_ct_maxcorr=15,damage_ct_maxfact=700,damage_ct_maxeval=1600,
-    damage_ct_maxretry=5,damage_ct_maxkink=2,damage_ct_lastminc=0,
-    damage_ct_refused=0,damage_ct_p1=0,damage_ct_p2=0,damage_ct_p3=0,
-    damage_ct_head=0,damage_ct_alloc=0,damage_ct_arm=0,damage_ct_step=0,
-    damage_ct_it=0,damage_ct_pred=0,*damage_ct_sgn=NULL,
-    damage_ct_newstep=1,damage_ct_epsok=0,damage_ct_p1r=0,
-    damage_ct_used=0,
-    damage_ct_p2r=0,damage_ct_p3r=0,damage_ct_nprog=0,
-    damage_dl_mode=0,damage_dl_on=0,damage_dl_have=0,damage_dl_used=0,
-    damage_dl_maxtrial=6,damage_dl_maxeval=600,damage_dl_maxfact=250,
-    damage_dl_neval=0,damage_dl_nfact=0,damage_dl_narm=0,
-    damage_dl_maxarm=12,damage_dl_nacc=0,damage_dl_nrej=0,
-    damage_dl_nnewt=0,damage_dl_ncau=0,damage_dl_ndog=0,
-    damage_dl_nfail=0,damage_dl_banner=0,damage_dl_incarm=0,
-    damage_dl_selfrec=0,damage_dl_lincheck=0,damage_dl_lc_due=0,
-    damage_dl_lc_it=1,damage_dl_lc_nit=1,damage_ls_probe=0,
-    damage_wall_armed=0,*damage_wall_cat=NULL,damage_wall_nb[8],
-    damage_wall_null=0,
-    damage_dl_lasthelp=0,damage_dl_recdone=-1,
-    damage_aba_mode=0,damage_aba_done=0,damage_bt_nring=0,
-    damage_aba_ninc=0,damage_aba_hit=0,damage_aba_inc[4]={0,0,0,0},
-    damage_ray_ninc=0,damage_ray_incok=1,damage_ray_inc[4]={0,0,0,0},
-    damage_bt_window=1,
     damage_release_probe=0,damage_release_armed=0,damage_release_pass=0,
     damage_release_rebuild=0,
     damage_release_nterm=0,damage_release_nother=0,
@@ -1067,20 +287,11 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     damage_mode=0,damage_predict_count=0,damage_event_cut=0,
     damage_active_pass=0,damage_soft_reeq=0,damage_fast_retry=0,damage_fast_used=0,
     damage_fast_recover=0,damage_fast_failures=0,
-    damage_de1_nactive=0,damage_de1_gt01=0,damage_de1_gt05=0,
-    damage_de1_gt09=0,damage_de1_nfull=0,damage_de1_nchanged=0,
     damage_de12_enabled=0,damage_de12_matcount=0,damage_dm20_matcount=0,
-    damage_tangent_mode=0,damage_rank1_bad=0,damage_reeq_scale_mode=0,
+    damage_tangent_mode=0,damage_rank1_bad=0,
     damage_cut_on=0,damage_cut_bad=0,damage_cut_narrow=0,
     damage_cut_exact=0,
-    damage_linesearch_mode=0,damage_linesearch_active=0,
-    damage_linesearch_applied=0,damage_linesearch_nsoft=0,
-    damage_linesearch_trial=0,damage_linesearch_contracted=0,
-    damage_topology_deferred_mode=0,damage_topology_rebuild=1,
-    damage_unsym_active=0,damage_unsym_elems=0,damage_unsym_report=0,
-    damage_unsym_hole=0,damage_unsym_floor=0,damage_unsym_holerep=0,
-    damage_unsym_live=0,damage_unsym_degen=0,*damage_damcat=NULL,
-    damage_unsym_census=0,damage_unsym_tanfull=0,
+    damage_topology_deferred_mode=0,damage_topology_rebuild=1,*damage_damcat=NULL,
     damage_snap_elem=0,damage_snap_bad=0,
     damage_diss_report=0,damage_diss_init=0,damage_diss_ctrl=0,
     damage_diss_have=0,damage_diss_ok=0,damage_diss_engaged=0,
@@ -1096,32 +307,16 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     damage_dangle_new=0,damage_dangle_weak=0,damage_dangle_total=0,
     damage_dangle_max=0,damage_stiff_probe=0,damage_path_on=0,damage_path_retry=0,damage_path_desc=0,
     damage_path_nstep=20,damage_path_arm=3,damage_path_used=0,
-    damage_path_att=0,damage_null_inc=0,damage_null_it=0,
-    damage_null_cnt=0,damage_null_seed=987654321,damage_null_nit=4,
+    damage_path_att=0,
     damage_stab_maxdof=0,damage_stab_maxdead=0,*damage_stab_node=NULL,
     damage_fracture_link=0,damage_deadfacet=0,damage_facetdel=0,
     damage_facetdel_new=0,damage_facetdel_total=0,damage_arc=0,damage_diss_step=1,damage_spc_neg=0,damage_census_ok=1,
-    damage_ls_trials=DAMAGE_LINESEARCH_MAX_TRIALS,
     damage_bare=0,damage_bare_rep=-1,damage_free_probe=0,
     damage_free_cnt=0,damage_free_rep=-1,*damage_free_nb=NULL,
     damage_free_worst=-1,damage_free_raw=0,damage_free_rawrep=-1,
-    damage_dump_node=0,damage_dump_inc=1,damage_dump_n=0,
-    damage_dump_nb=0,damage_dump_nu=0,damage_dump_alive=0,
-    damage_dump_idx=0,damage_dump_np=0,damage_dump_hit=0,
-    damage_fd_inc=0,damage_fd_it=1,damage_fd_ncol=0,damage_fd_el=-1,
-    damage_fd_j=0,damage_fd_s=0,damage_fd_node=0,damage_fd_step=0,
-    damage_fd_uel=-1,damage_fd_t=0,damage_fd_tel=-1,damage_fd_tnn=0,
-    damage_fd_base=0,damage_fd_pick=0,
-    damage_fd_col=0,damage_unsym_skip=0,
-    damage_unsym_skiprep=-1,damage_unsym_adv=0,
-    damage_unsym_advrep=-1,
     *damage_stiff_haz=NULL,
-    damage_topology_orphans=0,damage_indexe=0,
-    damage_ls_bestused=0,damage_ls_legacy=0,damage_lsr=0,
-    damage_de13_transaction=0,
-    damage_slow_active=0,damage_slow_extended=0,damage_slow_nsoft=0,
-    damage_slow_allow=0,damage_slow_estres=0,damage_slow_estcorr=0,
-    damage_slow_esttotal=0,damage_slow_maxiters=0;
+    damage_topology_orphans=0,damage_indexe=0,damage_lsr=0,
+    damage_de13_transaction=0;
 
   double damage_cut_frac=0.,damage_cut_ref=-1.,damage_cut_now=0.,
     damage_cut_gmin=1.e-4;
@@ -1151,7 +346,6 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     *xstate=NULL,*eenmax=NULL,*adrad=NULL,*aurad=NULL,*bcr=NULL,
     *xmastnor=NULL,*emeini=NULL,*tinc,*tper,*tmin,*tmax,*tincf,
     *doubleglob=NULL,*xnoels=NULL,*au=NULL,*resold=NULL,
-    *damage_linesearch_step=NULL,
     *ad=NULL,*b=NULL,*aub=NULL,*adb=NULL,*pslavsurf=NULL,*pmastsurf=NULL,
     *x=NULL,*y=NULL,*z=NULL,*xo=NULL,sum1,sum2,flinesearch,
     *yo=NULL,*zo=NULL,*cdnr=NULL,*cdni=NULL,*fnext=NULL,*fnextini=NULL,
@@ -1169,86 +363,60 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     *damage_de13_trigger_value=NULL,*damagebase=NULL,
     *damage_damjac=NULL,damage_snap_ratio=0.,
     *damage_damvisc=NULL,*damage_damviscini=NULL,damage_visc_eta=0.,
-    *damage_frel=NULL,*damage_ray_p=NULL,*damage_ray_res=NULL,
-    *damage_ray_r0=NULL,*damage_bt_dam=NULL,*damage_bt_visc=NULL,
-    *damage_bt_xs=NULL,damage_bt_r0=0.,damage_aba_a=0.25,
-    damage_rescue_dtheta_last=0.,damage_rescue_dthetaref_last=0.,
+    *damage_frel=NULL,
     damage_reg_lambda=0.,
     damage_reg_lam[5]={1.e-2,1.e-1,1.e0,4.e0,1.6e1},
-    damage_corr_lam=0.,damage_corr_lamstable=0.,damage_corr_dtref=0.,
-    damage_corr_dtsum=0.,damage_corr_theta0=0.,damage_corr_minfrac=0.05,
     damage_dtheta_healthy=0.,
     damage_dth_ring[20]={0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,
                          0.,0.,0.,0.,0.,0.,0.,0.,0.,0.},
-    damage_bt_growth=1.,damage_bt_floor=0.015625,
-    damage_bt_ring[8]={0.,0.,0.,0.,0.,0.,0.,0.},
     *daba_res=NULL,*daba_v=NULL,*daba_stx=NULL,*daba_fn=NULL,
     *daba_f=NULL,*daba_dam=NULL,*daba_visc=NULL,*daba_xs=NULL,
     *daba_eme=NULL,*daba_stiff=NULL,*daba_qa=NULL,*daba_cam=NULL,
-    damage_ray_growth=1.10,
-    *damage_ct_ring=NULL,*damage_ct_w=NULL,*damage_ct_r0=NULL,
-    *damage_ct_beps=NULL,*damage_ct_y=NULL,*damage_ct_z=NULL,
-    *damage_ct_qh=NULL,
-    *damage_ct_dam=NULL,
-    *damage_ct_visc=NULL,*damage_ct_xs=NULL,*damage_ct_jac=NULL,
-    damage_ct_dt[6]={0.,0.,0.,0.,0.,0.},
-    damage_ct_dlam[6]={0.,0.,0.,0.,0.,0.},
-    damage_ct_duinf[6]={0.,0.,0.,0.,0.,0.},
-    damage_ct_m[3]={0.,0.,0.},damage_ct_g[3]={0.,0.,0.},
-    damage_ct_dc[3]={0.,0.,0.},
-    damage_ct_lam=0.,damage_ct_lamc=0.,damage_ct_ds=0.,damage_ct_ds0=0.,
-    damage_ct_dsmin=0.,damage_ct_dsmax=0.,damage_ct_kappa=0.,
-    damage_ct_clam=0.,damage_ct_tau=0.,damage_ct_tolc=0.,
-    damage_ct_rhomin=1.e-4,damage_ct_clim=20.,damage_ct_ulim=20.,
-    damage_ct_lamref=0.,damage_ct_duref=0.,damage_ct_taupr=0.,
-    damage_ct_den=0.,damage_ct_rho=0.,damage_ct_eps=1.e-6,
-    damage_ct_kaptol=1.5,damage_ct_qa[4]={0.,0.,0.,0.},
-    damage_ct_cam[5]={0.,0.,0.,0.,0.},damage_ct_uam[2]={0.,0.},
-    damage_ct_lamsnap=0.,damage_ct_cprev=0.,
-    *damage_dl_r0=NULL,*damage_dl_d=NULL,*damage_dl_w=NULL,
-    *damage_dl_pn=NULL,*damage_dl_res=NULL,*damage_dl_dam=NULL,
-    *damage_dl_pm=NULL,*damage_dl_wm=NULL,damage_dl_npm2=0.,
-    *damage_dl_visc=NULL,*damage_dl_xs=NULL,
-    damage_dl_delta=0.,damage_dl_nb2=0.,damage_dl_nd2=0.,
-    damage_dl_nw2=0.,damage_dl_tc=0.,damage_dl_npn2=0.,
-    damage_dl_dtpn=0.,damage_dl_ident=0.,damage_dl_asym=0.,
-    damage_dl_d0fac=1.,damage_dl_dmax=0.,damage_dl_phi0=0.,
     damage_release_qa=0.,damage_release_qam=0.,
     damage_release_dt=0.,
     *damage_diss_fhat=NULL,*damage_diss_uf=NULL,
     *damage_addiag=NULL,*damage_addiag0=NULL,
     damage_diss_p=0.,damage_diss_pprev=0.,damage_diss_lprev=0.,
-    damage_diss_dg=0.,damage_diss_total=0.,damage_diss_target=0.,damage_ls_min=DAMAGE_LINESEARCH_MIN,damage_arc_lam=0.,damage_diss_engage_t=-1.,damage_arc_theta0=0.,damage_diss_lamnow=0.,
+    damage_diss_dg=0.,damage_diss_total=0.,damage_diss_target=0.,damage_arc_lam=0.,damage_diss_engage_t=-1.,damage_arc_theta0=0.,damage_diss_lamnow=0.,
     damage_diss_scale=1.,damage_diss_dtheta=0.,
     damage_diss_lamcur=0.,damage_diss_lamold=0.,damage_diss_dgcur=0.,
     damage_diss_dgold=0.,damage_diss_g=0.,damage_diss_slope=0.,
     damage_diss_dlam=0.,damage_diss_kpp=0.,damage_diss_fr=0.,
     damage_diss_ff=0.,damage_diss_den=0.,
     damage_stiff_min=0.,damage_path_lam=0.,damage_path_dev=0.,
-    damage_fd_h=1.e-7,damage_fd_dmax=0.,damage_fd_udmax=-1.,
-    *damage_fd_vsav=NULL,*damage_fd_vtrue=NULL,
-    *damage_fd_fp=NULL,*damage_fd_fm=NULL,
-    *damage_fd_f0=NULL,*damage_fd_ad=NULL,*damage_fd_au=NULL,
     damage_path_devmax=-1.,damage_path_ref=0.,
     damage_path_lamcom=0.,damage_path_drop=0.25,
-    *damage_null_x=NULL,damage_null_nb=0.,damage_null_nx=0.,
-    damage_null_amax=0.,damage_null_nn=0.,
     *damage_free_g=NULL,damage_free_gm=0.,damage_free_dv=0.,
-    damage_dump_dv=0.,
     damage_dmax=0.,
     damage_alphaevent=2.,damage_event_dtheta=0.,
-    damage_event_raw=0.,damage_event_floor=0.,
-    damage_de1_dmax=0.,damage_de1_maxdelta=0.,
-    damage_slow_maxdd=0.,
-    damage_slow_camprev1=1.e300,damage_slow_camprev2=1.e300,
-    damage_slow_rratio=0.,damage_slow_cratio=0.,
-    damage_reeq_uam_ref[2]={0.,0.},damage_reeq_uam_actual[2]={0.,0.},
-    damage_reeq_uam_floor=0.,damage_reeq_uam_peak[2]={0.,0.},
-    damage_linesearch_oldnorm=0.,damage_linesearch_fullnorm=0.,
-    damage_linesearch_dampednorm=0.,damage_linesearch_maxdd=0.,
-    damage_wall_theta=-1.,*damage_wall_def=NULL;
-  ITG damage_wall_maskstep=0;
+    damage_event_raw=0.,damage_event_floor=0.;
   ITG damage_spc_force=0;
+
+  /* [OPCHECK] and [WALLDIAG]/[DAMAGE RAY]/[DAMAGE ABA]: the driver
+     state of the operator check and of the probes.  See opcheck.c
+     and damdiag.c. */
+  opcheckdrv opd;
+  probedrv prb;
+
+  /* [RESCUE] what happens when an increment will not converge:
+     sixty-seven locals that had no owner.  See rescue.c. */
+  rescue rsc;
+
+  /* the Newton iteration budget, and the damage census it reads */
+  slownewton slow;
+  damstats de1;
+
+  /* [PATHFOLLOW] the driver's state: sixty-three locals that had no
+     owner.  The method itself is pathfollow.c's. */
+  pathdrv pf;
+
+  /* [DAMAGE CT] the continuation's own state: eighty-eight locals
+     that had no owner.  See damcont.c. */
+  damcont ct;
+
+  /* [DAMAGE TR] the trust region's own state: forty-nine locals
+     that had no owner.  See dogleg.c. */
+  dogleg dog;
 
   /* [TRIAL] the residual evaluator's view of this frame; see trial.c */
   trialctx nlgt;
@@ -1295,29 +463,12 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 
   lsladder damage_lsl;
 
-  char *pf_env=NULL;
-  ITG pf_on=0,pf_engaged=0,pf_pending=0,pf_reason=0,pf_applied=0,
-    pf_neqarm=0,pf_nstep=0,pf_icutbprev=0,pf_ncut=0;
-  double pf_lam=0.,pf_lamprev=0.,pf_dlampred=0.,pf_dlamjump=0.,pf_tauv=0.,
-    pf_dg=0.,pf_g=0.,pf_dlam=0.,pf_dgc=0.,pf_clip=0.05,pf_taucur=0.,
-    pf_dtheta_eng=1.e-3,pf_pdu=0.,*pf_uf=NULL,*pf_rhs0=NULL,*pf_y=NULL,
-    *pf_uref=NULL,*pf_p=NULL,*pf_r0=NULL,*pf_r1=NULL,*pf_q=NULL,
-    *pf_sv=NULL,*pf_sxs=NULL,*pf_sdam=NULL,*pf_sf=NULL,*pf_sfn=NULL,
-    *pf_sstx=NULL,*pf_sxb=NULL,*pf_sxst=NULL,*pf_lhs=NULL,*pf_rhs=NULL;
-  double pf_sqa[4],pf_scam[5];
-  ITG pf_lincheck=0,pf_codmode=0;
-  double pf_dphi=0.,pf_cu=0.,*pf_cvec=NULL;
-
-  /* ---- mixed-mode crack control (pf_codmode==2) ---------------------
+  /* ---- mixed-mode crack control (pf.codmode==2) ---------------------
      The control functional is rebuilt from the COMMITTED state at the top
      of every attempt and the constraint is written incrementally, so a
      redefinition between increments carries nothing over.  See
      crackcontrol.c. */
 
-  ITG pf_ccmode=0,pf_ccnw=0,pf_ccengage=0,pf_ccarmed=0,pf_ncutfloor=0;
-  double pf_dphicur=0.,pf_lam0it=0.,pf_dlamit=0.,pf_gacc=0.,pf_phiacc=0.,
-    pf_fhcos=0.,pf_fhrat=0.,pf_eps=1.e-5,pf_ccgrow=1.1;
-  crackcontrol_census pf_cs;
 	 
   FILE *f1,*fdamage=NULL;
 
@@ -1367,6 +518,14 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
      the ADDRESS of a local, so this is valid from here to the end of
      the function no matter how often the arrays are reallocated. */
   TRIAL_BIND(nlgt);
+  dogleg_init(&dog);
+  damcont_init(&ct);
+  pathdrv_init(&pf);
+  rescue_init(&rsc);
+  opcheckdrv_init(&opd);
+  probedrv_init(&prb);
+  slownewton_init(&slow);
+  damstats_init(&de1);
 
   /* determining whether a node belongs to at least one element
      (needed in resultsforc.c) */
@@ -2035,17 +1194,17 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
      happened to be nearby" - describing a
      different instance of the same thing. */
   if((damage_de13_env=ccxopt_getenv("CCX_STRUCT_FD_INC"))!=NULL)
-    damage_fd_inc=atoi(damage_de13_env);
+    opd.fd_inc=atoi(damage_de13_env);
   if((damage_de13_env=ccxopt_getenv("CCX_STRUCT_FD_ITER"))!=NULL)
-    damage_fd_it=atoi(damage_de13_env);
+    opd.fd_it=atoi(damage_de13_env);
   if((damage_de13_env=ccxopt_getenv("CCX_STRUCT_FD_H"))!=NULL)
-    damage_fd_h=atof(damage_de13_env);
+    opd.fd_h=atof(damage_de13_env);
   if((damage_de13_env=ccxopt_getenv("CCX_STRUCT_FD_STEP"))!=NULL)
-    damage_fd_step=atoi(damage_de13_env);
+    opd.fd_step=atoi(damage_de13_env);
   if((damage_de13_env=ccxopt_getenv("CCX_STRUCT_FD_ELEM"))!=NULL)
-    damage_fd_pick=atoi(damage_de13_env);
+    opd.fd_pick=atoi(damage_de13_env);
   if((damage_de13_env=ccxopt_getenv("CCX_STRUCT_FD_BASE"))!=NULL)
-    damage_fd_base=((strcmp(damage_de13_env,"VOLD")==0)||
+    opd.fd_base=((strcmp(damage_de13_env,"VOLD")==0)||
                     (strcmp(damage_de13_env,"vold")==0))?1:0;
 
   /* [DAMAGE TMIN] statics.f:234-247 silently raises the deck's minimum
@@ -2140,12 +1299,12 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 
         damage_tangent_mode=2;
       }
-      damage_reeq_scale_env=ccxopt_getenv("CCX_DAMAGE_REEQ_SCALE");
-      if((damage_reeq_scale_env!=NULL)&&
-         ((strcmp(damage_reeq_scale_env,"PHYSICAL")==0)||
-          (strcmp(damage_reeq_scale_env,"physical")==0)||
-          (strcmp(damage_reeq_scale_env,"1")==0))){
-        damage_reeq_scale_mode=1;
+      rsc.reeq_scale_env=ccxopt_getenv("CCX_DAMAGE_REEQ_SCALE");
+      if((rsc.reeq_scale_env!=NULL)&&
+         ((strcmp(rsc.reeq_scale_env,"PHYSICAL")==0)||
+          (strcmp(rsc.reeq_scale_env,"physical")==0)||
+          (strcmp(rsc.reeq_scale_env,"1")==0))){
+        rsc.reeq_scale_mode=1;
       }
       /* J-09.  The same-load re-equilibration after a terminal deletion
          is tested with the STOCK RELATIVE correction criterion cam/uam, and
@@ -2169,9 +1328,9 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
          peakedness), and adopting it needs the full verify + ladder gate.
          Default 0 = off = bit-identical to the unpatched binary. */
       if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_REEQ_FLOOR"))!=NULL){
-        damage_reeq_uam_floor=atof(damage_de13_env);
-        if(damage_reeq_uam_floor<0.) damage_reeq_uam_floor=0.;
-        if(damage_reeq_uam_floor>1.) damage_reeq_uam_floor=1.;
+        rsc.reeq_uam_floor=atof(damage_de13_env);
+        if(rsc.reeq_uam_floor<0.) rsc.reeq_uam_floor=0.;
+        if(rsc.reeq_uam_floor>1.) rsc.reeq_uam_floor=1.;
       }
 
       /* CCX_DAMAGE_RELEASE_PROBE - PURE DIAGNOSTIC, reads only.
@@ -2251,33 +1410,33 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
          touch, evaluates B, evaluates A again, and compares byte for byte.
          Fires once, then the run continues from the full step. */
       if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_ABA"))!=NULL){
-        damage_aba_mode=1;
-        damage_aba_a=atof(damage_de13_env);
-        if((damage_aba_a<=0.)||(damage_aba_a>=1.)) damage_aba_a=0.25;
+        prb.aba_mode=1;
+        prb.aba_a=atof(damage_de13_env);
+        if((prb.aba_a<=0.)||(prb.aba_a>=1.)) prb.aba_a=0.25;
         /* CCX_DAMAGE_ABA_INC="143,209" - fire at those increments instead of
            at the first opportunity.  Purity proved on one activated path does
            not prove it on another: a different increment reaches the same
            code through a different constitutive state, and that is exactly
            what has to be shown before an ensemble rests on it. */
-        damage_aba_ninc=0;
+        prb.aba_ninc=0;
         if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_ABA_INC"))!=NULL){
           char *acp=damage_de13_env;
-          while((*acp!=0)&&(damage_aba_ninc<4)){
+          while((*acp!=0)&&(prb.aba_ninc<4)){
             while((*acp==' ')||(*acp==',')) acp++;
             if(*acp==0) break;
-            damage_aba_inc[damage_aba_ninc++]=atoi(acp);
+            prb.aba_inc[prb.aba_ninc++]=atoi(acp);
             while((*acp!=0)&&(*acp!=',')) acp++;
           }
         }
         printf("[DAMAGE ABA] DIAGNOSTIC: full-state A-B-A at alpha=%.6f;\n"
                "   every array written by results()/calcresidual is compared\n"
                "   byte for byte between two evaluations at the same alpha.%s",
-               damage_aba_a,"\n");
+               prb.aba_a,"\n");
         fflush(stdout);
       }
 
       if(ccxopt_getenv("CCX_DAMAGE_REEQ_BACKTRACK")!=NULL){
-        damage_bt_mode=1;
+        rsc.bt_mode=1;
         /* Three tunables, each aimed at a MEASURED failure of the
            first version (J-15 -> bandrad regressed 25%).
            _GROWTH : engage only when the full step makes the residual
@@ -2296,18 +1455,18 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                      alpha=0.031 and 0.016 buying 1-3% each while the
                      iteration budget drained.  0.015625 = old. */
         if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_BT_GROWTH"))!=NULL){
-          damage_bt_growth=atof(damage_de13_env);
-          if(damage_bt_growth<1.) damage_bt_growth=1.;
+          rsc.bt_growth=atof(damage_de13_env);
+          if(rsc.bt_growth<1.) rsc.bt_growth=1.;
         }
         if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_BT_WINDOW"))!=NULL){
-          damage_bt_window=atoi(damage_de13_env);
-          if(damage_bt_window<1) damage_bt_window=1;
-          if(damage_bt_window>8) damage_bt_window=8;
+          rsc.bt_window=atoi(damage_de13_env);
+          if(rsc.bt_window<1) rsc.bt_window=1;
+          if(rsc.bt_window>8) rsc.bt_window=8;
         }
         if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_BT_FLOOR"))!=NULL){
-          damage_bt_floor=atof(damage_de13_env);
-          if(damage_bt_floor<0.015625) damage_bt_floor=0.015625;
-          if(damage_bt_floor>1.) damage_bt_floor=1.;
+          rsc.bt_floor=atof(damage_de13_env);
+          if(rsc.bt_floor<0.015625) rsc.bt_floor=0.015625;
+          if(rsc.bt_floor>1.) rsc.bt_floor=1.;
         }
         printf("[DAMAGE BT] transactional backtracking ENABLED in "
                "idamagereeq: alpha 1, 1/2 ... 1/64, Armijo on |R|inf with "
@@ -2315,8 +1474,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                "full step restored and the increment handed to the standard "
                "cutback if no probe is acceptable.  THIS CHANGES THE "
                "ANSWER.  growth=%.3f window=%" ITGFORMAT
-               " floor=%.6f%s",damage_bt_growth,damage_bt_window,
-               damage_bt_floor,"\n");
+               " floor=%.6f%s",rsc.bt_growth,rsc.bt_window,
+               rsc.bt_floor,"\n");
         fflush(stdout);
       }
 
@@ -2330,42 +1489,42 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
          (ccxopt_getenv("CCX_DAMAGE_REEQ_RESCUE2")!=NULL)||
          (ccxopt_getenv("CCX_DAMAGE_REEQ_RESCUE3")!=NULL)||
          (ccxopt_getenv("CCX_DAMAGE_RESCUE_CORRIDOR")!=NULL)){
-        damage_rescue_mode=1;
+        rsc.rescue_mode=1;
         ccx_rescue_active=1;
         if(ccxopt_getenv("CCX_DAMAGE_REEQ_RESCUE2")!=NULL){
-          damage_rescue_maxlevel=2;
-          damage_evt_nstep=0;
+          rsc.rescue_maxlevel=2;
+          prb.evt_nstep=0;
         }
         if((ccxopt_getenv("CCX_DAMAGE_REEQ_RESCUE3")!=NULL)||
            (ccxopt_getenv("CCX_DAMAGE_RESCUE_CORRIDOR")!=NULL)){
-          damage_evt_nstep=0;
+          prb.evt_nstep=0;
           damage_reg_nlam=5;
-          damage_rescue_maxlevel=2+damage_reg_nlam;
+          rsc.rescue_maxlevel=2+damage_reg_nlam;
         }
         if(ccxopt_getenv("CCX_DAMAGE_RESCUE_CORRIDOR")!=NULL){
-          damage_corr_mode=1;
+          rsc.corr_mode=1;
           if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CORR_MAXINC"))!=NULL)
-            damage_corr_maxinc=atoi(damage_de13_env);
+            rsc.corr_maxinc=atoi(damage_de13_env);
           if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CORR_EXIT"))!=NULL)
-            damage_corr_exit=atoi(damage_de13_env);
+            rsc.corr_exit=atoi(damage_de13_env);
           if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CORR_TRY"))!=NULL)
-            damage_corr_tryevery=atoi(damage_de13_env);
+            rsc.corr_tryevery=atoi(damage_de13_env);
           if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CORR_GRACE"))!=NULL)
-            damage_corr_grace=atoi(damage_de13_env);
+            rsc.corr_grace=atoi(damage_de13_env);
           if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CORR_MAXWALL"))!=NULL)
-            damage_corr_maxwall=atoi(damage_de13_env);
+            rsc.corr_maxwall=atoi(damage_de13_env);
           if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CORR_MAXESC"))!=NULL)
-            damage_corr_maxesc=atoi(damage_de13_env);
+            rsc.corr_maxesc=atoi(damage_de13_env);
           if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CORR_STABLE"))!=NULL)
-            damage_corr_stableneed=atoi(damage_de13_env);
+            rsc.corr_stableneed=atoi(damage_de13_env);
           if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CORR_MINFRAC"))!=NULL)
-            damage_corr_minfrac=atof(damage_de13_env);
-          if(damage_corr_maxinc<1) damage_corr_maxinc=1;
-          if(damage_corr_exit<1) damage_corr_exit=1;
-          if(damage_corr_tryevery<1) damage_corr_tryevery=1;
-          if(damage_corr_maxwall<1) damage_corr_maxwall=1;
-          if(damage_corr_maxesc<1) damage_corr_maxesc=1;
-          if(damage_corr_stableneed<1) damage_corr_stableneed=1;
+            rsc.corr_minfrac=atof(damage_de13_env);
+          if(rsc.corr_maxinc<1) rsc.corr_maxinc=1;
+          if(rsc.corr_exit<1) rsc.corr_exit=1;
+          if(rsc.corr_tryevery<1) rsc.corr_tryevery=1;
+          if(rsc.corr_maxwall<1) rsc.corr_maxwall=1;
+          if(rsc.corr_maxesc<1) rsc.corr_maxesc=1;
+          if(rsc.corr_stableneed<1) rsc.corr_stableneed=1;
           printf("[DAMAGE CORR] bounded recovery CORRIDOR enabled.  On a "
                  "wall levels 1 and 2 cannot touch (idamagereeq=0) the "
                  "regularization that made the increment converge is HELD, "
@@ -2388,10 +1547,10 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                  "guarantee is t_end NOT LOWER than rescue-2; a byte-exact "
                  "rescue-2 result is impossible once corridor increments "
                  "have been accepted, since no entry snapshot is taken.%s",
-                 damage_corr_stableneed,damage_corr_tryevery,
-                 damage_corr_maxesc,damage_corr_exit,damage_corr_maxwall,
-                 damage_corr_maxinc,damage_corr_grace,
-                 damage_corr_minfrac,"\n");
+                 rsc.corr_stableneed,rsc.corr_tryevery,
+                 rsc.corr_maxesc,rsc.corr_exit,rsc.corr_maxwall,
+                 rsc.corr_maxinc,rsc.corr_grace,
+                 rsc.corr_minfrac,"\n");
           fflush(stdout);
         }
         if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_RESCUE_WINDOW"))!=NULL){
@@ -2411,11 +1570,11 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                "nearly every increment is crawling, not passing a wall: "
                "measured, 92 regularized rescues bought 2.2e-4 of step "
                "time on s3rad.%s",damage_rec_window,damage_rec_maxunrec,"\n");
-        if(damage_bt_mode==1){
+        if(rsc.bt_mode==1){
           printf("[DAMAGE RESCUE] CCX_DAMAGE_REEQ_BACKTRACK (always-on, "
                  "experimental) must not run together with rescue; it is "
                  "switched OFF for this run.%s","\n");
-          damage_bt_mode=0;
+          rsc.bt_mode=0;
         }
         printf("[DAMAGE RESCUE] emergency rescue backtracking ENABLED.  The "
                "trajectory, the stock Newton and every stock cutback are "
@@ -2425,7 +1584,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                "the last admissible dtheta with transactional BT active for "
                "that attempt alone.  One attempt per wall; re-armed after any "
                "increment that converges.%s","\n");
-        if(damage_rescue_maxlevel==2){
+        if(rsc.rescue_maxlevel==2){
           printf("[DAMAGE RESCUE2] second level ARMED.  A wall now gets two "
                  "attempts.  The first is the accepted level-one behaviour, "
                  "unchanged.  Only if it fails does the second run, and there "
@@ -2468,18 +1627,18 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
       }
 
       if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_RESIDUAL_RAY"))!=NULL){
-        damage_ray_probe=1;
-        damage_ray_max=atoi(damage_de13_env);
-        if(damage_ray_max<1) damage_ray_max=8;
-        if(damage_ray_max>1000) damage_ray_max=1000;
+        prb.ray_probe=1;
+        prb.ray_max=atoi(damage_de13_env);
+        if(prb.ray_max<1) prb.ray_max=8;
+        if(prb.ray_max>1000) prb.ray_max=1000;
         /* CCX_DAMAGE_RAY_INC="231" - walk only at these increments. */
-        damage_ray_ninc=0;
+        prb.ray_ninc=0;
         if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_RAY_INC"))!=NULL){
           char *rcp=damage_de13_env;
-          while((*rcp!=0)&&(damage_ray_ninc<4)){
+          while((*rcp!=0)&&(prb.ray_ninc<4)){
             while((*rcp==' ')||(*rcp==',')) rcp++;
             if(*rcp==0) break;
-            damage_ray_inc[damage_ray_ninc++]=atoi(rcp);
+            prb.ray_inc[prb.ray_ninc++]=atoi(rcp);
             while((*rcp!=0)&&(*rcp!=',')) rcp++;
           }
         }
@@ -2487,11 +1646,11 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                "Newton direction during same-load re-equilibration, at most "
                "%" ITGFORMAT " times.  Reads only; b is restored exactly and "
                "the scan ends on the full step, so no bit of the answer "
-               "changes.%s",damage_ray_max,"\n");
-        if(damage_ray_ninc>0){
+               "changes.%s",prb.ray_max,"\n");
+        if(prb.ray_ninc>0){
           printf("[DAMAGE RAY] restricted to increments:");
-          for(i=0;i<damage_ray_ninc;i++)
-            printf(" %" ITGFORMAT,damage_ray_inc[i]);
+          for(i=0;i<prb.ray_ninc;i++)
+            printf(" %" ITGFORMAT,prb.ray_inc[i]);
           printf("%s","\n");
         }
         fflush(stdout);
@@ -2511,12 +1670,12 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           fflush(stdout);
         }
       }
-      damage_linesearch_env=ccxopt_getenv("CCX_DAMAGE_LINESEARCH");
-      if((damage_linesearch_env!=NULL)&&
-         ((strcmp(damage_linesearch_env,"ADAPTIVE")==0)||
-          (strcmp(damage_linesearch_env,"adaptive")==0)||
-          (strcmp(damage_linesearch_env,"1")==0))){
-        damage_linesearch_mode=1;
+      rsc.linesearch_env=ccxopt_getenv("CCX_DAMAGE_LINESEARCH");
+      if((rsc.linesearch_env!=NULL)&&
+         ((strcmp(rsc.linesearch_env,"ADAPTIVE")==0)||
+          (strcmp(rsc.linesearch_env,"adaptive")==0)||
+          (strcmp(rsc.linesearch_env,"1")==0))){
+        rsc.linesearch_mode=1;
       }
       /* DE1.3 keeps an element until it is degraded to 0.1% of its
          stiffness.  Between D=0.95 and that point the element carries
@@ -2571,61 +1730,61 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
          the operator is measured at the same point, not assumed. */
 
       if(ccxopt_getenv("CCX_DAMAGE_TR_DOGLEG")!=NULL){
-        if(damage_rescue_mode==0){
+        if(rsc.rescue_mode==0){
           printf("*ERROR: CCX_DAMAGE_TR_DOGLEG requires "
                  "CCX_DAMAGE_REEQ_RESCUE2; it is a level ON TOP of "
                  "Rescue2, not a replacement.  Stopping.%s","\n");
           fflush(stdout);FORTRAN(stop,());
         }
-        if((damage_corr_mode==1)||(damage_reg_nlam>0)){
+        if((rsc.corr_mode==1)||(damage_reg_nlam>0)){
           printf("*ERROR: CCX_DAMAGE_TR_DOGLEG must not run together with "
                  "CCX_DAMAGE_REEQ_RESCUE3 or CCX_DAMAGE_RESCUE_CORRIDOR - "
                  "both were measured NEGATIVE (J-19) and both would occupy "
                  "the same rescue levels.  Stopping.%s","\n");
           fflush(stdout);FORTRAN(stop,());
         }
-        if(damage_bt_mode==1){
+        if(rsc.bt_mode==1){
           printf("*ERROR: CCX_DAMAGE_TR_DOGLEG must not run together with "
                  "always-on CCX_DAMAGE_REEQ_BACKTRACK (rejected, J-17).  "
                  "Stopping.%s","\n");
           fflush(stdout);FORTRAN(stop,());
         }
-        damage_dl_mode=1;
-        damage_rescue_maxlevel=3;
+        dog.mode=1;
+        rsc.rescue_maxlevel=3;
         if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_TR_MAXTRIAL"))!=NULL)
-          damage_dl_maxtrial=atoi(damage_de13_env);
+          dog.maxtrial=atoi(damage_de13_env);
         if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_TR_MAXEVAL"))!=NULL)
-          damage_dl_maxeval=atoi(damage_de13_env);
+          dog.maxeval=atoi(damage_de13_env);
         if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_TR_MAXFACT"))!=NULL)
-          damage_dl_maxfact=atoi(damage_de13_env);
+          dog.maxfact=atoi(damage_de13_env);
         if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_TR_MAXARM"))!=NULL)
-          damage_dl_maxarm=atoi(damage_de13_env);
+          dog.maxarm=atoi(damage_de13_env);
         if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_TR_D0"))!=NULL)
-          damage_dl_d0fac=atof(damage_de13_env);
+          dog.d0fac=atof(damage_de13_env);
         if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_TR_LINCHECK"))!=NULL)
-          damage_dl_lincheck=atoi(damage_de13_env);
-        if(damage_dl_lincheck<0) damage_dl_lincheck=0;
+          dog.lincheck=atoi(damage_de13_env);
+        if(dog.lincheck<0) dog.lincheck=0;
         if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_TR_LINCHECK_IT"))!=NULL)
-          damage_dl_lc_it=atoi(damage_de13_env);
-        if(damage_dl_lc_it<1) damage_dl_lc_it=1;
+          dog.lc_it=atoi(damage_de13_env);
+        if(dog.lc_it<1) dog.lc_it=1;
         if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_TR_LINCHECK_NIT"))!=NULL)
-          damage_dl_lc_nit=atoi(damage_de13_env);
-        if(damage_dl_lc_nit<1) damage_dl_lc_nit=1;
+          dog.lc_nit=atoi(damage_de13_env);
+        if(dog.lc_nit<1) dog.lc_nit=1;
         /* the geometry of the step is proved before the first increment, on
            a J whose dogleg is known in closed form.  A failure here is
            arithmetic, so the run must not start. */
-        if(damage_dl_selftest()!=0){
+        if(dogleg_selftest()!=0){
           printf("*ERROR: the trust-region geometry self-test FAILED.  "
                  "Stopping rather than running a method whose step "
                  "construction is wrong.%s","\n");
           fflush(stdout);FORTRAN(stop,());
         }
-        if(damage_dl_maxtrial<1) damage_dl_maxtrial=1;
-        if(damage_dl_maxtrial>12) damage_dl_maxtrial=12;
-        if(damage_dl_maxeval<1) damage_dl_maxeval=1;
-        if(damage_dl_maxfact<1) damage_dl_maxfact=1;
-        if(damage_dl_maxarm<1) damage_dl_maxarm=1;
-        if(damage_dl_d0fac<=0.) damage_dl_d0fac=1.;
+        if(dog.maxtrial<1) dog.maxtrial=1;
+        if(dog.maxtrial>12) dog.maxtrial=12;
+        if(dog.maxeval<1) dog.maxeval=1;
+        if(dog.maxfact<1) dog.maxfact=1;
+        if(dog.maxarm<1) dog.maxarm=1;
+        if(dog.d0fac<=0.) dog.d0fac=1.;
         printf("[DAMAGE TR] trust-region DOGLEG armed as rescue LEVEL 3.  "
                "Levels 1 and 2 are the unchanged Rescue2 behaviour and run "
                "first; only when BOTH have failed on the same wall does the "
@@ -2640,8 +1799,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                "attempts in the whole run; on exhaustion the state is "
                "restored and the ORIGINAL stock stop runs.  Initial radius "
                "= %.3f * |p_Newton| at the first armed iteration.%s",
-               damage_dl_maxtrial,damage_dl_maxeval,damage_dl_maxfact,
-               damage_dl_maxarm,damage_dl_d0fac,"\n");
+               dog.maxtrial,dog.maxeval,dog.maxfact,
+               dog.maxarm,dog.d0fac,"\n");
         fflush(stdout);
       }
 
@@ -2663,14 +1822,14 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
          restart.  Every ending is PARTIAL. */
 
       if(ccxopt_getenv("CCX_DAMAGE_CONTINUATION")!=NULL){
-        if((damage_rescue_mode==0)||(damage_dl_mode==0)){
+        if((rsc.rescue_mode==0)||(dog.mode==0)){
           printf("*ERROR: CCX_DAMAGE_CONTINUATION requires BOTH "
                  "CCX_DAMAGE_REEQ_RESCUE2 and CCX_DAMAGE_TR_DOGLEG; it is a "
                  "level ON TOP of them, never a replacement.  Stopping.%s",
                  "\n");
           fflush(stdout);FORTRAN(stop,());
         }
-        if((damage_corr_mode==1)||(damage_reg_nlam>0)||(damage_bt_mode==1)||
+        if((rsc.corr_mode==1)||(damage_reg_nlam>0)||(rsc.bt_mode==1)||
            (damage_arc==1)||(damage_diss_ctrl>=1)||(damage_path_on>0)){
           printf("*ERROR: CCX_DAMAGE_CONTINUATION conflicts with "
                  "CCX_DAMAGE_ARCLENGTH, CCX_DISSIPATION_CONTROL, "
@@ -2681,35 +1840,35 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                  "Stopping.%s","\n");
           fflush(stdout);FORTRAN(stop,());
         }
-        damage_ct_mode=1;
-        damage_rescue_maxlevel=4;
+        ct.mode=1;
+        rsc.rescue_maxlevel=4;
         if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CT_RHOMIN"))!=NULL)
-          damage_ct_rhomin=atof(damage_de13_env);
+          ct.rhomin=atof(damage_de13_env);
         if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CT_CLIM"))!=NULL)
-          damage_ct_clim=atof(damage_de13_env);
+          ct.clim=atof(damage_de13_env);
         if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CT_ULIM"))!=NULL)
-          damage_ct_ulim=atof(damage_de13_env);
+          ct.ulim=atof(damage_de13_env);
         if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CT_EPS"))!=NULL)
-          damage_ct_eps=atof(damage_de13_env);
+          ct.eps=atof(damage_de13_env);
         if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CT_KAPTOL"))!=NULL)
-          damage_ct_kaptol=atof(damage_de13_env);
-        if(damage_ct_kaptol<1.) damage_ct_kaptol=1.5;
+          ct.kaptol=atof(damage_de13_env);
+        if(ct.kaptol<1.) ct.kaptol=1.5;
         if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CT_MAXSTEP"))!=NULL)
-          damage_ct_maxstep=atoi(damage_de13_env);
+          ct.maxstep=atoi(damage_de13_env);
         if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CT_MAXCORR"))!=NULL)
-          damage_ct_maxcorr=atoi(damage_de13_env);
+          ct.maxcorr=atoi(damage_de13_env);
         if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CT_MAXFACT"))!=NULL)
-          damage_ct_maxfact=atoi(damage_de13_env);
+          ct.maxfact=atoi(damage_de13_env);
         if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CT_MAXEVAL"))!=NULL)
-          damage_ct_maxeval=atoi(damage_de13_env);
-        if(damage_ct_rhomin<=0.) damage_ct_rhomin=1.e-4;
-        if(damage_ct_clim<=0.) damage_ct_clim=20.;
-        if(damage_ct_ulim<=0.) damage_ct_ulim=20.;
-        if(damage_ct_eps<=0.) damage_ct_eps=1.e-6;
-        if(damage_ct_maxstep<1) damage_ct_maxstep=1;
-        if(damage_ct_maxcorr<1) damage_ct_maxcorr=1;
-        if(damage_ct_maxfact<1) damage_ct_maxfact=1;
-        if(damage_ct_maxeval<1) damage_ct_maxeval=1;
+          ct.maxeval=atoi(damage_de13_env);
+        if(ct.rhomin<=0.) ct.rhomin=1.e-4;
+        if(ct.clim<=0.) ct.clim=20.;
+        if(ct.ulim<=0.) ct.ulim=20.;
+        if(ct.eps<=0.) ct.eps=1.e-6;
+        if(ct.maxstep<1) ct.maxstep=1;
+        if(ct.maxcorr<1) ct.maxcorr=1;
+        if(ct.maxfact<1) ct.maxfact=1;
+        if(ct.maxeval<1) ct.maxeval=1;
         printf("[DAMAGE CT] bounded EXPERIMENTAL continuation armed as rescue "
                "LEVEL 4.  Levels 1-3 (Rescue2 and the dogleg) are unchanged "
                "and run first.  On a wall none of them takes, lambda becomes "
@@ -2722,12 +1881,12 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                "eps_FD=%.3e kappa_tol=%.3f; budget <=%" ITGFORMAT " steps, <=%" ITGFORMAT
                " corrector iterations, <=%" ITGFORMAT " factorisations, <=%"
                ITGFORMAT " residual evaluations.%s",
-               damage_ct_rhomin,damage_ct_clim,damage_ct_ulim,damage_ct_eps,
-               damage_ct_kaptol,
-               damage_ct_maxstep,damage_ct_maxcorr,damage_ct_maxfact,
-               damage_ct_maxeval,"\n");
+               ct.rhomin,ct.clim,ct.ulim,ct.eps,
+               ct.kaptol,
+               ct.maxstep,ct.maxcorr,ct.maxfact,
+               ct.maxeval,"\n");
         fflush(stdout);
-        if(damage_ct_selftest()!=0){
+        if(damcont_selftest()!=0){
           printf("*ERROR: the continuation bordered-algebra self-test "
                  "FAILED.  Stopping rather than running a method whose "
                  "constraint row is wrong.%s","\n");
@@ -2742,7 +1901,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
          plain control and read like a negative result.  Shout instead of
          pretending. */
       if((ccxopt_getenv("CCX_DAMAGE_RESCUE_CORRIDOR")!=NULL)&&
-         (damage_corr_mode==0)){
+         (rsc.corr_mode==0)){
         printf("*ERROR: CCX_DAMAGE_RESCUE_CORRIDOR is set but the "
                "corridor did NOT arm; the run would silently be a plain "
                "control.  Stopping.%s","\n");
@@ -2755,14 +1914,14 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         fflush(stdout);FORTRAN(stop,());
       }
       if((ccxopt_getenv("CCX_DAMAGE_CONTINUATION")!=NULL)&&
-         ((damage_ct_mode==0)||(damage_rescue_maxlevel!=4))){
+         ((ct.mode==0)||(rsc.rescue_maxlevel!=4))){
         printf("*ERROR: CCX_DAMAGE_CONTINUATION is set but the continuation "
                "level did NOT arm; the run would silently be a plain "
                "Rescue2+dogleg control.  Stopping.%s","\n");
         fflush(stdout);FORTRAN(stop,());
       }
       if((ccxopt_getenv("CCX_DAMAGE_TR_DOGLEG")!=NULL)&&
-         ((damage_dl_mode==0)||(damage_rescue_maxlevel<3))){
+         ((dog.mode==0)||(rsc.rescue_maxlevel<3))){
         printf("*ERROR: CCX_DAMAGE_TR_DOGLEG is set but the dogleg level "
                "did NOT arm; the run would silently be a plain Rescue2 "
                "control.  Stopping.%s","\n");
@@ -2770,7 +1929,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
       }
       if(((ccxopt_getenv("CCX_DAMAGE_REEQ_RESCUE")!=NULL)||
           (ccxopt_getenv("CCX_DAMAGE_REEQ_RESCUE2")!=NULL))&&
-         (damage_rescue_mode==0)){
+         (rsc.rescue_mode==0)){
         printf("*ERROR: a rescue flag is set but rescue did NOT arm.  "
                "Stopping.%s","\n");
         fflush(stdout);FORTRAN(stop,());
@@ -2956,13 +2115,13 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
       }
       if(ccxopt_getenv("CCX_DAMAGE_FREE_PROBE")!=NULL) damage_free_probe=1;
       if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_NODE_DUMP"))!=NULL)
-        damage_dump_node=atoi(damage_de13_env);
+        prb.dump_node=atoi(damage_de13_env);
       if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_NODE_INC"))!=NULL)
-        damage_dump_inc=atoi(damage_de13_env);
+        prb.dump_inc=atoi(damage_de13_env);
       if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_NULLVEC"))!=NULL)
-        damage_null_inc=atoi(damage_de13_env);
+        prb.null_inc=atoi(damage_de13_env);
       if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_NULLVEC_IT"))!=NULL)
-        damage_null_nit=atoi(damage_de13_env);
+        prb.null_nit=atoi(damage_de13_env);
       if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_PATH_DROP"))!=NULL)
         damage_path_drop=atof(damage_de13_env);
       if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_PATH_NSTEP"))!=NULL)
@@ -2975,14 +2134,14 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
       if(ccxopt_getenv("CCX_DAMAGE_STIFF_PROBE")!=NULL)
         damage_stiff_probe=1;
       if(ccxopt_getenv("CCX_DAMAGE_TANGENT_CENSUS")!=NULL)
-        damage_unsym_census=1;
+        opd.unsym_census=1;
       /* resultsmech.f reads this name too and has no safe place to print
          from - it runs on several threads.  Reporting it here is what makes
          the difference between "the flag ran and changed nothing" and "the
          flag was never read", which is exactly the ambiguity that made the
          first CCX_DAMAGE_TANGENT_FULL A/B uninformative (J-10). */
       if(ccxopt_getenv("CCX_DAMAGE_TANGENT_FULL")!=NULL){
-        damage_unsym_tanfull=1;
+        opd.unsym_tanfull=1;
         printf("[DAMAGE TANGENT FULL] the consistent-tangent cut-off is "
                "taken on the SAME damage variable the stress uses instead "
                "of the stock D<0.999.  This CHANGES THE OPERATOR and "
@@ -3278,8 +2437,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 
   if(ccxopt_getenv("CCX_DAMAGE_BATCH_TRACE")!=NULL) td_trace=1;
   if(ccxopt_getenv("CCX_TOPODIAG")!=NULL) td_from=atoi(ccxopt_getenv("CCX_TOPODIAG"));
-  if(ccxopt_getenv("CCX_DAMAGE_LS_PROBE")!=NULL) damage_ls_probe=1;
-  if(ccxopt_getenv("CCX_DAMAGE_WALL_NULLVEC")!=NULL) damage_wall_null=1;
+  if(ccxopt_getenv("CCX_DAMAGE_LS_PROBE")!=NULL) rsc.ls_probe=1;
+  if(ccxopt_getenv("CCX_DAMAGE_WALL_NULLVEC")!=NULL) prb.wall_null=1;
 
   /* [WALLDIAG] Arm the increment-numbered probes by LOAD FACTOR instead.
 
@@ -3291,12 +2450,12 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
      physical coordinate the wall is recorded in, so the gate takes it. */
 
   if(ccxopt_getenv("CCX_DAMAGE_WALL_THETA")!=NULL){
-    damage_wall_theta=atof(ccxopt_getenv("CCX_DAMAGE_WALL_THETA"));
+    prb.wall_theta=atof(ccxopt_getenv("CCX_DAMAGE_WALL_THETA"));
     printf("[WALLDIAG] armed at theta >= %.9e: from the first attempt at or "
            "beyond that load factor the linearisation check, the topology "
            "diagnostic, the deflated null-vector probe and the line-search "
            "ladder probe run on the CURRENT increment, whatever its "
-           "number.%s",damage_wall_theta,"\n");
+           "number.%s",prb.wall_theta,"\n");
     fflush(stdout);
   }
   /* [WALLDIAG] MASKSTEP.  The wall measurement says 99.96% of |p_N|^2 sits
@@ -3335,7 +2494,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     fflush(stdout);
   }
   if(ccxopt_getenv("CCX_DAMAGE_WALL_MASKSTEP")!=NULL){
-    damage_wall_maskstep=1;
+    prb.wall_maskstep=1;
     printf("[WALLDIAG] MASKSTEP armed: the linearisation check gains a third "
            "pass along p_N with the AUTOSPC-masked nodes' components zeroed. "
            " Diagnostic only - nothing on a solution path reads it.%s","\n");
@@ -3414,12 +2573,12 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     }
   }
 
-  pf_env=ccxopt_getenv("CCX_PATHFOLLOW");
-  if(pf_env!=NULL){
-    pf_tauv=atof(pf_env);
-    if(!(pf_tauv>0.)){
+  pf.env=ccxopt_getenv("CCX_PATHFOLLOW");
+  if(pf.env!=NULL){
+    pf.tauv=atof(pf.env);
+    if(!(pf.tauv>0.)){
       printf("[PATHFOLLOW] *ERROR: CCX_PATHFOLLOW must be a positive "
-             "dissipation increment; got \"%s\".  Not armed.\n",pf_env);
+             "dissipation increment; got \"%s\".  Not armed.\n",pf.env);
     }else if(damage_diss_ctrl>=1){
       printf("[PATHFOLLOW] *ERROR: CCX_PATHFOLLOW and "
              "CCX_DISSIPATION_CONTROL both drive the load factor; "
@@ -3437,26 +2596,26 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     }else if(pathfollow_selftest()!=0){
       printf("[PATHFOLLOW] *ERROR: the bordered-algebra self test "
              "failed; refusing to arm.\n");
-    }else if(pathfollow_arm(pf_tauv,neq[1])==0){
+    }else if(pathfollow_arm(pf.tauv,neq[1])==0){
       printf("[PATHFOLLOW] *ERROR: could not allocate; not armed.\n");
     }else{
-      NNEW(pf_uf,double,neq[1]);
-      NNEW(pf_uref,double,mt**nk);
-      isiz=mt**nk;cpypardou(pf_uref,vold,&isiz,&num_cpus);
-      pf_neqarm=neq[1];
-      pf_taucur=pf_tauv;
-      pf_on=1;
+      NNEW(pf.uf,double,neq[1]);
+      NNEW(pf.uref,double,mt**nk);
+      isiz=mt**nk;cpypardou(pf.uref,vold,&isiz,&num_cpus);
+      pf.neqarm=neq[1];
+      pf.taucur=pf.tauv;
+      pf.on=1;
       if(ccxopt_getenv("CCX_PATHFOLLOW_CLIP")!=NULL)
-        pf_clip=atof(ccxopt_getenv("CCX_PATHFOLLOW_CLIP"));
-      if(!(pf_clip>0.)) pf_clip=0.05;
+        pf.clip=atof(ccxopt_getenv("CCX_PATHFOLLOW_CLIP"));
+      if(!(pf.clip>0.)) pf.clip=0.05;
       if(ccxopt_getenv("CCX_PATHFOLLOW_LINCHECK")!=NULL)
-        pf_lincheck=atoi(ccxopt_getenv("CCX_PATHFOLLOW_LINCHECK"));
+        pf.lincheck=atoi(ccxopt_getenv("CCX_PATHFOLLOW_LINCHECK"));
       if(ccxopt_getenv("CCX_PATHFOLLOW_DTHETA")!=NULL)
-        pf_dtheta_eng=atof(ccxopt_getenv("CCX_PATHFOLLOW_DTHETA"));
-      if(!(pf_dtheta_eng>0.)) pf_dtheta_eng=1.e-3;
+        pf.dtheta_eng=atof(ccxopt_getenv("CCX_PATHFOLLOW_DTHETA"));
+      if(!(pf.dtheta_eng>0.)) pf.dtheta_eng=1.e-3;
       printf("[PATHFOLLOW] armed: tau=%.6e per increment, "
              "|dlambda| clipped at %.3e per iteration.\n",
-             pf_tauv,pf_clip);
+             pf.tauv,pf.clip);
       printf("[PATHFOLLOW] lambda is decoupled from the step time and "
              "MAY DECREASE; theta stays monotone so dtime>0.\n");
       printf("[PATHFOLLOW] ordinary control until the measured "
@@ -3499,8 +2658,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           printf("[CRACKCTL] *ERROR: the kinematics self test failed; "
                  "refusing to arm.\n");
         }else{
-          pf_dphi=atof(ccxopt_getenv("CCX_CRACK_CONTROL"));
-          if(!(pf_dphi>0.)){
+          pf.dphi=atof(ccxopt_getenv("CCX_CRACK_CONTROL"));
+          if(!(pf.dphi>0.)){
             printf("[CRACKCTL] *ERROR: CCX_CRACK_CONTROL must be a "
                    "positive control increment.  Not armed.\n");
           }else{
@@ -3508,43 +2667,43 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                LOADING.  Measured on the target, the unrestricted zone
                mean runs backwards while the loading mean advances
                monotonically - see crackcontrol.c. */
-            pf_ccmode=2;
+            pf.ccmode=2;
             cce=ccxopt_getenv("CCX_CRACK_CONTROL_MODE");
             if(cce!=NULL){
-              if((strcmp(cce,"MEAN")==0)||(strcmp(cce,"0")==0)) pf_ccmode=0;
-              else if((strcmp(cce,"ZONE")==0)||(strcmp(cce,"1")==0)) pf_ccmode=1;
-              else if((strcmp(cce,"DISS")==0)||(strcmp(cce,"2")==0)) pf_ccmode=2;
+              if((strcmp(cce,"MEAN")==0)||(strcmp(cce,"0")==0)) pf.ccmode=0;
+              else if((strcmp(cce,"ZONE")==0)||(strcmp(cce,"1")==0)) pf.ccmode=1;
+              else if((strcmp(cce,"DISS")==0)||(strcmp(cce,"2")==0)) pf.ccmode=2;
               else printf("[CRACKCTL] unknown CCX_CRACK_CONTROL_MODE "
                           "\"%s\"; keeping DISS\n",cce);
             }
             cce=ccxopt_getenv("CCX_CRACK_CONTROL_ENGAGE");
-            if(cce!=NULL) pf_ccengage=atoi(cce);
+            if(cce!=NULL) pf.ccengage=atoi(cce);
             cce=ccxopt_getenv("CCX_CRACK_CONTROL_EPS");
-            if(cce!=NULL) pf_eps=atof(cce);
-            if(!(pf_eps>0.)) pf_eps=1.e-5;
+            if(cce!=NULL) pf.eps=atof(cce);
+            if(!(pf.eps>0.)) pf.eps=1.e-5;
             cce=ccxopt_getenv("CCX_CRACK_CONTROL_GROW");
-            if(cce!=NULL) pf_ccgrow=atof(cce);
-            if(!(pf_ccgrow>=1.)) pf_ccgrow=1.1;
-            NNEW(pf_cvec,double,neq[1]);
-            if(pathfollow_cod_arm(pf_cvec,neq[1])==1){
-              pf_codmode=2;
-              pf_ccarmed=1;
-              pf_dphicur=pf_dphi;
-              pf_engaged=0;      /* ordinary control until the crack has
+            if(cce!=NULL) pf.ccgrow=atof(cce);
+            if(!(pf.ccgrow>=1.)) pf.ccgrow=1.1;
+            NNEW(pf.cvec,double,neq[1]);
+            if(pathfollow_cod_arm(pf.cvec,neq[1])==1){
+              pf.codmode=2;
+              pf.ccarmed=1;
+              pf.dphicur=pf.dphi;
+              pf.engaged=0;      /* ordinary control until the crack has
                                     a process zone to control          */
               printf("[CRACKCTL] armed on %" ITGFORMAT " UC6 facet(s): "
                      "mode=%s, control increment dphi=%.6e per "
                      "increment.\n",ncoh,
-                     (pf_ccmode==0)?"MEAN (all facets)":
-                     ((pf_ccmode==1)?"ZONE (process zone)":
-                      "DISS (cohesive dissipation)"),pf_dphi);
+                     (pf.ccmode==0)?"MEAN (all facets)":
+                     ((pf.ccmode==1)?"ZONE (process zone)":
+                      "DISS (cohesive dissipation)"),pf.dphi);
               printf("[CRACKCTL] the functional is refrozen from the "
                      "committed state at every attempt and the "
                      "constraint is incremental: g = c^T(u-u_n) - "
                      "dphi.\n");
-              if(pf_ccengage>0)
+              if(pf.ccengage>0)
                 printf("[CRACKCTL] engagement deferred to increment %"
-                       ITGFORMAT ".\n",pf_ccengage);
+                       ITGFORMAT ".\n",pf.ccengage);
               else
                 printf("[CRACKCTL] engages as soon as the process zone "
                        "is non-empty.\n");
@@ -3568,7 +2727,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           printf("[PATHFOLLOW] *ERROR: CCX_PATHFOLLOW_COD needs UC6 "
                  "cohesive elements; none found.  Not armed.\n");
         }else{
-          NNEW(pf_cvec,double,neq[1]);
+          NNEW(pf.cvec,double,neq[1]);
           cw=1./(3.*(double)ncoh);
           for(ce=0;ce<*ne;ce++){
             if(ipkon[ce]<0) continue;
@@ -3594,25 +2753,25 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                 cnp=kon[ipkon[ce]+ci+3];    /* plus side  */
                 for(ck=1;ck<mt;ck++){
                   cdof=nactdof[mt*(cnp-1)+ck];
-                  if(cdof>0) pf_cvec[cdof-1]+=cw*csh[ci]*cnv[ck-1];
+                  if(cdof>0) pf.cvec[cdof-1]+=cw*csh[ci]*cnv[ck-1];
                   cdof=nactdof[mt*(cn-1)+ck];
-                  if(cdof>0) pf_cvec[cdof-1]-=cw*csh[ci]*cnv[ck-1];
+                  if(cdof>0) pf.cvec[cdof-1]-=cw*csh[ci]*cnv[ck-1];
                 }
               }
             }
           }
-          pf_dphi=atof(ccxopt_getenv("CCX_PATHFOLLOW_COD"));
-          if(!(pf_dphi>0.)) pf_dphi=5.e-5;
-          if(pathfollow_cod_arm(pf_cvec,neq[1])==1){
-            pf_codmode=1;
-            pf_engaged=1;     /* no warm-up: phi is meaningful at once */
+          pf.dphi=atof(ccxopt_getenv("CCX_PATHFOLLOW_COD"));
+          if(!(pf.dphi>0.)) pf.dphi=5.e-5;
+          if(pathfollow_cod_arm(pf.cvec,neq[1])==1){
+            pf.codmode=1;
+            pf.engaged=1;     /* no warm-up: phi is meaningful at once */
             printf("[PATHFOLLOW] crack-opening control armed on %"
                    ITGFORMAT " UC6 facet(s); mean normal separation "
-                   "advances by %.6e per increment.\n",ncoh,pf_dphi);
+                   "advances by %.6e per increment.\n",ncoh,pf.dphi);
             {ITG cnz=0; double cnn=0.;
              for(ce=0;ce<neq[1];ce++){
-               cnn+=pf_cvec[ce]*pf_cvec[ce];
-               if(pf_cvec[ce]!=0.) cnz++;}
+               cnn+=pf.cvec[ce]*pf.cvec[ce];
+               if(pf.cvec[ce]!=0.) cnz++;}
              printf("[PATHFOLLOW] control functional: |c|=%.6e, %"
                     ITGFORMAT " non-zero of %" ITGFORMAT " equations\n",
                     sqrt(cnn),cnz,neq[1]);}
@@ -3755,7 +2914,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                "tangent, which buys 0.2%% of iterations for 37%% of "
                "runtime\n");
       }
-      if(damage_reeq_scale_mode==1){
+      if(rsc.reeq_scale_mode==1){
         printf("[DAMAGE SOLVER NC2] terminal same-load correction scale "
                "uses the converged physical-increment displacement norm; "
                "stock residual/correction tolerances retained\n");
@@ -3763,7 +2922,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         printf("[DAMAGE SOLVER NC2] stock zero-load re-equilibration scale; "
                "set CCX_DAMAGE_REEQ_SCALE=PHYSICAL for NC2 trial\n");
       }
-      if(damage_reeq_uam_floor>0.){
+      if(rsc.reeq_uam_floor>0.){
         printf("[DAMAGE REEQ FLOOR] DIAGNOSTIC: the re-equilibration "
                "displacement reference is held at or above %.3e of its "
                "running maximum, so the RELATIVE correction criterion "
@@ -3772,9 +2931,9 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                "the step cannot converge it (J-09).  This CHANGES THE "
                "CONVERGENCE CRITERION and therefore the answer; going "
                "further with it is not by itself a success\n",
-               damage_reeq_uam_floor);
+               rsc.reeq_uam_floor);
       }
-      if(damage_linesearch_mode==1){
+      if(rsc.linesearch_mode==1){
         printf("[DAMAGE SOLVER BK3] adaptive line search enabled "
                "(growth=%.2f lambda=[%.2f,%.2f] trials=%d); full Newton retained "
                "while residual contracts\n",DAMAGE_LINESEARCH_GROWTH,
@@ -3795,14 +2954,14 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
          clamps measurable instead of assumed.  Defaults are the compiled-in
          values, so an unset environment is bit-identical. */
       if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_LS_MIN"))!=NULL){
-        damage_ls_min=atof(damage_de13_env);
-        if(damage_ls_min<1.e-6) damage_ls_min=1.e-6;
-        if(damage_ls_min>DAMAGE_LINESEARCH_MAX) damage_ls_min=DAMAGE_LINESEARCH_MAX;
+        rsc.ls_min=atof(damage_de13_env);
+        if(rsc.ls_min<1.e-6) rsc.ls_min=1.e-6;
+        if(rsc.ls_min>DAMAGE_LINESEARCH_MAX) rsc.ls_min=DAMAGE_LINESEARCH_MAX;
       }
       if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_LS_TRIALS"))!=NULL){
-        damage_ls_trials=atoi(damage_de13_env);
-        if(damage_ls_trials<1) damage_ls_trials=1;
-        if(damage_ls_trials>32) damage_ls_trials=32;
+        rsc.ls_trials=atoi(damage_de13_env);
+        if(rsc.ls_trials<1) rsc.ls_trials=1;
+        if(rsc.ls_trials>32) rsc.ls_trials=32;
       }
 
       /* ---- THE BACKTRACKING LADDER ---------------------------------
@@ -3839,29 +2998,29 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                "test failed; disabling the adaptive line search rather "
                "than running with a rule that is not the one that was "
                "tested.\n");
-        damage_linesearch_mode=0;
+        rsc.linesearch_mode=0;
       }
 
       if(ccxopt_getenv("CCX_DAMAGE_LS_LEGACY")!=NULL){
-        damage_ls_legacy=1;
-        damage_ls_min=DAMAGE_LINESEARCH_MIN;
-        damage_ls_trials=DAMAGE_LINESEARCH_MAX_TRIALS;
+        rsc.ls_legacy=1;
+        rsc.ls_min=DAMAGE_LINESEARCH_MIN;
+        rsc.ls_trials=DAMAGE_LINESEARCH_MAX_TRIALS;
         printf("[DAMAGE LINESEARCH] LEGACY ladder: floor %.2f, %d trials, "
                "and the last trial is taken whether or not it contracts.\n",
                DAMAGE_LINESEARCH_MIN,DAMAGE_LINESEARCH_MAX_TRIALS);
       }else{
-        if(ccxopt_getenv("CCX_DAMAGE_LS_MIN")==NULL) damage_ls_min=1.e-3;
-        if(ccxopt_getenv("CCX_DAMAGE_LS_TRIALS")==NULL) damage_ls_trials=8;
+        if(ccxopt_getenv("CCX_DAMAGE_LS_MIN")==NULL) rsc.ls_min=1.e-3;
+        if(ccxopt_getenv("CCX_DAMAGE_LS_TRIALS")==NULL) rsc.ls_trials=8;
         printf("[DAMAGE LINESEARCH] ladder: floor %.4e, up to %"
                ITGFORMAT " trials, and the BEST alpha measured is taken "
-               "when none contracts.\n",damage_ls_min,damage_ls_trials);
+               "when none contracts.\n",rsc.ls_min,rsc.ls_trials);
       }
-      if((damage_ls_min!=DAMAGE_LINESEARCH_MIN)||
-         (damage_ls_trials!=DAMAGE_LINESEARCH_MAX_TRIALS)){
+      if((rsc.ls_min!=DAMAGE_LINESEARCH_MIN)||
+         (rsc.ls_trials!=DAMAGE_LINESEARCH_MAX_TRIALS)){
         printf("[DAMAGE LINESEARCH] floor %.4e (default %.2f), "
                "max trials %" ITGFORMAT " (default %d)\n",
-               damage_ls_min,DAMAGE_LINESEARCH_MIN,
-               damage_ls_trials,DAMAGE_LINESEARCH_MAX_TRIALS);
+               rsc.ls_min,DAMAGE_LINESEARCH_MIN,
+               rsc.ls_trials,DAMAGE_LINESEARCH_MAX_TRIALS);
       }
 
       }else{
@@ -4502,7 +3661,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     if((icutb==0)&&(idamagereeq==0)){
 
       /* ---- [DAMAGE CORR] one pass per converged increment ---------- */
-      if(damage_corr_mode==1){
+      if(rsc.corr_mode==1){
         if((damage_rec_used_in_inc==0)&&(damage_reg_on==0)){
           /* The crawl breaker needs a reference from HEALTHY operation.
              Taking it from the last clean increment before entry is
@@ -4518,14 +3677,14 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           damage_dth_i=(damage_dth_i+1)%20;
           if(damage_dth_n<20) damage_dth_n++;
         }
-        if(damage_corr_on==1){
+        if(rsc.corr_on==1){
           ITG cbrk=0;
           double cmean;
-          damage_corr_ninc++;
-          damage_corr_nsince++;
-          damage_corr_nwallstab=0;
-          damage_corr_dtsum+=dtheta;damage_corr_dtn++;
-          damage_corr_nfact+=damage_reg_napply;
+          rsc.corr_ninc++;
+          rsc.corr_nsince++;
+          rsc.corr_nwallstab=0;
+          rsc.corr_dtsum+=dtheta;rsc.corr_dtn++;
+          rsc.corr_nfact+=damage_reg_napply;
           /* A probe stays a PROBE until it has survived stableneed
              converged increments.  Clearing the flag after the FIRST
              success - the earlier draft did - makes a failure on the
@@ -4534,34 +3693,34 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
              proven value instead of falling back to it.  The flag and
              the promotion of lamstable must therefore happen together,
              and only once nsince has been reached. */
-          if((damage_corr_trial==1)&&
-             (damage_corr_nsince>=damage_corr_stableneed)){
-            damage_corr_lamstable=damage_corr_lam;
-            damage_corr_trial=0;
+          if((rsc.corr_trial==1)&&
+             (rsc.corr_nsince>=rsc.corr_stableneed)){
+            rsc.corr_lamstable=rsc.corr_lam;
+            rsc.corr_trial=0;
             printf("[DAMAGE CORR] lambda=%.3e has held %" ITGFORMAT
                    " increments and is now the PROVEN value%s",
-                   damage_corr_lam,damage_corr_nsince,"\n");
+                   rsc.corr_lam,rsc.corr_nsince,"\n");
           }
-          if(damage_corr_lam<=0.) damage_corr_clean++;
-          else damage_corr_clean=0;
-          cmean=(damage_corr_dtn>0)?damage_corr_dtsum/damage_corr_dtn:0.;
-          if(damage_corr_clean>=damage_corr_exit){
+          if(rsc.corr_lam<=0.) rsc.corr_clean++;
+          else rsc.corr_clean=0;
+          cmean=(rsc.corr_dtn>0)?rsc.corr_dtsum/rsc.corr_dtn:0.;
+          if(rsc.corr_clean>=rsc.corr_exit){
             printf("[DAMAGE CORR] EXIT: %" ITGFORMAT " consecutive "
                    "increments converged with NO help.  Corridor: %"
                    ITGFORMAT " increments, %" ITGFORMAT " intervention(s), "
                    "%" ITGFORMAT " regularized factorisation(s), step time "
                    "gained %.6e, mean dtime inside %.6e against reference "
                    "%.6e.  Stock Newton has the run back.%s",
-                   damage_corr_clean,damage_corr_ninc,damage_corr_nint,
-                   damage_corr_nfact,(theta-damage_corr_theta0)**tper,
-                   cmean**tper,damage_corr_dtref**tper,"\n");
+                   rsc.corr_clean,rsc.corr_ninc,rsc.corr_nint,
+                   rsc.corr_nfact,(theta-rsc.corr_theta0)**tper,
+                   cmean**tper,rsc.corr_dtref**tper,"\n");
             fflush(stdout);
-            damage_corr_on=0;damage_reg_on=0;damage_corr_lam=0.;
+            rsc.corr_on=0;damage_reg_on=0;rsc.corr_lam=0.;
           }else{
-            if(damage_corr_ninc>damage_corr_maxinc) cbrk=1;
-            if((cbrk==0)&&(damage_corr_ninc>damage_corr_grace)&&
-               (damage_corr_dtref>0.)&&
-               (cmean<damage_corr_minfrac*damage_corr_dtref)) cbrk=2;
+            if(rsc.corr_ninc>rsc.corr_maxinc) cbrk=1;
+            if((cbrk==0)&&(rsc.corr_ninc>rsc.corr_grace)&&
+               (rsc.corr_dtref>0.)&&
+               (cmean<rsc.corr_minfrac*rsc.corr_dtref)) cbrk=2;
             if(cbrk>0){
               printf("[DAMAGE CORR] CIRCUIT BREAKER (%s): %" ITGFORMAT
                      " increments, %" ITGFORMAT " intervention(s), %"
@@ -4570,30 +3729,30 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                      "  Carried, not recovering: the corridor closes, the "
                      "mechanism DISARMS, and the next wall goes to the "
                      "original stock stop.%s",
-                     (cbrk==1)?"length":"crawl",damage_corr_ninc,
-                     damage_corr_nint,damage_corr_nfact,
-                     (theta-damage_corr_theta0)**tper,cmean**tper,
-                     damage_corr_dtref**tper,"\n");
+                     (cbrk==1)?"length":"crawl",rsc.corr_ninc,
+                     rsc.corr_nint,rsc.corr_nfact,
+                     (theta-rsc.corr_theta0)**tper,cmean**tper,
+                     rsc.corr_dtref**tper,"\n");
               fflush(stdout);
-              damage_corr_on=0;damage_reg_on=0;damage_corr_lam=0.;
+              rsc.corr_on=0;damage_reg_on=0;rsc.corr_lam=0.;
               damage_rec_disarmed=1;
             }else{
-              damage_corr_try--;
-              if((damage_corr_try<=0)&&(damage_corr_lam>0.)&&
-                 (damage_corr_trial==0)&&
-                 (damage_corr_nsince>=damage_corr_stableneed)){
-                damage_corr_try=damage_corr_tryevery;
-                damage_corr_lam=damage_corr_lamstable*0.25;
-                if(damage_corr_lam<1.e-4) damage_corr_lam=0.;
-                damage_corr_trial=1;
-                damage_corr_nsince=0;
+              rsc.corr_try--;
+              if((rsc.corr_try<=0)&&(rsc.corr_lam>0.)&&
+                 (rsc.corr_trial==0)&&
+                 (rsc.corr_nsince>=rsc.corr_stableneed)){
+                rsc.corr_try=rsc.corr_tryevery;
+                rsc.corr_lam=rsc.corr_lamstable*0.25;
+                if(rsc.corr_lam<1.e-4) rsc.corr_lam=0.;
+                rsc.corr_trial=1;
+                rsc.corr_nsince=0;
                 printf("[DAMAGE CORR] probing weaker help: lambda %.3e -> "
                        "%.3e (proven value kept for fallback)%s",
-                       damage_corr_lamstable,damage_corr_lam,"\n");
+                       rsc.corr_lamstable,rsc.corr_lam,"\n");
                 fflush(stdout);
               }
-              damage_reg_lambda=damage_corr_lam;
-              damage_reg_on=(damage_corr_lam>0.)?1:0;
+              damage_reg_lambda=rsc.corr_lam;
+              damage_reg_on=(rsc.corr_lam>0.)?1:0;
             }
           }
           damage_reg_napply=0;
@@ -4608,22 +3767,22 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
       /* [DAMAGE CT] acceptance needs BOTH the stock residual criteria and
          the constraint.  checkconvergence has already accepted on R; the
          constraint is verified here, before anything is committed. */
-      if((damage_ct_on==1)&&(fabs(damage_ct_cprev)>damage_ct_tolc)){
+      if((ct.on==1)&&(fabs(ct.cprev)>ct.tolc)){
         printf("[DAMAGE CT] increment accepted on R but the CONSTRAINT is "
                "not satisfied: |c|=%.6e > tol_c=%.6e.  Requesting the clean "
                "PARTIAL exit rather than committing a state that does not "
                "lie on the constraint.%s",
-               fabs(damage_ct_cprev),damage_ct_tolc,"\n");
+               fabs(ct.cprev),ct.tolc,"\n");
         fflush(stdout);
-        damage_ct_partial=1;damage_ct_on=0;
+        ct.partial=1;ct.on=0;
       }
       /* [DAMAGE CT] lambda >= 1 is NOT a completion in this MVP. */
-      if((damage_ct_on==1)&&(damage_ct_lam>=1.)){
+      if((ct.on==1)&&(ct.lam>=1.)){
         printf("[DAMAGE CT] lambda has reached %.12e >= 1.  The MVP has no "
                "terminal landing, so this is a PARTIAL stop, not a "
-               "completed step.%s",damage_ct_lam,"\n");
+               "completed step.%s",ct.lam,"\n");
         fflush(stdout);
-        damage_ct_partial=1;damage_ct_on=0;
+        ct.partial=1;ct.on=0;
       }
       if(damage_rec_used_in_inc==0){
         damage_rec_healthy++;
@@ -4631,24 +3790,24 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
            INCREMENT NUMBERS rather than from a running flag.  The previous
            counter was incremented in one place and cleared in two, and its
            message carried no inc= token, so nothing reading the log could
-           attribute it - both defects are fixed here.  damage_dl_lasthelp is
+           attribute it - both defects are fixed here.  dog.lasthelp is
            the increment of the last Rescue or trust-region firing of ANY
            level; iinc is the increment just committed, so the difference is
            the number of increments since then, and every one of them
            committed without help or lasthelp would have moved. */
-        if((damage_dl_narm>0)&&(damage_dl_lasthelp>0)&&
-           (iinc>damage_dl_lasthelp)){
-          damage_dl_selfrec=iinc-damage_dl_lasthelp;
-          if((damage_dl_selfrec>=5)&&
-             (damage_dl_recdone!=damage_dl_lasthelp)){
-            damage_dl_recdone=damage_dl_lasthelp;
+        if((dog.narm>0)&&(dog.lasthelp>0)&&
+           (iinc>dog.lasthelp)){
+          dog.selfrec=iinc-dog.lasthelp;
+          if((dog.selfrec>=5)&&
+             (dog.recdone!=dog.lasthelp)){
+            dog.recdone=dog.lasthelp;
             printf("[DAMAGE TR] SELF-RECOVERY inc=%" ITGFORMAT
                    ": increments %" ITGFORMAT "..%" ITGFORMAT
                    " - five consecutive - committed with PLAIN NEWTON, no "
                    "Rescue and no trust region, since the help at inc=%"
                    ITGFORMAT "; step time is now %.12e.  This, and not "
                    "t_end, is the criterion the method was built to meet.%s",
-                   iinc,damage_dl_lasthelp+1,iinc,damage_dl_lasthelp,
+                   iinc,dog.lasthelp+1,iinc,dog.lasthelp,
                    theta**tper,"\n");
             fflush(stdout);
           }
@@ -4665,11 +3824,11 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
       }
       damage_rec_used_in_inc=0;
 
-      if(damage_rescue_bt_on==1){
-        damage_rescue_bt_on=0;
-        damage_rescue_used=0;
-        damage_evt_on=0;
-        if(damage_dl_on==1){
+      if(rsc.rescue_bt_on==1){
+        rsc.rescue_bt_on=0;
+        rsc.rescue_used=0;
+        prb.evt_on=0;
+        if(dog.on==1){
           printf("[DAMAGE TR] inc=%" ITGFORMAT " the TRUST-REGION attempt "
                  "CONVERGED at step time %.12e, judged by checkconvergence "
                  "on the UNMODIFIED residual.  The trust region switches OFF and the run "
@@ -4681,26 +3840,26 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                  ITGFORMAT " armed factorisation(s).  Whether the method "
                  "WORKED is decided by the next five increments, not by "
                  "this line.%s",
-                 iinc,theta**tper,damage_dl_nnewt,damage_dl_ncau,
-                 damage_dl_ndog,
-                 damage_dl_nfail,damage_dl_nrej,damage_dl_neval,
-                 damage_dl_nfact,"\n");
+                 iinc,theta**tper,dog.nnewt,dog.ncau,
+                 dog.ndog,
+                 dog.nfail,dog.nrej,dog.neval,
+                 dog.nfact,"\n");
           fflush(stdout);
         }
-        damage_dl_on=0;
-        damage_dl_delta=0.;
-        if((damage_reg_on==1)&&(damage_corr_mode==1)&&
-           (damage_corr_on==0)){
-          damage_corr_on=1;
-          damage_corr_lam=damage_reg_lambda;
-          damage_corr_lamstable=damage_reg_lambda;
-          damage_corr_ninc=0;damage_corr_nint=1;
-          damage_corr_nfact=damage_reg_napply;
-          damage_corr_clean=0;damage_corr_try=damage_corr_tryevery;
-          damage_corr_dtsum=0.;damage_corr_dtn=0;
-          damage_corr_trial=0;damage_corr_nsince=0;
-          damage_corr_nwallstab=0;damage_corr_nwalltot=0;
-          damage_corr_theta0=theta;
+        dog.on=0;
+        dog.delta=0.;
+        if((damage_reg_on==1)&&(rsc.corr_mode==1)&&
+           (rsc.corr_on==0)){
+          rsc.corr_on=1;
+          rsc.corr_lam=damage_reg_lambda;
+          rsc.corr_lamstable=damage_reg_lambda;
+          rsc.corr_ninc=0;rsc.corr_nint=1;
+          rsc.corr_nfact=damage_reg_napply;
+          rsc.corr_clean=0;rsc.corr_try=rsc.corr_tryevery;
+          rsc.corr_dtsum=0.;rsc.corr_dtn=0;
+          rsc.corr_trial=0;rsc.corr_nsince=0;
+          rsc.corr_nwallstab=0;rsc.corr_nwalltot=0;
+          rsc.corr_theta0=theta;
           {ITG mi1,mj1;double mtmp,msort[20];
            for(mi1=0;mi1<damage_dth_n;mi1++) msort[mi1]=damage_dth_ring[mi1];
            for(mi1=1;mi1<damage_dth_n;mi1++){
@@ -4709,7 +3868,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                msort[mj1]=msort[mj1-1];
              msort[mj1]=mtmp;
            }
-           damage_corr_dtref=(damage_dth_n>0)?msort[damage_dth_n/2]:
+           rsc.corr_dtref=(damage_dth_n>0)?msort[damage_dth_n/2]:
                                               damage_dtheta_healthy;
           }
           printf("[DAMAGE CORR] ENTERED at step time %.12e with "
@@ -4718,8 +3877,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                  " clean increments = %.6e (the last clean increment "
                  "alone was %.6e and sits at the wall, so it is not a "
                  "healthy reference)%s",
-                 theta**tper,damage_corr_lam,damage_reg_napply,
-                 damage_dth_n,damage_corr_dtref**tper,
+                 theta**tper,rsc.corr_lam,damage_reg_napply,
+                 damage_dth_n,rsc.corr_dtref**tper,
                  damage_dtheta_healthy**tper,"\n");
           fflush(stdout);
         }else if(damage_reg_on==1){
@@ -4729,12 +3888,12 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                  damage_reg_napply,damage_reg_lambda,"\n");
           fflush(stdout);
         }
-        if(damage_corr_on==0) damage_reg_on=0;
-        damage_rescue_nok++;
+        if(rsc.corr_on==0) damage_reg_on=0;
+        rsc.rescue_nok++;
         printf("[DAMAGE RESCUE] ACCEPTED: the rescue increment converged at "
                "step time %.12e; backtracking switched OFF, rescue re-armed "
                "(%" ITGFORMAT " accepted of %" ITGFORMAT " fired)%s",
-               theta**tper,damage_rescue_nok,damage_rescue_nfired,"\n");
+               theta**tper,rsc.rescue_nok,rsc.rescue_nfired,"\n");
         fflush(stdout);
       }
 	  
@@ -4748,13 +3907,13 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
          is alive here, whereas stx belongs to the iteration.
          Commit-only, so a cutback cannot corrupt it. */
 
-      if(damage_ct_mode==1){
+      if(ct.mode==1){
         ITG cti,ctj,ctn;
         double ctd;
-        if(damage_ct_alloc==0){
-          NNEW(damage_ct_ring,double,18*mi[0]*ne0);
-          NNEW(damage_ct_fl,ITG,6*mi[0]*ne0);
-          damage_ct_alloc=1;damage_ct_head=0;damage_ct_nring=0;
+        if(ct.alloc==0){
+          NNEW(ct.ring,double,18*mi[0]*ne0);
+          NNEW(ct.fl,ITG,6*mi[0]*ne0);
+          ct.alloc=1;ct.head=0;ct.nring=0;
           printf("[DAMAGE CT] ring allocated: 6 committed endpoints x %"
                  ITGFORMAT " integration points (%.1f MB).  It fills from "
                  "this commit onwards and changes nothing until arming.%s",
@@ -4763,36 +3922,36 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           fflush(stdout);
         }
         ctn=mi[0]*ne0;
-        damage_ct_head=(damage_ct_nring==0)?0:((damage_ct_head+1)%6);
-        damage_ct_snap(co,kon,ipkon,lakon,vold,sti,xstate,ne0,mi[0],
+        ct.head=(ct.nring==0)?0:((ct.head+1)%6);
+        damcont_snap(co,kon,ipkon,lakon,vold,sti,xstate,ne0,mi[0],
                        *nstate_,mt,
-                       &damage_ct_ring[3*ctn*damage_ct_head],
-                       &damage_ct_fl[ctn*damage_ct_head]);
-        if(damage_ct_nring>0){
+                       &ct.ring[3*ctn*ct.head],
+                       &ct.fl[ctn*ct.head]);
+        if(ct.nring>0){
           ctd=0.;
           for(cti=0;cti<*nk;cti++)
             for(ctj=1;ctj<mt;ctj++)
               if(fabs(vold[mt*cti+ctj]-vini[mt*cti+ctj])>ctd)
                 ctd=fabs(vold[mt*cti+ctj]-vini[mt*cti+ctj]);
-          damage_ct_duinf[damage_ct_head]=ctd;
-          damage_ct_dt[damage_ct_head]=dtime;
-          damage_ct_dlam[damage_ct_head]=dtheta;
+          ct.duinf[ct.head]=ctd;
+          ct.dt[ct.head]=dtime;
+          ct.dlam[ct.head]=dtheta;
         }
-        if(damage_ct_nring<6) damage_ct_nring++;
+        if(ct.nring<6) ct.nring++;
 
         /* ---- [DAMAGE CT] continuation commit lifecycle ----------------
            A committed increment while armed IS one accepted continuation
            step: advance lambda_c and delta_c, count the step, re-establish
            dtime = kappa*ds for the next one, and measure physical progress
            P1/P2/P3.  delta_c itself is re-anchored by the corrector at the
-           first iteration of the next step (damage_ct_newstep), so only the
+           first iteration of the next step (ct.newstep), so only the
            bookkeeping is done here. */
-        if(damage_ct_on==1){
+        if(ct.on==1){
           ITG cp1=0,cp2=0,cp3=0,cq;
           double cpd0;
-          damage_ct_step++;damage_ct_ncommit++;
-          damage_ct_lamc=damage_ct_lam;
-          damage_ct_newstep=1;
+          ct.step++;ct.ncommit++;
+          ct.lamc=ct.lam;
+          ct.newstep=1;
           for(cti=0;cti<ne0;cti++){
             if(ipkon[cti]<0){cp2++;continue;}
             if(lakon[8*cti]!='U') continue;
@@ -4807,9 +3966,9 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
               if(xstate[*nstate_*cq]>cpd0) cp3++;
             }
           }
-          if((cp1>damage_ct_p1r)||(cp2>damage_ct_p2r)||
-             (cp3>=damage_ct_p3r+5)) damage_ct_nprog=0;
-          else damage_ct_nprog++;
+          if((cp1>ct.p1r)||(cp2>ct.p2r)||
+             (cp3>=ct.p3r+5)) ct.nprog=0;
+          else ct.nprog++;
           printf("[DAMAGE CT] COMMIT step=%" ITGFORMAT " inc=%" ITGFORMAT
                  " lambda=%.12e theta=%.12e ds=%.6e dtime=%.6e ; "
                  "P1 failed facets %" ITGFORMAT " (was %" ITGFORMAT
@@ -4817,26 +3976,26 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                  "), P3 ip with dmax>d0 %" ITGFORMAT " (was %" ITGFORMAT
                  ") ; quiet windows %" ITGFORMAT "/10 ; evals %" ITGFORMAT
                  " fact %" ITGFORMAT "%s",
-                 damage_ct_step,iinc,damage_ct_lam,theta,damage_ct_ds,dtime,
-                 cp1,damage_ct_p1r,cp2,damage_ct_p2r,cp3,damage_ct_p3r,
-                 damage_ct_nprog,damage_ct_neval,damage_ct_nfact,"\n");
+                 ct.step,iinc,ct.lam,theta,ct.ds,dtime,
+                 cp1,ct.p1r,cp2,ct.p2r,cp3,ct.p3r,
+                 ct.nprog,ct.neval,ct.nfact,"\n");
           fflush(stdout);
-          damage_ct_p1r=cp1;damage_ct_p2r=cp2;damage_ct_p3r=cp3;
-          if((damage_ct_nprog>=10)||
-             (damage_ct_step>=damage_ct_maxstep)||
-             (damage_ct_neval>=damage_ct_maxeval)||
-             (damage_ct_nfact>=damage_ct_maxfact)){
+          ct.p1r=cp1;ct.p2r=cp2;ct.p3r=cp3;
+          if((ct.nprog>=10)||
+             (ct.step>=ct.maxstep)||
+             (ct.neval>=ct.maxeval)||
+             (ct.nfact>=ct.maxfact)){
             printf("[DAMAGE CT] segment ENDS: %s.  Requesting the clean "
                    "PARTIAL exit.%s",
-                   (damage_ct_nprog>=10)?
+                   (ct.nprog>=10)?
                    "no physical progress (P1=P2=P3 unchanged) over 10 "
                    "committed continuation steps":
-                   ((damage_ct_step>=damage_ct_maxstep)?"step budget":
-                    ((damage_ct_neval>=damage_ct_maxeval)?
+                   ((ct.step>=ct.maxstep)?"step budget":
+                    ((ct.neval>=ct.maxeval)?
                      "residual-evaluation budget":"factorisation budget")),
                    "\n");
             fflush(stdout);
-            damage_ct_partial=1;damage_ct_on=0;
+            ct.partial=1;ct.on=0;
           }
         }
       }
@@ -4850,8 +4009,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
       damage_fast_retry=0;
       damage_fast_used=0;
       damage_fast_recover=0;
-      damage_reeq_uam_ref[0]=0.;
-      damage_reeq_uam_ref[1]=0.;
+      rsc.reeq_uam_ref[0]=0.;
+      rsc.reeq_uam_ref[1]=0.;
 
       /* A new physical increment starts with no pending DE1.3 terminal
          triggers.  Entries are populated only at the exact topology-change
@@ -4888,12 +4047,12 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
          difference is identically zero.  A rejected attempt never reaches
          this block, which is what makes the constraint transactional. */
 
-      if((pf_on==1)&&(pf_pending==1)&&(pathfollow_have()==1)){
-        pf_pdu=pf_project(pathfollow_fhat(),vold,vini,nactdof,*nk,mt);
-        if(pf_codmode==1){
-          pathfollow_cod_settarget(pathfollow_cod_target()+pf_dphi);
-          pf_dgc=pf_cu;
-        }else if(pf_codmode==2){
+      if((pf.on==1)&&(pf.pending==1)&&(pathfollow_have()==1)){
+        pf.pdu=pathfollow_project(pathfollow_fhat(),vold,vini,nactdof,*nk,mt);
+        if(pf.codmode==1){
+          pathfollow_cod_settarget(pathfollow_cod_target()+pf.dphi);
+          pf.dgc=pf.cu;
+        }else if(pf.codmode==2){
 
           /* CONSTRAINT RESIDUAL AT THE ACCEPTED STATE.  Everything else
              the driver prints is measured mid-iteration, before the last
@@ -4902,67 +4061,67 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
              state, vini is still the committed one, and the projection
              uses the same c the corrector used. */
 
-          pf_phiacc=pf_project(pathfollow_cod_c(),vold,vini,nactdof,*nk,mt);
-          pf_gacc=pf_phiacc-pf_dphicur;
+          pf.phiacc=pathfollow_project(pathfollow_cod_c(),vold,vini,nactdof,*nk,mt);
+          pf.gacc=pf.phiacc-pf.dphicur;
         }
-        pathfollow_commit(pf_lam,pf_pdu,&pf_dgc);
-        if(pf_engaged==1){
-          pf_taucur*=1.4;
-          if(pf_taucur>pf_tauv) pf_taucur=pf_tauv;
-          pathfollow_settau(pf_taucur);
-          if(pf_codmode==2){
+        pathfollow_commit(pf.lam,pf.pdu,&pf.dgc);
+        if(pf.engaged==1){
+          pf.taucur*=1.4;
+          if(pf.taucur>pf.tauv) pf.taucur=pf.tauv;
+          pathfollow_settau(pf.taucur);
+          if(pf.codmode==2){
 
             /* 1.4 was measured to be too greedy on the target: dphi grew
                past what the increment could take, attempt 1 failed, dphi
                was halved, attempt 2 converged - one wasted attempt per
                increment, every increment.  Grow gently instead. */
 
-            pf_dphicur*=pf_ccgrow;
-            if(pf_dphicur>pf_dphi) pf_dphicur=pf_dphi;
+            pf.dphicur*=pf.ccgrow;
+            if(pf.dphicur>pf.dphi) pf.dphicur=pf.dphi;
           }
         }
-        pf_dlampred=pf_lam-pf_lamprev;
-        pf_lamprev=pf_lam;
-        if(!(fabs(pf_dlampred)>1.e-30)) pf_dlampred=dtheta;
-        if((pf_engaged==0)&&(pf_dgc>0.2*pf_tauv)){
-          pf_engaged=1;
+        pf.dlampred=pf.lam-pf.lamprev;
+        pf.lamprev=pf.lam;
+        if(!(fabs(pf.dlampred)>1.e-30)) pf.dlampred=dtheta;
+        if((pf.engaged==0)&&(pf.dgc>0.2*pf.tauv)){
+          pf.engaged=1;
           printf("[PATHFOLLOW] engaged at inc=%" ITGFORMAT " lambda=%.8f: "
                  "measured dG=%.6e has reached 0.2*tau=%.6e\n",
-                 iinc,pf_lam,pf_dgc,0.2*pf_tauv);
+                 iinc,pf.lam,pf.dgc,0.2*pf.tauv);
         }
-        if(pf_codmode==2){
+        if(pf.codmode==2){
 
           /* Census at the ACCEPTED state (vold, xstate), which is what
-             "the front advanced" has to be measured on.  pf_cvec is
+             "the front advanced" has to be measured on.  pf.cvec is
              refrozen from the committed state at the top of the next
              attempt, so using it as the scratch vector here costs
              nothing. */
 
-          crackcontrol_build(pf_cvec,neq[1],pf_ccmode,co,kon,ipkon,lakon,
+          crackcontrol_build(pf.cvec,neq[1],pf.ccmode,co,kon,ipkon,lakon,
                              *ne,ielprop,prop,xstate,*nstate_,mi,vold,
-                             nactdof,*nk,mt,&pf_cs);
+                             nactdof,*nk,mt,&pf.cs);
           printf("[CRACKCTL] inc=%" ITGFORMAT " ACCEPTED lambda=%.8f "
                  "dphi=%.6e achieved=%.6e g=%.3e |R|=%.3e du=%.3e "
                  "zone=%" ITGFORMAT " load=%" ITGFORMAT " init=%"
                  ITGFORMAT " fail=%" ITGFORMAT " dead=%" ITGFORMAT
                  " deffmax=%.6e shear=%.4f w=%.6e fhat=%.6f/%.4f\n",
-                 iinc,pf_lam,pf_dphicur,pf_phiacc,pf_gacc,ram[0],ram[1],
-                 pf_cs.nzone,pf_cs.nload,pf_cs.ninit,pf_cs.nfail,
-                 pf_cs.ndead,pf_cs.deffmax,pf_cs.shearfrac,pf_cs.weight,
-                 pf_fhcos,pf_fhrat);
-        }else if(pf_codmode==1){
+                 iinc,pf.lam,pf.dphicur,pf.phiacc,pf.gacc,ram[0],ram[1],
+                 pf.cs.nzone,pf.cs.nload,pf.cs.ninit,pf.cs.nfail,
+                 pf.cs.ndead,pf.cs.deffmax,pf.cs.shearfrac,pf.cs.weight,
+                 pf.fhcos,pf.fhrat);
+        }else if(pf.codmode==1){
           printf("[PATHFOLLOW] inc=%" ITGFORMAT " ACCEPTED lambda=%.8f "
-                 "phi=%.6e target=%.6e\n",iinc,pf_lam,pf_cu,
+                 "phi=%.6e target=%.6e\n",iinc,pf.lam,pf.cu,
                  pathfollow_cod_target());
         }else{
           printf("[PATHFOLLOW] inc=%" ITGFORMAT " ACCEPTED lambda=%.8f "
                  "dG=%.6e P=%.6e ff=%.6e engaged=%" ITGFORMAT " refusals=%"
-                 ITGFORMAT "\n",iinc,pf_lam,pf_dgc,pathfollow_Pn(),
-                 pathfollow_ff(),pf_engaged,pathfollow_refusals());
+                 ITGFORMAT "\n",iinc,pf.lam,pf.dgc,pathfollow_Pn(),
+                 pathfollow_ff(),pf.engaged,pathfollow_refusals());
         }
         fflush(stdout);
       }
-      pf_pending=pf_on;
+      pf.pending=pf.on;
 
       /* vold is copied into vini */
 	  
@@ -5142,8 +4301,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
        relaxation per increment constant.  The continuation step size is
        dphi and that alone is what a cutback shrinks. */
 
-    if((pf_on==1)&&(pf_engaged==1)){
-      dtheta=pf_dtheta_eng;
+    if((pf.on==1)&&(pf.engaged==1)){
+      dtheta=pf.dtheta_eng;
       if(theta+dtheta>1.) dtheta=1.-theta;
     }
 
@@ -5175,15 +4334,15 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
        dtheta is added, so the gate opens on the first attempt whose base
        state is at or beyond the recorded wall. */
 
-    if((damage_wall_theta>=0.)&&(theta>=damage_wall_theta)){
-      if(damage_wall_armed==0){
-        damage_wall_armed=1;
+    if((prb.wall_theta>=0.)&&(theta>=prb.wall_theta)){
+      if(prb.wall_armed==0){
+        prb.wall_armed=1;
         printf("[WALLDIAG] GATE OPEN at inc=%" ITGFORMAT " icutb=%" ITGFORMAT
                " theta=%.12e dtheta=%.12e%s",iinc,icutb,theta,dtheta,"\n");
         fflush(stdout);
       }
-      damage_dl_lincheck=iinc;
-      damage_ls_probe=1;
+      dog.lincheck=iinc;
+      rsc.ls_probe=1;
       if(td_from<=0) td_from=iinc;
 
       /* NOT the null-vector probe.  CCX_DAMAGE_NULLVEC ends with
@@ -5192,8 +4351,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
          load-factor gate killed the run at the gate instead of at the wall
          - measured, R0-early stopped at increment 92 with the ladder
          unmeasured.  It stays opt-in and its terminal nature is stated. */
-      if((damage_wall_null!=0)&&(damage_null_inc<=0)){
-        damage_null_inc=iinc;
+      if((prb.wall_null!=0)&&(prb.null_inc<=0)){
+        prb.null_inc=iinc;
         printf("[WALLDIAG] arming the deflated null-vector probe on this "
                "increment.  IT IS TERMINAL: the run stops after it "
                "prints.%s","\n");
@@ -5243,19 +4402,19 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
        constraint engages lambda simply follows the step time, which is
        the ordinary control the stock solver would have run. */
 
-    if(pf_on==1){
-      if(neq[1]!=pf_neqarm){
+    if(pf.on==1){
+      if(neq[1]!=pf.neqarm){
         if(pathfollow_resize(neq[1])==0){
           printf("[PATHFOLLOW] disarmed: could not follow the equation "
                  "count from %" ITGFORMAT " to %" ITGFORMAT "\n",
-                 pf_neqarm,neq[1]);
-          pf_on=0;
+                 pf.neqarm,neq[1]);
+          pf.on=0;
         }else{
-          RENEW(pf_uf,double,neq[1]);
+          RENEW(pf.uf,double,neq[1]);
           printf("[PATHFOLLOW] equation count %" ITGFORMAT " -> %" ITGFORMAT
                  "; constraint origin restarted at the current state\n",
-                 pf_neqarm,neq[1]);
-          pf_neqarm=neq[1];
+                 pf.neqarm,neq[1]);
+          pf.neqarm=neq[1];
 
           /* The control functional lives in EQUATION space.  After a
              remastruct its entries refer to dofs that no longer exist,
@@ -5266,9 +4425,9 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
              the geometry pass, so it is disarmed loudly rather than used
              wrong. */
 
-          if(pf_codmode==2){
-            RENEW(pf_cvec,double,neq[1]);
-          }else if(pf_codmode==1){
+          if(pf.codmode==2){
+            RENEW(pf.cvec,double,neq[1]);
+          }else if(pf.codmode==1){
             printf("[PATHFOLLOW] *ERROR: CCX_PATHFOLLOW_COD builds its "
                    "control functional once, from a fixed equation "
                    "numbering.  The equation count has changed, so the "
@@ -5276,12 +4435,12 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                    "Disarming rather than continuing with a stale "
                    "constraint; use CCX_CRACK_CONTROL, which refreezes "
                    "the functional every attempt.\n");
-            pf_on=0;pf_engaged=0;pf_codmode=0;
+            pf.on=0;pf.engaged=0;pf.codmode=0;
           }
         }
       }
     }
-    if(pf_on==1){
+    if(pf.on==1){
 
       /* The dissipation increment IS the step size here.  A stock cutback
          shrinks theta, but lambda no longer follows theta, so the retry
@@ -5289,20 +4448,20 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
          path-following cutback, and without it an engaged increment can
          only fail down to the minimum step time. */
 
-      if((pf_engaged==1)&&(icutb>pf_icutbprev)){
-        pf_taucur*=0.5;
-        if(pf_taucur<1.e-6*pf_tauv) pf_taucur=1.e-6*pf_tauv;
-        pf_ncut++;
-        pathfollow_settau(pf_taucur);
+      if((pf.engaged==1)&&(icutb>pf.icutbprev)){
+        pf.taucur*=0.5;
+        if(pf.taucur<1.e-6*pf.tauv) pf.taucur=1.e-6*pf.tauv;
+        pf.ncut++;
+        pathfollow_settau(pf.taucur);
 
         /* For crack control the CONTROL INCREMENT is the step size, for
            exactly the same reason: lambda no longer follows theta, so a
            theta cutback retries the identical problem. */
 
-        if(pf_codmode==2){
-          pf_dphicur*=0.5;
-          if(pf_dphicur<1.e-8*pf_dphi){
-            pf_dphicur=1.e-8*pf_dphi;
+        if(pf.codmode==2){
+          pf.dphicur*=0.5;
+          if(pf.dphicur<1.e-8*pf.dphi){
+            pf.dphicur=1.e-8*pf.dphi;
 
             /* TERMINATION.  With dtheta held fixed the stock stop
                "increment size smaller than minimum" can never fire, so
@@ -5316,29 +4475,29 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                dphi at its floor and still failing means the obstruction
                is not the size of the continuation step. */
 
-            pf_ncutfloor++;
-            if(pf_ncutfloor>=3){
+            pf.ncutfloor++;
+            if(pf.ncutfloor>=3){
               printf("[CRACKCTL] *WALL: the control increment is at its "
                      "floor (%.6e, 1e-8 of the requested %.6e) and the "
                      "attempt still fails.  The obstruction is not the "
                      "size of the continuation step.  Stopping.\n",
-                     pf_dphicur,pf_dphi);
+                     pf.dphicur,pf.dphi);
               fflush(stdout);
               FORTRAN(stop,());
             }
           }else{
-            pf_ncutfloor=0;
+            pf.ncutfloor=0;
           }
-          printf("[CRACKCTL] cutback: dphi -> %.6e\n",pf_dphicur);
+          printf("[CRACKCTL] cutback: dphi -> %.6e\n",pf.dphicur);
         }
 
         /* the predictor is proportional to tau, so it rescales itself */
 
         printf("[PATHFOLLOW] cutback %" ITGFORMAT ": tau -> %.6e\n",
-               pf_ncut,pf_taucur);
+               pf.ncut,pf.taucur);
         fflush(stdout);
       }
-      pf_icutbprev=icutb;
+      pf.icutbprev=icutb;
       pathfollow_incstart();
 
       /* ---- mixed-mode crack control: refreeze the functional --------
@@ -5347,10 +4506,10 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
          The constraint is incremental, so the target is simply the
          control increment currently in force. */
 
-      if(pf_codmode==2){
-        pf_ccnw=crackcontrol_build(pf_cvec,neq[1],pf_ccmode,co,kon,ipkon,
+      if(pf.codmode==2){
+        pf.ccnw=crackcontrol_build(pf.cvec,neq[1],pf.ccmode,co,kon,ipkon,
                                    lakon,*ne,ielprop,prop,xstateini,
-                                   *nstate_,mi,vini,nactdof,*nk,mt,&pf_cs);
+                                   *nstate_,mi,vini,nactdof,*nk,mt,&pf.cs);
 
         /* ZONE and DISS are supported on the process zone.  Before the
            first initiation, and again if every initiated point has
@@ -5358,14 +4517,14 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
            weight.  Fall back to the mean over all live facets for this
            attempt rather than handing the bordered row a zero vector. */
 
-        if((pf_ccnw==0)&&(pf_ccmode!=0)){
-          pf_ccnw=crackcontrol_build(pf_cvec,neq[1],0,co,kon,ipkon,
+        if((pf.ccnw==0)&&(pf.ccmode!=0)){
+          pf.ccnw=crackcontrol_build(pf.cvec,neq[1],0,co,kon,ipkon,
                                      lakon,*ne,ielprop,prop,xstateini,
                                      *nstate_,mi,vini,nactdof,*nk,mt,
-                                     &pf_cs);
+                                     &pf.cs);
         }
-        pathfollow_cod_arm(pf_cvec,neq[1]);
-        pathfollow_cod_settarget(pf_dphicur);
+        pathfollow_cod_arm(pf.cvec,neq[1]);
+        pathfollow_cod_settarget(pf.dphicur);
 
         /* With the extrapolation suppressed, b/dlamjump at the first
            iteration IS -dR/dlambda, so there is no reason to keep a
@@ -5374,21 +4533,21 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
            its own tau; the crack-control constraint does not depend on
            the scale of f_hat, only on its being the true derivative. */
 
-        if(pf_engaged==1) pathfollow_unfreeze();
+        if(pf.engaged==1) pathfollow_unfreeze();
 
-        if((pf_engaged==0)&&(pf_ccnw>0)){
-          if(((pf_ccengage>0)&&(iinc>=pf_ccengage))||
-             ((pf_ccengage<=0)&&(pf_cs.nzone>0))){
-            pf_engaged=1;
+        if((pf.engaged==0)&&(pf.ccnw>0)){
+          if(((pf.ccengage>0)&&(iinc>=pf.ccengage))||
+             ((pf.ccengage<=0)&&(pf.cs.nzone>0))){
+            pf.engaged=1;
 
             /* The cap above was applied before this decision was taken,
                so the attempt that engages would otherwise run with the
                uncapped stock dtheta - which is exactly the attempt where
                the constitutive relaxation must not jump.  Apply it here
                too.  Only the time-like quantities are rebuilt: xbounact
-               is overwritten from pf_lam a few lines below anyway. */
+               is overwritten from pf.lam a few lines below anyway. */
 
-            dtheta=pf_dtheta_eng;
+            dtheta=pf.dtheta_eng;
             if(theta+dtheta>1.) dtheta=1.-theta;
             reltime=theta+dtheta;
             time=reltime**tper;
@@ -5397,26 +4556,26 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                    "process zone %" ITGFORMAT " ip(s) of which %"
                    ITGFORMAT " loading, initiated %" ITGFORMAT
                    ", failed %" ITGFORMAT ", shear fraction %.4f, "
-                   "weight %.6e\n",iinc,pathfollow_lamn(),pf_cs.nzone,
-                   pf_cs.nload,pf_cs.ninit,pf_cs.nfail,pf_cs.shearfrac,
-                   pf_cs.weight);
+                   "weight %.6e\n",iinc,pathfollow_lamn(),pf.cs.nzone,
+                   pf.cs.nload,pf.cs.ninit,pf.cs.nfail,pf.cs.shearfrac,
+                   pf.cs.weight);
             fflush(stdout);
           }
         }
       }
 
-      if(pf_engaged==0){
-        pf_lam=theta+dtheta;
+      if(pf.engaged==0){
+        pf.lam=theta+dtheta;
       }else{
 
         /* Tangent predictor, equation (7) in pathfollow.c.  Its SIGN is
            not chosen here: it comes out of lambda_n*ff-P_n, which changes
            sign at the limit point.  That is what turns the branch. */
 
-        if(pf_codmode==0){
-          if(pathfollow_predictor(&pf_dlampred)==0){
+        if(pf.codmode==0){
+          if(pathfollow_predictor(&pf.dlampred)==0){
             printf("[PATHFOLLOW] predictor degenerate at inc=%" ITGFORMAT
-                   "; keeping dlambda=%+.4e\n",iinc,pf_dlampred);
+                   "; keeping dlambda=%+.4e\n",iinc,pf.dlampred);
           }
         }
         /* For crack-opening control the previous accepted dlambda is the
@@ -5454,20 +4613,20 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
            and was accepted, so the machinery is sound and the reference
            vector is what is wrong.
 
-           So take the jump as a small PROBE of size pf_eps.  It costs
+           So take the jump as a small PROBE of size pf.eps.  It costs
            nothing - no extra residual evaluation, no state to restore -
            because the first iteration of the increment has to evaluate a
            residual anyway.  The constraint then supplies the real
            predictor: its own dlambda closes the whole step in one
            corrector, since phi is linear in u. */
 
-        if(pf_codmode==2) pf_dlampred=pf_eps;
-        if(!(fabs(pf_dlampred)>1.e-12)) pf_dlampred=dtheta;
-        pf_lam=pathfollow_lamn()+pf_dlampred;
+        if(pf.codmode==2) pf.dlampred=pf.eps;
+        if(!(fabs(pf.dlampred)>1.e-12)) pf.dlampred=dtheta;
+        pf.lam=pathfollow_lamn()+pf.dlampred;
       }
-      pf_dlamjump=pf_lam-pathfollow_lamn();
+      pf.dlamjump=pf.lam-pathfollow_lamn();
       for(k=0;k<*nboun;k++){
-        xbounact[k]=xbounold[k]+(xboun[k]-xbounold[k])*pf_lam;
+        xbounact[k]=xbounold[k]+(xboun[k]-xbounold[k])*pf.lam;
       }
 
       /* Bisection probe: is the model state at the START of an attempt
@@ -5491,7 +4650,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         }
         printf("[PF-START] inc=%" ITGFORMAT " attempt icutb=%" ITGFORMAT
                " |vold-vini|=%.6e max=%.6e lambda=%.8f\n",
-               iinc,icutb,sqrt(pfd),pfm,pf_lam);
+               iinc,icutb,sqrt(pfd),pfm,pf.lam);
         fflush(stdout);
       }
     }
@@ -5502,9 +4661,9 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
        firing.  The standard cutback rollback has already restored the
        increment-start state, so every quantity below is read from the last
        COMMITTED state.  ANY refusal leaves that state untouched, sets
-       damage_ct_refused and hands the wall to the ORIGINAL stock stop. */
+       ct.refused and hands the wall to the ORIGINAL stock stop. */
 
-    if(damage_ct_arm==1){
+    if(ct.arm==1){
       ITG ai,aj,ak,an,anp,anm,abest=-1,aip=-1,acnt=0,aok,ansel=0;
       ITG afl0,afl1,asupp[18],anod[18],adir[18];
       double aw[18],adl[3],armat[9],ash[3],ad0[3],ad1[3];
@@ -5512,8 +4671,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
       double aq[5],akp[5],atmp,abestv=-1.,aclam,ag[3];
       ITG ah,ahp,as0,as1,ne_uc6=0;
 
-      damage_ct_arm=0;
-      damage_ct_refused=1;               /* pessimistic until every guard passes */
+      ct.arm=0;
+      ct.refused=1;               /* pessimistic until every guard passes */
 
       /* ---- admissibility domain (SPEC FREEZE v1) ---- */
       aok=1;
@@ -5531,7 +4690,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
       for(ai=0;ai<ne0;ai++)
         if((ipkon[ai]>=0)&&(lakon[8*ai]=='U')) ne_uc6++;
       if(ne_uc6==0) aok=0;
-      if(damage_ct_nring<6) aok=0;
+      if(ct.nring<6) aok=0;
       if(aok==0){
         printf("[DAMAGE CT] REFUSING TO ARM: admissibility domain or ring not "
                "satisfied (nam=%" ITGFORMAT " nforc=%" ITGFORMAT " nload=%"
@@ -5544,12 +4703,12 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                "is untouched; this wall goes to the ORIGINAL stock stop.%s",
                *nam,*nforc,*nload,*nbody,*nmpc,ncont,*mortar,*ithermal,
                *nmethod,*idrct,*iprestr,*nstate_,*isolver,ne_uc6,
-               damage_ct_nring,"\n");
+               ct.nring,"\n");
         fflush(stdout);
       }else{
 
       /* ---- candidate scan over the five committed intervals ---- */
-      ah=damage_ct_head;
+      ah=ct.head;
       an=mi[0]*ne0;
       printf("[DAMAGE CT] arming at inc=%" ITGFORMAT " theta=%.12e: scanning "
              "%" ITGFORMAT " UC6 elements over 6 committed endpoints.%s",
@@ -5567,13 +4726,13 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         atau=1.e-9*adf;
         for(aj=0;aj<3;aj++){
           ak=an*ah+ (mi[0]*ai+aj);
-          afl0=damage_ct_fl[an*ah+mi[0]*ai+aj];
+          afl0=ct.fl[an*ah+mi[0]*ai+aj];
           if(afl0<0) continue;                   /* not a live UC6 ip      */
           if(afl0&1) continue;                   /* already failed         */
           /* frozen mixed-mode direction m at the newest committed endpoint */
-          ad1[0]=damage_ct_ring[3*(an*ah+mi[0]*ai+aj)];
-          ad1[1]=damage_ct_ring[3*(an*ah+mi[0]*ai+aj)+1];
-          ad1[2]=damage_ct_ring[3*(an*ah+mi[0]*ai+aj)+2];
+          ad1[0]=ct.ring[3*(an*ah+mi[0]*ai+aj)];
+          ad1[1]=ct.ring[3*(an*ah+mi[0]*ai+aj)+1];
+          ad1[2]=ct.ring[3*(an*ah+mi[0]*ai+aj)+2];
           adeff=(ad1[0]>0.?ad1[0]*ad1[0]:0.)
                 +abeta*(ad1[1]*ad1[1]+ad1[2]*ad1[2]);
           adeff=(adeff>0.)?sqrt(adeff):0.;
@@ -5586,34 +4745,34 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           aok=1;
           for(ak=0;ak<5;ak++){
             as1=(ah-ak+6)%6;  as0=(ah-ak-1+6)%6;
-            afl1=damage_ct_fl[an*as1+mi[0]*ai+aj];
-            afl0=damage_ct_fl[an*as0+mi[0]*ai+aj];
+            afl1=ct.fl[an*as1+mi[0]*ai+aj];
+            afl0=ct.fl[an*as0+mi[0]*ai+aj];
             if((afl1<0)||(afl0<0)){aok=0;break;}
             if((afl1&1)||(afl0&1)){aok=0;break;}        /* alive both ends */
             if((afl1&2)!=(afl0&2)){aok=0;break;}        /* ucomp unchanged */
             for(anp=0;anp<3;anp++){
-              ad1[anp]=damage_ct_ring[3*(an*as1+mi[0]*ai+aj)+anp];
-              ad0[anp]=damage_ct_ring[3*(an*as0+mi[0]*ai+aj)+anp];
+              ad1[anp]=ct.ring[3*(an*as1+mi[0]*ai+aj)+anp];
+              ad0[anp]=ct.ring[3*(an*as0+mi[0]*ai+aj)+anp];
             }
             if((ad1[0]>0.)!=(ad0[0]>0.)){aok=0;break;}  /* sign(dn) kept   */
             atmp=am[0]*(ad1[0]-ad0[0])+am[1]*(ad1[1]-ad0[1])
                 +am[2]*(ad1[2]-ad0[2]);
             if(!(atmp>atau)){aok=0;break;}
             aq[ak]=atmp;
-            if(!(damage_ct_dt[as1]>0.)){aok=0;break;}
-            akp[ak]=damage_ct_dt[as1]/atmp;
+            if(!(ct.dt[as1]>0.)){aok=0;break;}
+            akp[ak]=ct.dt[as1]/atmp;
             if(!(akp[ak]>0.)){aok=0;break;}
           }
           if(aok==0) continue;
           acnt++;
           if(aq[0]>abestv){
             abestv=aq[0];abest=ai;aip=aj;
-            for(anp=0;anp<3;anp++) damage_ct_m[anp]=am[anp];
+            for(anp=0;anp<3;anp++) ct.m[anp]=am[anp];
             for(anp=0;anp<5;anp++){
-              damage_ct_dt[anp]=damage_ct_dt[anp];      /* untouched      */
+              ct.dt[anp]=ct.dt[anp];      /* untouched      */
             }
             /* keep this candidate's five ratios and advances */
-            for(anp=0;anp<5;anp++){damage_ct_g[0]=0.;}
+            for(anp=0;anp<5;anp++){ct.g[0]=0.;}
             for(anp=0;anp<5;anp++){aq[anp]=aq[anp];akp[anp]=akp[anp];}
             /* median of five: insertion sort on local copies */
             {
@@ -5626,9 +4785,9 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                 atmp=sk[bi];for(bj2=bi;(bj2>0)&&(sk[bj2-1]>atmp);bj2--)
                   sk[bj2]=sk[bj2-1]; sk[bj2]=atmp;
               }
-              damage_ct_ds0=sq[2];
-              damage_ct_kappa=sk[2];
-              damage_ct_tau=(sk[0]>0.)?sk[4]/sk[0]:1.e30;
+              ct.ds0=sq[2];
+              ct.kappa=sk[2];
+              ct.tau=(sk[0]>0.)?sk[4]/sk[0]:1.e30;
             }
           }
         }
@@ -5641,52 +4800,52 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                "state.  The last committed state is untouched; this wall "
                "goes to the ORIGINAL stock stop.%s","\n");
         fflush(stdout);
-      }else if(!(damage_ct_tau<=damage_ct_kaptol)){
+      }else if(!(ct.tau<=ct.kaptol)){
         printf("[DAMAGE CT] REFUSING TO ARM: kappa is not stable over the "
                "five intervals of the best candidate (max/min=%.4f > 1.5, "
                "median kappa=%.6e).  Refusing rather than freezing an "
                "unmeasured control-to-time coupling.%s",
-               damage_ct_tau,damage_ct_kappa,"\n");
+               ct.tau,ct.kappa,"\n");
         fflush(stdout);
       }else{
         /* ---- freeze the control point, m, the stencil and c_lambda ---- */
-        damage_ct_elem=abest;damage_ct_ip=aip;
-        damage_ct_kin(co,kon,ipkon[abest],vold,mt,aip,adl,armat,ash);
+        ct.elem=abest;ct.ip=aip;
+        damcont_kin(co,kon,ipkon[abest],vold,mt,aip,adl,armat,ash);
         for(ak=0;ak<3;ak++){
-          ag[ak]=damage_ct_m[0]*armat[ak]+damage_ct_m[1]*armat[3+ak]
-                +damage_ct_m[2]*armat[6+ak];
-          damage_ct_g[ak]=ag[ak];
+          ag[ak]=ct.m[0]*armat[ak]+ct.m[1]*armat[3+ak]
+                +ct.m[2]*armat[6+ak];
+          ct.g[ak]=ag[ak];
           /* delta_c is taken from the SAME committed snapshot m came from
              - the newest ring endpoint - not recomputed from vold.  Mixing
              the two sources is what made the first constraint value differ
              from -ds by 83x on the short deck: the ring endpoint and vold
              are not the same instant when the wall is reached in a later
              increment than the last commit. */
-          damage_ct_dc[ak]=damage_ct_ring[3*(mi[0]*ne0*ah+mi[0]*abest+aip)+ak];
+          ct.dc[ak]=ct.ring[3*(mi[0]*ne0*ah+mi[0]*abest+aip)+ak];
         }
         printf("[DAMAGE CT] delta_c source check: ring=(%.9e,%.9e,%.9e) "
                "vold=(%.9e,%.9e,%.9e) m.(vold-ring)=%.6e%s",
-               damage_ct_dc[0],damage_ct_dc[1],damage_ct_dc[2],
+               ct.dc[0],ct.dc[1],ct.dc[2],
                adl[0],adl[1],adl[2],
-               damage_ct_m[0]*(adl[0]-damage_ct_dc[0])
-              +damage_ct_m[1]*(adl[1]-damage_ct_dc[1])
-              +damage_ct_m[2]*(adl[2]-damage_ct_dc[2]),"\n");
-        damage_ct_nsupp=0;aclam=0.;aok=1;
+               ct.m[0]*(adl[0]-ct.dc[0])
+              +ct.m[1]*(adl[1]-ct.dc[1])
+              +ct.m[2]*(adl[2]-ct.dc[2]),"\n");
+        ct.nsupp=0;aclam=0.;aok=1;
         for(ai=0;ai<3;ai++){
           anm=kon[ipkon[abest]+ai]-1;
           anp=kon[ipkon[abest]+ai+3]-1;
           for(ak=0;ak<3;ak++){
-            anod[damage_ct_nsupp]=anp;adir[damage_ct_nsupp]=ak+1;
-            aw[damage_ct_nsupp]= ash[ai]*ag[ak];damage_ct_nsupp++;
-            anod[damage_ct_nsupp]=anm;adir[damage_ct_nsupp]=ak+1;
-            aw[damage_ct_nsupp]=-ash[ai]*ag[ak];damage_ct_nsupp++;
+            anod[ct.nsupp]=anp;adir[ct.nsupp]=ak+1;
+            aw[ct.nsupp]= ash[ai]*ag[ak];ct.nsupp++;
+            anod[ct.nsupp]=anm;adir[ct.nsupp]=ak+1;
+            aw[ct.nsupp]=-ash[ai]*ag[ak];ct.nsupp++;
           }
         }
-        if(damage_ct_w==NULL) NNEW(damage_ct_w,double,18);
-        for(ai=0;ai<damage_ct_nsupp;ai++){
+        if(ct.w==NULL) NNEW(ct.w,double,18);
+        for(ai=0;ai<ct.nsupp;ai++){
           ak=nactdof[mt*anod[ai]+adir[ai]];
-          damage_ct_w[ai]=aw[ai];
-          damage_ct_node[ai]=anod[ai];damage_ct_dir[ai]=adir[ai];
+          ct.w[ai]=aw[ai];
+          ct.node[ai]=anod[ai];ct.dir[ai]=adir[ai];
           if(ak>0){
             asupp[ai]=ak-1;
           }else{
@@ -5702,28 +4861,28 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
               }
             }
           }
-          damage_ct_supp[ai]=asupp[ai];
+          ct.supp[ai]=asupp[ai];
         }
-        damage_ct_clam=aclam;
+        ct.clam=aclam;
         if(aok==0){
           printf("[DAMAGE CT] REFUSING TO ARM: an MPC-dependent degree of "
                  "freedom is in the control stencil; the MPC expansion is "
                  "not implemented.  ORIGINAL stock stop.%s","\n");
           fflush(stdout);
         }else{
-          damage_ct_lamc=theta;
-          damage_ct_lam=theta;
-          damage_ct_ds=damage_ct_ds0;
-          damage_ct_dsmin=1.e-3*damage_ct_ds0;
-          damage_ct_dsmax=20.*damage_ct_ds0;
-          damage_ct_tolc=1.e-3*damage_ct_ds0;
-          if(damage_ct_tolc<1.e-9) damage_ct_tolc=1.e-9;
+          ct.lamc=theta;
+          ct.lam=theta;
+          ct.ds=ct.ds0;
+          ct.dsmin=1.e-3*ct.ds0;
+          ct.dsmax=20.*ct.ds0;
+          ct.tolc=1.e-3*ct.ds0;
+          if(ct.tolc<1.e-9) ct.tolc=1.e-9;
           /* healthy references for the absolute predictor bounds */
           {
             double sl[5],su[5];ITG bi,bj2;
             for(bi=0;bi<5;bi++){
               as1=(ah-bi+6)%6;
-              sl[bi]=damage_ct_dlam[as1];su[bi]=damage_ct_duinf[as1];
+              sl[bi]=ct.dlam[as1];su[bi]=ct.duinf[as1];
             }
             for(bi=1;bi<5;bi++){
               atmp=sl[bi];for(bj2=bi;(bj2>0)&&(sl[bj2-1]>atmp);bj2--)
@@ -5731,12 +4890,12 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
               atmp=su[bi];for(bj2=bi;(bj2>0)&&(su[bj2-1]>atmp);bj2--)
                 su[bj2]=su[bj2-1]; su[bj2]=atmp;
             }
-            damage_ct_lamref=sl[2];damage_ct_duref=su[2];
+            ct.lamref=sl[2];ct.duref=su[2];
           }
-          damage_ct_on=1;damage_ct_refused=0;damage_ct_step=0;
-          damage_ct_it=0;damage_ct_ncommit=0;
-          dtheta=damage_ct_kappa*damage_ct_ds/(*tper);
-          if(dtheta<=0.) dtheta=damage_ct_dt[ah];
+          ct.on=1;ct.refused=0;ct.step=0;
+          ct.it=0;ct.ncommit=0;
+          dtheta=ct.kappa*ct.ds/(*tper);
+          if(dtheta<=0.) dtheta=ct.dt[ah];
           dthetaref=dtheta;
           printf("[DAMAGE CT] ARMED.  control point: element %" ITGFORMAT
                  " ip %" ITGFORMAT "; m=(%.6f,%.6f,%.6f); |m.delta_c|=%.6e; "
@@ -5746,18 +4905,18 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                  "dtheta=kappa*ds/tper=%.6e; healthy refs dlambda=%.6e "
                  "|du|inf=%.6e.  lambda now OWNS the boundary for the rest "
                  "of the step; every ending is PARTIAL.%s",
-                 abest+1,aip+1,damage_ct_m[0],damage_ct_m[1],damage_ct_m[2],
-                 damage_ct_m[0]*adl[0]+damage_ct_m[1]*adl[1]
-                 +damage_ct_m[2]*adl[2],
-                 damage_ct_clam,damage_ct_nsupp,damage_ct_kappa,
-                 damage_ct_tau,damage_ct_ds0,damage_ct_dsmin,
-                 damage_ct_dsmax,damage_ct_tolc,damage_ct_lamc,dtheta,
-                 damage_ct_lamref,damage_ct_duref,"\n");
+                 abest+1,aip+1,ct.m[0],ct.m[1],ct.m[2],
+                 ct.m[0]*adl[0]+ct.m[1]*adl[1]
+                 +ct.m[2]*adl[2],
+                 ct.clam,ct.nsupp,ct.kappa,
+                 ct.tau,ct.ds0,ct.dsmin,
+                 ct.dsmax,ct.tolc,ct.lamc,dtheta,
+                 ct.lamref,ct.duref,"\n");
           fflush(stdout);
         }
       }
       }
-      if(damage_ct_on==0) damage_ct_refused=1;
+      if(ct.on==0) ct.refused=1;
     }
 
     /* [DAMAGE CT] once armed, lambda owns the boundary for the rest of the
@@ -5765,15 +4924,15 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
        absolute step fraction, and it is the same ramp CCX_DAMAGE_PATH mode 1
        verified against tempload at max|diff|=0.  theta stays monotone
        pseudo-time and carries dtime only. */
-    if(damage_ct_on==1){
+    if(ct.on==1){
       for(k=0;k<*nboun;k++){
-        xbounact[k]=xbounold[k]+(xboun[k]-xbounold[k])*damage_ct_lam;
+        xbounact[k]=xbounold[k]+(xboun[k]-xbounold[k])*ct.lam;
       }
       /* dtime = kappa*ds is re-established for every armed attempt, so a
          reduced ds reduces the viscous time by the same factor and the
          total viscous time across a given control advance is invariant. */
-      if(damage_ct_kappa>0.){
-        dtheta=damage_ct_kappa*damage_ct_ds/(*tper);
+      if(ct.kappa>0.){
+        dtheta=ct.kappa*ct.ds/(*tper);
         if(dtheta>0.) dthetaref=dtheta;
       }
     }
@@ -6315,7 +5474,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
        keeps its OWN predictor: the previous accepted dlambda, applied to
        lambda alone, which is the standard arc-length predictor. */
 
-    if((pf_on==1)&&(pf_engaged==1)) idiscon=1;
+    if((pf.on==1)&&(pf.engaged==1)) idiscon=1;
 
     if (*mortar==-1){
       memcpy(&v[0],&vold[0],sizeof(double)*mt **nk);
@@ -6505,12 +5664,12 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     if(icntrl!=0) icutb++;
 
     ctrl[0]=i0ref;ctrl[1]=irref;ctrl[3]=icref;
-    damage_slow_extended=0;
-    damage_slow_camprev1=1.e300;
-    damage_slow_camprev2=1.e300;
-    damage_slow_maxiters=DAMAGE_SLOW_NEWTON_MAX_ITERS;
-    if((ITG)icref>damage_slow_maxiters)
-      damage_slow_maxiters=(ITG)icref;
+    slow.extended=0;
+    slow.camprev1=1.e300;
+    slow.camprev2=1.e300;
+    slow.maxiters=DAMAGE_SLOW_NEWTON_MAX_ITERS;
+    if((ITG)icref>slow.maxiters)
+      slow.maxiters=(ITG)icref;
     if(*nmethod!=4)NNEW(resold,double,neq[1]);
     if(uncoupled){
       *ithermal=2;
@@ -6525,7 +5684,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
        the two, which the constraint would otherwise attribute to the
        increment. */
 
-    if((pf_on==1)&&(ccxopt_getenv("CCX_PATHFOLLOW_ACCUMCHECK")!=NULL)){
+    if((pf.on==1)&&(ccxopt_getenv("CCX_PATHFOLLOW_ACCUMCHECK")!=NULL)){
       double pfd=0.,pft;
       ITG pfi,pfj,pfk;
       for(pfi=0;pfi<*nk;pfi++){
@@ -6811,11 +5970,11 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	   Gates: implicit mechanical static path, no contact (contact owns
 	   nasym itself), progressive damage material present. */
 
-	damage_unsym_active=0;
+	opd.unsym_active=0;
 	if((damage_tangent_mode==2)&&(damage_de12_enabled)&&
 	   (ncont==0)&&(*iexpl<=1)&&(*nmethod!=4)&&(*nmethod!=5)&&
 	   (*ithermal<2)&&(*mortar!=-1)){
-	  damage_unsym_active=1;
+	  opd.unsym_active=1;
 	  if(nasym==0){
 	    nasym=1;
 	    printf("[DAMAGE TANGENT UNSYM] bulk assembly switched to the "
@@ -6887,37 +6046,37 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	     the extra work scales with the size of the process zone, not
 	     with the model. */
 
-	  if(damage_unsym_active==1){
-	    damage_unsym_elems=0;
+	  if(opd.unsym_active==1){
+	    opd.unsym_elems=0;
 	    FORTRAN(mafilldamas,(co,kon,ipkon,lakon,&ne0,nactdof,jq,irow,
 				 neq,nzs,au,ad,vold,mi,damage_damjac,nmpc,
-				 &damage_unsym_elems,dam,damdamageini,
-				 &damage_unsym_skip,&damage_unsym_adv,
-				 &damage_unsym_hole,&damage_unsym_floor,
-				 &damage_unsym_live,&damage_unsym_degen,
+				 &opd.unsym_elems,dam,damdamageini,
+				 &opd.unsym_skip,&opd.unsym_adv,
+				 &opd.unsym_hole,&opd.unsym_floor,
+				 &opd.unsym_live,&opd.unsym_degen,
 				 damage_damcat));
 	    /* J-10: what the operator looks like on THIS iteration, not as a
 	       running maximum.  A count that moves between iterations of a
 	       SAME-LOAD solve means the operator is changing shape mid-Newton,
 	       which no step size and no tolerance can repair. */
-	    if((damage_unsym_census==1)&&(idamagereeq==1)){
+	    if((opd.unsym_census==1)&&(idamagereeq==1)){
 	      printf("[DAMAGE TANGENT CENSUS] inc=%" ITGFORMAT " iit=%" ITGFORMAT
 		     " assembled=%" ITGFORMAT " adv=%" ITGFORMAT
 		     " gap=%" ITGFORMAT " hi=%" ITGFORMAT
 		     " skip=%" ITGFORMAT " live=%" ITGFORMAT
 		     " degen=%" ITGFORMAT "\n",
-		     iinc,iit,damage_unsym_elems,damage_unsym_adv,
-		     damage_unsym_hole,damage_unsym_floor,damage_unsym_skip,
-		     damage_unsym_live,damage_unsym_degen);
+		     iinc,iit,opd.unsym_elems,opd.unsym_adv,
+		     opd.unsym_hole,opd.unsym_floor,opd.unsym_skip,
+		     opd.unsym_live,opd.unsym_degen);
 	      fflush(stdout);
 	    }
-	    if(damage_unsym_adv>damage_unsym_advrep){
-	      damage_unsym_advrep=damage_unsym_adv;
+	    if(opd.unsym_adv>opd.unsym_advrep){
+	      opd.unsym_advrep=opd.unsym_adv;
 	      printf("[DAMAGE TANGENT HOLE] %" ITGFORMAT " element(s) with "
 		     "ADVANCING damage carry no rank-1 term (new maximum); "
 		     "%" ITGFORMAT " past initiation without one, "
 		     "%" ITGFORMAT " assembled\n",
-		     damage_unsym_adv,damage_unsym_skip,damage_unsym_elems);
+		     opd.unsym_adv,opd.unsym_skip,opd.unsym_elems);
 	      fflush(stdout);
 	    }
 
@@ -6933,21 +6092,21 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	       mpfd measures at rho=3443 with the WRONG SIGN on the dominant
 	       entry already at D=0.994.  Report that band on its own so the
 	       hypothesis can be falsified rather than argued. */
-	    if(damage_unsym_hole>damage_unsym_holerep){
-	      damage_unsym_holerep=damage_unsym_hole;
+	    if(opd.unsym_hole>opd.unsym_holerep){
+	      opd.unsym_holerep=opd.unsym_hole;
 	      printf("[DAMAGE TANGENT GAP] inc=%" ITGFORMAT " %" ITGFORMAT
 	    	 " element(s) in D=[0.999,1-gmin) carry g*C_ep with no rank-1 "
 	    	 "term (new maximum); %" ITGFORMAT " on the residual-stiffness "
 	    	 "floor where zero is correct; %" ITGFORMAT " advancing "
 	    	 "without a term in total\n",
-	    	 iinc,damage_unsym_hole,damage_unsym_floor,damage_unsym_adv);
+	    	 iinc,opd.unsym_hole,opd.unsym_floor,opd.unsym_adv);
 	      fflush(stdout);
 	    }
-	    if(damage_unsym_elems>damage_unsym_report){
-	      damage_unsym_report=damage_unsym_elems;
+	    if(opd.unsym_elems>opd.unsym_report){
+	      opd.unsym_report=opd.unsym_elems;
 	      printf("[DAMAGE TANGENT UNSYM] rank-1 correction assembled "
 		     "for %" ITGFORMAT " softening element(s) (new maximum)\n",
-		     damage_unsym_elems);
+		     opd.unsym_elems);
 	      fflush(stdout);
 	    }
 	  }
@@ -6975,14 +6134,14 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	   relative error of 1.0 because every coefficient read back was
 	   zero.  Keep a copy while the operator still exists. */
 
-	if((damage_fd_inc>0)&&(iinc>=damage_fd_inc)&&(iit>=damage_fd_it)&&
-	   ((damage_fd_step<=0)||(*istep==damage_fd_step))){
-	  if(damage_fd_ad==NULL){
-	    NNEW(damage_fd_ad,double,neq[1]);
-	    NNEW(damage_fd_au,double,(nasym+1)*nzs[1]);
+	if((opd.fd_inc>0)&&(iinc>=opd.fd_inc)&&(iit>=opd.fd_it)&&
+	   ((opd.fd_step<=0)||(*istep==opd.fd_step))){
+	  if(opd.fd_ad==NULL){
+	    NNEW(opd.fd_ad,double,neq[1]);
+	    NNEW(opd.fd_au,double,(nasym+1)*nzs[1]);
 	  }
-	  memcpy(damage_fd_ad,ad,sizeof(double)*neq[1]);
-	  memcpy(damage_fd_au,au,sizeof(double)*(nasym+1)*nzs[1]);
+	  memcpy(opd.fd_ad,ad,sizeof(double)*neq[1]);
+	  memcpy(opd.fd_au,au,sizeof(double)*(nasym+1)*nzs[1]);
 	}
 
 	/* Addressed dump of one node.
@@ -6995,65 +6154,65 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	   lost its support" is backed by the operator rather than inferred
 	   from connectivity. */
 
-	if((damage_dump_node>0)&&(damage_dump_node<=*nk)&&
-	   (iinc>=damage_dump_inc)){
-	  damage_dump_n=damage_dump_node-1;
+	if((prb.dump_node>0)&&(prb.dump_node<=*nk)&&
+	   (iinc>=prb.dump_inc)){
+	  prb.dump_n=prb.dump_node-1;
 	  printf("[NODE DUMP] inc=%" ITGFORMAT " node %" ITGFORMAT
 		 " at (%.4f, %.4f, %.4f)\n",
-		 iinc,damage_dump_node,co[3*damage_dump_n],
-		 co[3*damage_dump_n+1],co[3*damage_dump_n+2]);
+		 iinc,prb.dump_node,co[3*prb.dump_n],
+		 co[3*prb.dump_n+1],co[3*prb.dump_n+2]);
 	  for(idir=1;idir<=3;idir++){
-	    k=nactdof[mt*damage_dump_n+idir];
+	    k=nactdof[mt*prb.dump_n+idir];
 	    if(k<=0){
 	      printf("[NODE DUMP]   dof %" ITGFORMAT ": constrained\n",idir);
 	    }else{
 	      printf("[NODE DUMP]   dof %" ITGFORMAT ": ad=%.6e",idir,ad[k-1]);
-	      if((damage_addiag0!=NULL)&&(damage_addiag0[damage_dump_n]>0.))
+	      if((damage_addiag0!=NULL)&&(damage_addiag0[prb.dump_n]>0.))
 		printf("   intact reference %.6e   ratio %.4e",
-		       damage_addiag0[damage_dump_n],
-		       ad[k-1]/damage_addiag0[damage_dump_n]);
+		       damage_addiag0[prb.dump_n],
+		       ad[k-1]/damage_addiag0[prb.dump_n]);
 	      printf("\n");
 	    }
 	  }
-	  damage_dump_nb=0;damage_dump_nu=0;
+	  prb.dump_nb=0;prb.dump_nu=0;
 	  for(i=0;i<*ne;i++){
 	    if(ipkon[i]==-1) continue;
-	    damage_dump_alive=(ipkon[i]>=0)?1:0;
-	    damage_dump_idx=(ipkon[i]>=0)?ipkon[i]:(-ipkon[i]-2);
-	    if(damage_dump_idx<0) continue;
-	    damage_dump_np=0;
+	    prb.dump_alive=(ipkon[i]>=0)?1:0;
+	    prb.dump_idx=(ipkon[i]>=0)?ipkon[i]:(-ipkon[i]-2);
+	    if(prb.dump_idx<0) continue;
+	    prb.dump_np=0;
 	    if(lakon[8*i]=='C'){
-	      damage_dump_np=(lakon[8*i+3]=='4')?4:0;
+	      prb.dump_np=(lakon[8*i+3]=='4')?4:0;
 	    }else if(lakon[8*i]=='U'){
-	      damage_dump_np=(ITG)((unsigned char)lakon[8*i+7]);
-	      if((damage_dump_np<1)||(damage_dump_np>20)) damage_dump_np=0;
+	      prb.dump_np=(ITG)((unsigned char)lakon[8*i+7]);
+	      if((prb.dump_np<1)||(prb.dump_np>20)) prb.dump_np=0;
 	    }
-	    if(damage_dump_np<=0) continue;
-	    damage_dump_hit=0;
-	    for(j=0;j<damage_dump_np;j++){
-	      if(kon[damage_dump_idx+j]-1==damage_dump_n) damage_dump_hit=1;
+	    if(prb.dump_np<=0) continue;
+	    prb.dump_hit=0;
+	    for(j=0;j<prb.dump_np;j++){
+	      if(kon[prb.dump_idx+j]-1==prb.dump_n) prb.dump_hit=1;
 	    }
-	    if(damage_dump_hit==0) continue;
+	    if(prb.dump_hit==0) continue;
 	    if(lakon[8*i]=='C'){
-	      if(damage_dump_alive) damage_dump_nb++;
+	      if(prb.dump_alive) prb.dump_nb++;
 	      printf("[NODE DUMP]   elem %-7" ITGFORMAT " C3D4  %-8s dam=%.6f\n",
-		     i+1,damage_dump_alive?"alive":"DELETED",
+		     i+1,prb.dump_alive?"alive":"DELETED",
 		     (i<ne0)?dam[mi[0]*i]:-1.);
 	    }else{
-	      if(damage_dump_alive) damage_dump_nu++;
+	      if(prb.dump_alive) prb.dump_nu++;
 	      printf("[NODE DUMP]   elem %-7" ITGFORMAT " UC6   %-8s",
-		     i+1,damage_dump_alive?"alive":"DELETED");
+		     i+1,prb.dump_alive?"alive":"DELETED");
 	      for(j=0;j<3;j++){
-		damage_dump_dv=xstate[*nstate_*(mi[0]*i+j)+1];
+		prb.dump_dv=xstate[*nstate_*(mi[0]*i+j)+1];
 		printf("  ip%" ITGFORMAT ": dvisc=%.6f g=%.6e",
-		       j+1,damage_dump_dv,1.-damage_dump_dv);
+		       j+1,prb.dump_dv,1.-prb.dump_dv);
 	      }
 	      printf("\n");
 	    }
 	  }
 	  printf("[NODE DUMP]   live bulk=%" ITGFORMAT
 		 "   live cohesive=%" ITGFORMAT "\n",
-		 damage_dump_nb,damage_dump_nu);
+		 prb.dump_nb,prb.dump_nu);
 	  /* The node's own 3x3 block of the assembled operator.
 	
 	     damage_addiag is the smallest AXIS-ALIGNED diagonal, which is only a
@@ -7074,7 +6233,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	    double dmp_blk[9];
 	    for(dmp_i=0;dmp_i<9;dmp_i++) dmp_blk[dmp_i]=0.;
 	    for(dmp_i=0;dmp_i<3;dmp_i++)
-	      dmp_dof[dmp_i]=nactdof[mt*damage_dump_n+dmp_i+1];
+	      dmp_dof[dmp_i]=nactdof[mt*prb.dump_n+dmp_i+1];
 	    for(dmp_j=0;dmp_j<3;dmp_j++){
 	      if(dmp_dof[dmp_j]<=0) continue;
 	      dmp_blk[dmp_j*3+dmp_j]=ad[dmp_dof[dmp_j]-1];
@@ -7332,7 +6491,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 
 
       if((((*mortar==1)&&(iit!=1)&&(*ne-ne0>0)&&(*nmethod!=4))||
-          ((damage_linesearch_mode==1)&&(damage_de12_enabled)&&
+          ((rsc.linesearch_mode==1)&&(damage_de12_enabled)&&
            (idamagereeq==0)&&(ncont==0)&&(*nmethod!=4)&&(*nmethod!=5)&&
            (*ithermal<2)&&(*idrct==0)))){
 	isiz=neq[1];cpypardou(resold,b,&isiz,&num_cpus);
@@ -7493,15 +6652,15 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	   true solution both times.  Saving the rhs here lets both solves be
 	   verified afterwards with one sparse mat-vec each. */
 
-	if((pf_on==1)&&(ccxopt_getenv("CCX_PATHFOLLOW_SOLVECHECK")!=NULL)){
-	  if(pf_rhs0==NULL){NNEW(pf_rhs0,double,neq[1]);NNEW(pf_y,double,neq[1]);}
-	  isiz=neq[1];cpypardou(pf_rhs0,b,&isiz,&num_cpus);
+	if((pf.on==1)&&(ccxopt_getenv("CCX_PATHFOLLOW_SOLVECHECK")!=NULL)){
+	  if(pf.rhs0==NULL){NNEW(pf.rhs0,double,neq[1]);NNEW(pf.y,double,neq[1]);}
+	  isiz=neq[1];cpypardou(pf.rhs0,b,&isiz,&num_cpus);
 	}
 
 	/* ---- CCX_PATHFOLLOW: capture f_hat -----------------------------
 	   b still holds fext-f = -R.  At the first iteration of an attempt
 	   the ONLY thing that moved since the committed state is the
-	   prescribed pattern, by pf_dlamjump, so -R = f_hat*pf_dlamjump and
+	   prescribed pattern, by pf.dlamjump, so -R = f_hat*pf.dlamjump and
 	   the reference load vector conjugate to lambda comes out of the
 	   iteration for free.  It is then frozen for the rest of the
 	   increment, which is what makes the constraint exactly
@@ -7639,7 +6798,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	  fflush(stdout);
 	}
 
-	if((pf_on==1)&&(iit==1)){
+	if((pf.on==1)&&(iit==1)){
 
 	  /* HOW FAR HAS THE FROZEN REFERENCE VECTOR DRIFTED?
 	     f_hat is frozen at the first capture, and the corrector adds
@@ -7652,21 +6811,21 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	     assumed: on the mixed benchmark the ratio is still 0.997 at
 	     increment 1500. */
 
-	  if((pathfollow_have()==1)&&(fabs(pf_dlamjump)>1.e-8)){
+	  if((pathfollow_have()==1)&&(fabs(pf.dlamjump)>1.e-8)){
 	    const double *pffh=pathfollow_fhat();
 	    double pfa=0.,pfb=0.,pfd=0.,pfs;
 	    for(k=0;k<neq[1];k++){
-	      pfs=b[k]/pf_dlamjump;
+	      pfs=b[k]/pf.dlamjump;
 	      pfa+=pffh[k]*pffh[k];pfb+=pfs*pfs;pfd+=pffh[k]*pfs;
 	    }
 	    if((pfa>0.)&&(pfb>0.)){
-	      pf_fhcos=pfd/sqrt(pfa*pfb);
-	      pf_fhrat=sqrt(pfa/pfb);
+	      pf.fhcos=pfd/sqrt(pfa*pfb);
+	      pf.fhrat=sqrt(pfa/pfb);
 	    }
 	  }
-	  pathfollow_capture(b,pf_dlamjump);
+	  pathfollow_capture(b,pf.dlamjump);
 	  if(pathfollow_have()==1){
-	    pathfollow_setPn(pf_project(pathfollow_fhat(),vini,pf_uref,
+	    pathfollow_setPn(pathfollow_project(pathfollow_fhat(),vini,pf.uref,
 	                                nactdof,*nk,mt));
 	  }
 	}
@@ -7865,15 +7024,15 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
            is not, so the sign is carried explicitly where d=J^T b is formed.
            Nothing between the calcresidual that filled b and this point
            writes b on the mortar<=1 path. */
-        damage_dl_lc_due=0;
-        if((damage_dl_lincheck>0)&&(iinc==damage_dl_lincheck)&&
-           (iit>=damage_dl_lc_it)&&(iit<damage_dl_lc_it+damage_dl_lc_nit)&&
-           (damage_dl_on==0)&&(damage_de12_enabled)&&(idamagereeq==0)&&
+        dog.lc_due=0;
+        if((dog.lincheck>0)&&(iinc==dog.lincheck)&&
+           (iit>=dog.lc_it)&&(iit<dog.lc_it+dog.lc_nit)&&
+           (dog.on==0)&&(damage_de12_enabled)&&(idamagereeq==0)&&
            (ncont==0)&&(*nmethod!=4)&&(*nmethod!=5)&&(*ithermal<2)&&
-           (*idrct==0)&&(*mortar<=1)) damage_dl_lc_due=1;
-        if((damage_dl_on==1)||(damage_dl_lc_due==1)){
-          if(damage_dl_r0==NULL) NNEW(damage_dl_r0,double,neq[1]);
-          isiz=neq[1];cpypardou(damage_dl_r0,b,&isiz,&num_cpus);
+           (*idrct==0)&&(*mortar<=1)) dog.lc_due=1;
+        if((dog.on==1)||(dog.lc_due==1)){
+          if(dog.r0==NULL) NNEW(dog.r0,double,neq[1]);
+          isiz=neq[1];cpypardou(dog.r0,b,&isiz,&num_cpus);
         }
         /* [DAMAGE CT] b holds fext-f = -R here; the solve overwrites it.
            The FULL read-before-write set is snapshotted HERE, at the current
@@ -7883,40 +7042,40 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
            different base states.  cam is RESTORED from this snapshot, never
            re-initialised: at this point it already holds the clean values
            the iteration top installed. */
-        if(damage_ct_on==1){
+        if(ct.on==1){
           ITG cq;
-          if(damage_ct_r0==NULL){
-            NNEW(damage_ct_r0,double,neq[1]);
-            NNEW(damage_ct_beps,double,neq[1]);
-            NNEW(damage_ct_y,double,neq[1]);
-            NNEW(damage_ct_z,double,neq[1]);
+          if(ct.r0==NULL){
+            NNEW(ct.r0,double,neq[1]);
+            NNEW(ct.beps,double,neq[1]);
+            NNEW(ct.y,double,neq[1]);
+            NNEW(ct.z,double,neq[1]);
           }
-          if(damage_ct_dam==NULL){
-            NNEW(damage_ct_dam,double,mi[0]**ne);
-            NNEW(damage_ct_visc,double,mi[0]**ne);
-            if(*nstate_>0) NNEW(damage_ct_xs,double,*nstate_*mi[0]**ne);
-            NNEW(damage_ct_jac,double,12*mi[0]**ne);
-            NNEW(damage_ct_sgn,ITG,mi[0]*ne0);
+          if(ct.dam==NULL){
+            NNEW(ct.dam,double,mi[0]**ne);
+            NNEW(ct.visc,double,mi[0]**ne);
+            if(*nstate_>0) NNEW(ct.xs,double,*nstate_*mi[0]**ne);
+            NNEW(ct.jac,double,12*mi[0]**ne);
+            NNEW(ct.sgn,ITG,mi[0]*ne0);
           }
-          isiz=neq[1];cpypardou(damage_ct_r0,b,&isiz,&num_cpus);
-          isiz=mi[0]**ne;cpypardou(damage_ct_dam,dam,&isiz,&num_cpus);
+          isiz=neq[1];cpypardou(ct.r0,b,&isiz,&num_cpus);
+          isiz=mi[0]**ne;cpypardou(ct.dam,dam,&isiz,&num_cpus);
           if(damage_damvisc!=NULL){
             isiz=mi[0]**ne;
-            cpypardou(damage_ct_visc,damage_damvisc,&isiz,&num_cpus);
+            cpypardou(ct.visc,damage_damvisc,&isiz,&num_cpus);
           }
           if(*nstate_>0){
             isiz=*nstate_*mi[0]**ne;
-            cpypardou(damage_ct_xs,xstate,&isiz,&num_cpus);
+            cpypardou(ct.xs,xstate,&isiz,&num_cpus);
           }
           if(damage_damjac!=NULL){
             isiz=12*mi[0]**ne;
-            cpypardou(damage_ct_jac,damage_damjac,&isiz,&num_cpus);
+            cpypardou(ct.jac,damage_damjac,&isiz,&num_cpus);
           }
-          for(cq=0;cq<4;cq++) damage_ct_qa[cq]=qa[cq];
-          for(cq=0;cq<5;cq++) damage_ct_cam[cq]=cam[cq];
-          for(cq=0;cq<2;cq++) damage_ct_uam[cq]=uam[cq];
-          damage_ct_lamsnap=damage_ct_lam;
-          damage_ct_nfact++;
+          for(cq=0;cq<4;cq++) ct.qa[cq]=qa[cq];
+          for(cq=0;cq<5;cq++) ct.cam[cq]=cam[cq];
+          for(cq=0;cq<2;cq++) ct.uam[cq]=uam[cq];
+          ct.lamsnap=ct.lam;
+          ct.nfact++;
         }
 
 	if(*isolver==0){
@@ -8192,42 +7351,42 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	   able to tell "this iteration applied a constraint step" from "the
 	   value left over by an earlier one". */
 
-	pf_applied=0;pf_dlamit=0.;pf_lam0it=pf_lam;
+	pf.applied=0;pf.dlamit=0.;pf.lam0it=pf.lam;
 
-	if((pf_on==1)&&(pathfollow_have()==1)&&(*ithermal<2)){
-	  const double *pf_fh=pathfollow_fhat();
-	  for(k=0;k<neq[1];k++) pf_uf[k]=pf_fh[k];
+	if((pf.on==1)&&(pathfollow_have()==1)&&(*ithermal<2)){
+	  const double *fhat=pathfollow_fhat();
+	  for(k=0;k<neq[1];k++) pf.uf[k]=fhat[k];
 	  if(*isolver==0){
 #ifdef SPOOLES
-	    spooles(ad,au,adb,aub,&sigma,pf_uf,icol,irow,&neq[0],&nzs[0],
+	    spooles(ad,au,adb,aub,&sigma,pf.uf,icol,irow,&neq[0],&nzs[0],
 		    &symmetryflag,&inputformat,&nzs[2]);
 #endif
 	  }else if(*isolver==7){
 #ifdef PARDISO
-	    pardiso_main(ad,au,adb,aub,&sigma,pf_uf,icol,irow,&neq[0],&nzs[0],
+	    pardiso_main(ad,au,adb,aub,&sigma,pf.uf,icol,irow,&neq[0],&nzs[0],
 			 &symmetryflag,&inputformat,jq,&nzs[2],&nrhs);
 #endif
 	  }
-	  pf_nstep++;
+	  pf.nstep++;
 
 	  /* ff is recorded on every iterate, engaged or not, so that the
 	     tangent predictor has a stiffness the moment the constraint
 	     takes over.  Only the APPLICATION is gated on engagement. */
 
-	  if((pf_rhs0!=NULL)&&(ccxopt_getenv("CCX_PATHFOLLOW_SOLVECHECK")!=NULL)){
+	  if((pf.rhs0!=NULL)&&(ccxopt_getenv("CCX_PATHFOLLOW_SOLVECHECK")!=NULL)){
 	    double pfr1=0.,pfr2=0.,pfn1=0.,pfn2=0.,pft;
 	    ITG pfi,pfone=1;
 	    const double *pffh2=pathfollow_fhat();
-	    for(pfi=0;pfi<neq[1];pfi++) pf_y[pfi]=0.;
-	    FORTRAN(op,(b,pf_y,ad,au,jq,irow,&pfone,&neq[0]));
+	    for(pfi=0;pfi<neq[1];pfi++) pf.y[pfi]=0.;
+	    FORTRAN(op,(b,pf.y,ad,au,jq,irow,&pfone,&neq[0]));
 	    for(pfi=0;pfi<neq[0];pfi++){
-	      pft=pf_y[pfi]-pf_rhs0[pfi];
-	      pfr1+=pft*pft;pfn1+=pf_rhs0[pfi]*pf_rhs0[pfi];
+	      pft=pf.y[pfi]-pf.rhs0[pfi];
+	      pfr1+=pft*pft;pfn1+=pf.rhs0[pfi]*pf.rhs0[pfi];
 	    }
-	    for(pfi=0;pfi<neq[1];pfi++) pf_y[pfi]=0.;
-	    FORTRAN(op,(pf_uf,pf_y,ad,au,jq,irow,&pfone,&neq[0]));
+	    for(pfi=0;pfi<neq[1];pfi++) pf.y[pfi]=0.;
+	    FORTRAN(op,(pf.uf,pf.y,ad,au,jq,irow,&pfone,&neq[0]));
 	    for(pfi=0;pfi<neq[0];pfi++){
-	      pft=pf_y[pfi]-pffh2[pfi];
+	      pft=pf.y[pfi]-pffh2[pfi];
 	      pfr2+=pft*pft;pfn2+=pffh2[pfi]*pffh2[pfi];
 	    }
 	    printf("[PF-SOLVE] it=%" ITGFORMAT " |K*duR-rhs|/|rhs|=%.3e "
@@ -8257,15 +7416,15 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
        point, which is exactly the spurious "discontinuity" the sweep     \
        then reported.  vold is NOT restored here - the caller perturbs it \
        on purpose. */                                                     \
-    isiz=*nstate_*mi[0]**ne;cpypardou(xstate,pf_sxs,&isiz,&num_cpus);     \
-    isiz=27*mi[0]**ne;cpypardou(xstiff,pf_sxst,&isiz,&num_cpus);          \
-    isiz=neq[1];cpypardou(f,pf_sf,&isiz,&num_cpus);                       \
-    isiz=mt**nk;cpypardou(fn,pf_sfn,&isiz,&num_cpus);                     \
-    isiz=6*mi[0]**ne;cpypardou(stx,pf_sstx,&isiz,&num_cpus);              \
-    if((dam!=NULL)&&(pf_sdam!=NULL)){                                     \
-      isiz=mi[0]**ne;cpypardou(dam,pf_sdam,&isiz,&num_cpus);}             \
-    for(_k=0;_k<4;_k++) qa[_k]=pf_sqa[_k];                                \
-    for(_k=0;_k<5;_k++) cam[_k]=pf_scam[_k];                              \
+    isiz=*nstate_*mi[0]**ne;cpypardou(xstate,pf.sxs,&isiz,&num_cpus);     \
+    isiz=27*mi[0]**ne;cpypardou(xstiff,pf.sxst,&isiz,&num_cpus);          \
+    isiz=neq[1];cpypardou(f,pf.sf,&isiz,&num_cpus);                       \
+    isiz=mt**nk;cpypardou(fn,pf.sfn,&isiz,&num_cpus);                     \
+    isiz=6*mi[0]**ne;cpypardou(stx,pf.sstx,&isiz,&num_cpus);              \
+    if((dam!=NULL)&&(pf.sdam!=NULL)){                                     \
+      isiz=mi[0]**ne;cpypardou(dam,pf.sdam,&isiz,&num_cpus);}             \
+    for(_k=0;_k<4;_k++) qa[_k]=pf.sqa[_k];                                \
+    for(_k=0;_k<5;_k++) cam[_k]=pf.scam[_k];                              \
     for(_k=0;_k<*nboun;_k++)                                              \
       xbounact[_k]=xbounold[_k]+(xboun[_k]-xbounold[_k])*(LAMV);          \
     for(_k=0;_k<neq[1];_k++) b[_k]=0.;                                    \
@@ -8296,42 +7455,42 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	     the claim "a constant reference load reproduces the actual
 	     dR/dlambda" that must not be assumed. */
 
-	  if((pf_lincheck>0)&&(iinc==pf_lincheck)&&(iit==1)){
+	  if((pf.lincheck>0)&&(iinc==pf.lincheck)&&(iit==1)){
 	    ITG pq,pfone=1,pj,pnode,pi;
 	    double peps,plam0,pdl,pn1,pn2,pnq,pt,pfhq,pnf,pkp,pql,pqc;
 	    double pepsv[5]={1.e-3,1.e-4,1.e-5,1.e-6,1.e-7};
 
-	    if(pf_p==NULL){
-	      NNEW(pf_p,double,neq[1]);NNEW(pf_r0,double,neq[1]);
-	      NNEW(pf_r1,double,neq[1]);NNEW(pf_q,double,neq[1]);
-	      NNEW(pf_sv,double,mt**nk);
-	      NNEW(pf_sxs,double,*nstate_*mi[0]**ne);
-	      if(dam!=NULL) NNEW(pf_sdam,double,mi[0]**ne);
-	      NNEW(pf_sf,double,neq[1]);NNEW(pf_sfn,double,mt**nk);
-	      NNEW(pf_sstx,double,6*mi[0]**ne);
-	      NNEW(pf_sxb,double,*nboun);
-	      /* pf_y is the mat-vec scratch; it is otherwise allocated only
+	    if(pf.p==NULL){
+	      NNEW(pf.p,double,neq[1]);NNEW(pf.r0,double,neq[1]);
+	      NNEW(pf.r1,double,neq[1]);NNEW(pf.q,double,neq[1]);
+	      NNEW(pf.sv,double,mt**nk);
+	      NNEW(pf.sxs,double,*nstate_*mi[0]**ne);
+	      if(dam!=NULL) NNEW(pf.sdam,double,mi[0]**ne);
+	      NNEW(pf.sf,double,neq[1]);NNEW(pf.sfn,double,mt**nk);
+	      NNEW(pf.sstx,double,6*mi[0]**ne);
+	      NNEW(pf.sxb,double,*nboun);
+	      /* pf.y is the mat-vec scratch; it is otherwise allocated only
 	         by SOLVECHECK, and LINCHECK dereferenced it as NULL. */
-	      if(pf_y==NULL) NNEW(pf_y,double,neq[1]);
-	      NNEW(pf_sxst,double,27*mi[0]**ne);
-	      NNEW(pf_lhs,double,neq[1]);NNEW(pf_rhs,double,neq[1]);
+	      if(pf.y==NULL) NNEW(pf.y,double,neq[1]);
+	      NNEW(pf.sxst,double,27*mi[0]**ne);
+	      NNEW(pf.lhs,double,neq[1]);NNEW(pf.rhs,double,neq[1]);
 	    }
 
 	    /* --- snapshot everything the probe is about to disturb --- */
-	    isiz=mt**nk;cpypardou(pf_sv,vold,&isiz,&num_cpus);
-	    isiz=*nstate_*mi[0]**ne;cpypardou(pf_sxs,xstate,&isiz,&num_cpus);
-	    if((dam!=NULL)&&(pf_sdam!=NULL)){
-	      isiz=mi[0]**ne;cpypardou(pf_sdam,dam,&isiz,&num_cpus);}
-	    isiz=neq[1];cpypardou(pf_sf,f,&isiz,&num_cpus);
-	    isiz=mt**nk;cpypardou(pf_sfn,fn,&isiz,&num_cpus);
-	    isiz=6*mi[0]**ne;cpypardou(pf_sstx,stx,&isiz,&num_cpus);
-	    isiz=*nboun;cpypardou(pf_sxb,xbounact,&isiz,&num_cpus);
-	    isiz=27*mi[0]**ne;cpypardou(pf_sxst,xstiff,&isiz,&num_cpus);
-	    for(k=0;k<4;k++) pf_sqa[k]=qa[k];
-	    for(k=0;k<5;k++) pf_scam[k]=cam[k];
-	    isiz=neq[1];cpypardou(pf_p,b,&isiz,&num_cpus);   /* direction p */
-	    plam0=pf_lam;
-	    pdl=(fabs(pf_dlampred)>0.)?pf_dlampred:1.e-3;
+	    isiz=mt**nk;cpypardou(pf.sv,vold,&isiz,&num_cpus);
+	    isiz=*nstate_*mi[0]**ne;cpypardou(pf.sxs,xstate,&isiz,&num_cpus);
+	    if((dam!=NULL)&&(pf.sdam!=NULL)){
+	      isiz=mi[0]**ne;cpypardou(pf.sdam,dam,&isiz,&num_cpus);}
+	    isiz=neq[1];cpypardou(pf.sf,f,&isiz,&num_cpus);
+	    isiz=mt**nk;cpypardou(pf.sfn,fn,&isiz,&num_cpus);
+	    isiz=6*mi[0]**ne;cpypardou(pf.sstx,stx,&isiz,&num_cpus);
+	    isiz=*nboun;cpypardou(pf.sxb,xbounact,&isiz,&num_cpus);
+	    isiz=27*mi[0]**ne;cpypardou(pf.sxst,xstiff,&isiz,&num_cpus);
+	    for(k=0;k<4;k++) pf.sqa[k]=qa[k];
+	    for(k=0;k<5;k++) pf.scam[k]=cam[k];
+	    isiz=neq[1];cpypardou(pf.p,b,&isiz,&num_cpus);   /* direction p */
+	    plam0=pf.lam;
+	    pdl=(fabs(pf.dlampred)>0.)?pf.dlampred:1.e-3;
 
 	    /* p is left as du_R, the Newton correction itself, and is NOT
 	       normalised.  Rescaling it to unit norm makes eps*p a
@@ -8341,23 +7500,23 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	       a reason that has nothing to do with the tangent.  du_R is the
 	       direction the method actually takes, which is the one worth
 	       verifying. */
-	    pt=sqrt(damage_fd_dot(pf_p,pf_p,neq[0]));
+	    pt=sqrt(pathfollow_dot(pf.p,pf.p,neq[0]));
 
 	    printf("\n[PF-LIN] increment %" ITGFORMAT ", base point AFTER "
 	           "prediction(); lambda=%.10f  |p|=%.4e  dlambda_dir=%.4e\n",
-	           iinc,plam0,sqrt(damage_fd_dot(pf_p,pf_p,neq[1])),pdl);
+	           iinc,plam0,sqrt(pathfollow_dot(pf.p,pf.p,neq[1])),pdl);
 
 	    /* R at the base point */
-	    PF_LIN_RESID(plam0,pf_r0);
-	    pn1=sqrt(damage_fd_dot(pf_r0,pf_r0,neq[0]));
+	    PF_LIN_RESID(plam0,pf.r0);
+	    pn1=sqrt(pathfollow_dot(pf.r0,pf.r0,neq[0]));
 	    printf("[PF-LIN]   |R0| = %.6e   neq0=%" ITGFORMAT " neq1=%"
 	           ITGFORMAT "\n",pn1,neq[0],neq[1]);
 
 	    /* bisection: is ONE evaluation self-contaminating, or is it the
 	       perturbed ones that leave something behind? */
-	    PF_LIN_RESID(plam0,pf_r1);
+	    PF_LIN_RESID(plam0,pf.r1);
 	    pn2=0.;
-	    for(k=0;k<neq[0];k++){pt=pf_r1[k]-pf_r0[k];pn2+=pt*pt;}
+	    for(k=0;k<neq[0];k++){pt=pf.r1[k]-pf.r0[k];pn2+=pt*pt;}
 	    printf("[PF-LIN]   immediate re-evaluation at lambda0: "
 	           "|dR|/|R0| = %.6e\n",(pn1>0.)?sqrt(pn2)/pn1:sqrt(pn2));
 	    fflush(stdout);
@@ -8381,9 +7540,9 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	         evaluation is idempotent (measured: |dR|/|R0| = 0 exactly),
 	         but the perturbed ones must not be allowed to bias the next
 	         difference. */
-	      PF_LIN_RESID(plam0,pf_r0);
+	      PF_LIN_RESID(plam0,pf.r0);
 
-	      /* ORDER MATTERS.  pf_q was originally computed first and read
+	      /* ORDER MATTERS.  pf.q was originally computed first and read
 	         last, and it did not survive the calls in between: |q| taken
 	         at the norm loop disagreed with the |q_FD| printed from the
 	         same buffer moments earlier (5.3e+03 against 8.1e-11).  The
@@ -8395,37 +7554,37 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	      for(pi=0;pi<*nk;pi++){
 	        for(pj=1;pj<mt;pj++){
 	          pnode=nactdof[mt*pi+pj];
-	          if(pnode>0) vold[mt*pi+pj]+=peps*pf_p[pnode-1];
+	          if(pnode>0) vold[mt*pi+pj]+=peps*pf.p[pnode-1];
 	        }
 	      }
-	      PF_LIN_RESID(plam0+peps*pdl,pf_r1);
-	      isiz=mt**nk;cpypardou(vold,pf_sv,&isiz,&num_cpus);
-	      for(k=0;k<neq[0];k++) pf_lhs[k]=(pf_r1[k]-pf_r0[k])/peps;
+	      PF_LIN_RESID(plam0+peps*pdl,pf.r1);
+	      isiz=mt**nk;cpypardou(vold,pf.sv,&isiz,&num_cpus);
+	      for(k=0;k<neq[0];k++) pf.lhs[k]=(pf.r1[k]-pf.r0[k])/peps;
 
 	      /* (b) K*p */
-	      for(k=0;k<neq[1];k++) pf_y[k]=0.;
-	      FORTRAN(op,(pf_p,pf_y,ad,au,jq,irow,&pfone,&neq[0]));
+	      for(k=0;k<neq[1];k++) pf.y[k]=0.;
+	      FORTRAN(op,(pf.p,pf.y,ad,au,jq,irow,&pfone,&neq[0]));
 
 	      /* (c) q_FD, built last */
-	      PF_LIN_RESID(plam0+peps,pf_r1);
-	      for(k=0;k<neq[0];k++) pf_q[k]=(pf_r1[k]-pf_r0[k])/peps;
-	      pnq=sqrt(damage_fd_dot(pf_q,pf_q,neq[0]));
+	      PF_LIN_RESID(plam0+peps,pf.r1);
+	      for(k=0;k<neq[0];k++) pf.q[k]=(pf.r1[k]-pf.r0[k])/peps;
+	      pnq=sqrt(pathfollow_dot(pf.q,pf.q,neq[0]));
 
 	      pfhq=0.;pnf=0.;
 	      if(pathfollow_have()==1){
 	        const double *pfh=pathfollow_fhat();
-	        pfhq=damage_fd_dot(pfh,pf_q,neq[0]);
-	        pnf=sqrt(damage_fd_dot(pfh,pfh,neq[0]));
+	        pfhq=pathfollow_dot(pfh,pf.q,neq[0]);
+	        pnf=sqrt(pathfollow_dot(pfh,pfh,neq[0]));
 	      }
 
 	      pn2=0.;pn1=0.;pkp=0.;pql=0.;pqc=0.;
-	      for(k=0;k<neq[0];k++) pf_rhs[k]=-pf_y[k]+pdl*pf_q[k];
+	      for(k=0;k<neq[0];k++) pf.rhs[k]=-pf.y[k]+pdl*pf.q[k];
 	      for(k=0;k<neq[0];k++){
-	        pt=pf_lhs[k]-pf_rhs[k];  pn2+=pt*pt;
-	        pn1+=pf_lhs[k]*pf_lhs[k];
-	        pkp+=pf_y[k]*pf_y[k];
-	        pql+=pf_rhs[k]*pf_rhs[k];
-	        pqc+=pf_q[k]*pf_q[k];
+	        pt=pf.lhs[k]-pf.rhs[k];  pn2+=pt*pt;
+	        pn1+=pf.lhs[k]*pf.lhs[k];
+	        pkp+=pf.y[k]*pf.y[k];
+	        pql+=pf.rhs[k]*pf.rhs[k];
+	        pqc+=pf.q[k]*pf.q[k];
 	      }
 	      printf("[PF-LIN]   %.1e  %.6e  %+.10f   %12.6e   %.6e"
 	             "   |lhs|=%.4e |Kp|=%.4e |rhs|=%.4e  |q|inloop=%.6e\n",
@@ -8441,42 +7600,42 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	       same vector; if it does not, the sweep is measuring the probe's
 	       own leakage rather than dR/dlambda. */
 
-	    PF_LIN_RESID(plam0,pf_r1);
+	    PF_LIN_RESID(plam0,pf.r1);
 	    pn1=0.;pn2=0.;
 	    for(k=0;k<neq[0];k++){
-	      pt=pf_r1[k]-pf_r0[k];pn2+=pt*pt;pn1+=pf_r0[k]*pf_r0[k];
+	      pt=pf.r1[k]-pf.r0[k];pn2+=pt*pt;pn1+=pf.r0[k]*pf.r0[k];
 	    }
 	    printf("[PF-LIN]   idempotency: |R(lam0) again - R0|/|R0| = %.6e"
 	           "   %s\n",(pn1>0.)?sqrt(pn2)/sqrt(pn1):sqrt(pn2),
 	           (sqrt(pn2)<=1.e-10*sqrt(pn1))?"clean":"PROBE LEAKS STATE");
 
 	    /* --- restore --- */
-	    isiz=mt**nk;cpypardou(vold,pf_sv,&isiz,&num_cpus);
-	    isiz=*nstate_*mi[0]**ne;cpypardou(xstate,pf_sxs,&isiz,&num_cpus);
-	    if((dam!=NULL)&&(pf_sdam!=NULL)){
-	      isiz=mi[0]**ne;cpypardou(dam,pf_sdam,&isiz,&num_cpus);}
-	    isiz=neq[1];cpypardou(f,pf_sf,&isiz,&num_cpus);
-	    isiz=mt**nk;cpypardou(fn,pf_sfn,&isiz,&num_cpus);
-	    isiz=6*mi[0]**ne;cpypardou(stx,pf_sstx,&isiz,&num_cpus);
-	    isiz=*nboun;cpypardou(xbounact,pf_sxb,&isiz,&num_cpus);
-	    isiz=27*mi[0]**ne;cpypardou(xstiff,pf_sxst,&isiz,&num_cpus);
-	    for(k=0;k<4;k++) qa[k]=pf_sqa[k];
-	    for(k=0;k<5;k++) cam[k]=pf_scam[k];
-	    isiz=neq[1];cpypardou(b,pf_p,&isiz,&num_cpus);
-	    pf_lam=plam0;
+	    isiz=mt**nk;cpypardou(vold,pf.sv,&isiz,&num_cpus);
+	    isiz=*nstate_*mi[0]**ne;cpypardou(xstate,pf.sxs,&isiz,&num_cpus);
+	    if((dam!=NULL)&&(pf.sdam!=NULL)){
+	      isiz=mi[0]**ne;cpypardou(dam,pf.sdam,&isiz,&num_cpus);}
+	    isiz=neq[1];cpypardou(f,pf.sf,&isiz,&num_cpus);
+	    isiz=mt**nk;cpypardou(fn,pf.sfn,&isiz,&num_cpus);
+	    isiz=6*mi[0]**ne;cpypardou(stx,pf.sstx,&isiz,&num_cpus);
+	    isiz=*nboun;cpypardou(xbounact,pf.sxb,&isiz,&num_cpus);
+	    isiz=27*mi[0]**ne;cpypardou(xstiff,pf.sxst,&isiz,&num_cpus);
+	    for(k=0;k<4;k++) qa[k]=pf.sqa[k];
+	    for(k=0;k<5;k++) cam[k]=pf.scam[k];
+	    isiz=neq[1];cpypardou(b,pf.p,&isiz,&num_cpus);
+	    pf.lam=plam0;
 	    printf("[PF-LIN] state restored\n\n");
 	    fflush(stdout);
 	  }
 #undef PF_LIN_RESID
 
-	  pathfollow_measure(pf_uf);
-	  pf_applied=0;
-	  if(pf_engaged==1){
+	  pathfollow_measure(pf.uf);
+	  pf.applied=0;
+	  if(pf.engaged==1){
 
 	    /* the trial displacement is READ FROM THE MODEL, not
 	       accumulated; see the design note in pathfollow.c */
 
-	    if(pf_codmode>=1){
+	    if(pf.codmode>=1){
 
 	      /* Mode 1 (CCX_PATHFOLLOW_COD): phi is ABSOLUTE, the mean normal
 	         separation measured from the reference configuration.
@@ -8487,23 +7646,23 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	         c only couples plus/minus node pairs, so in both cases the
 	         projection is exactly the controlled opening. */
 
-	      pf_lam0it=pf_lam;
-	      pf_dlamit=0.;
-	      pf_cu=pf_project(pathfollow_cod_c(),vold,
-	                       (pf_codmode==2)?vini:pf_uref,nactdof,*nk,mt);
-	      pf_applied=pathfollow_cod_step(b,pf_uf,pf_cu,&pf_lam,pf_clip,
-	                                     &pf_g,&pf_dlam,&pf_reason);
-	      pf_dg=pf_cu;
-	      if(pf_applied==1) glob_fired(&damage_glob,GLOB_PATHFOLLOW);
-	      if(pf_applied==1){
-	        pf_dlamit=pf_lam-pf_lam0it;
+	      pf.lam0it=pf.lam;
+	      pf.dlamit=0.;
+	      pf.cu=pathfollow_project(pathfollow_cod_c(),vold,
+	                       (pf.codmode==2)?vini:pf.uref,nactdof,*nk,mt);
+	      pf.applied=pathfollow_cod_step(b,pf.uf,pf.cu,&pf.lam,pf.clip,
+	                                     &pf.g,&pf.dlam,&pf.reason);
+	      pf.dg=pf.cu;
+	      if(pf.applied==1) glob_fired(&damage_glob,GLOB_PATHFOLLOW);
+	      if(pf.applied==1){
+	        pf.dlamit=pf.lam-pf.lam0it;
 	        for(k=0;k<*nboun;k++){
-	          xbounact[k]=xbounold[k]+(xboun[k]-xbounold[k])*pf_lam;
+	          xbounact[k]=xbounold[k]+(xboun[k]-xbounold[k])*pf.lam;
 	        }
 	      }
 	      goto pf_after_step;
 	    }
-	    pf_pdu=pf_project(pathfollow_fhat(),vold,vini,nactdof,*nk,mt);
+	    pf.pdu=pathfollow_project(pathfollow_fhat(),vold,vini,nactdof,*nk,mt);
 
 	    /* At the first iteration put lambda exactly on the constraint,
 	       in closed form, so that the coupled iteration does not open
@@ -8516,26 +7675,26 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	       what stops the run. */
 
 	    if((iit==1)&&(ccxopt_getenv("CCX_PATHFOLLOW_PROJECT")!=NULL)){
-	      if(pathfollow_project_lambda(pf_pdu,&pf_lam)==1){
+	      if(pathfollow_project_lambda(pf.pdu,&pf.lam)==1){
 	        for(k=0;k<*nboun;k++){
-	          xbounact[k]=xbounold[k]+(xboun[k]-xbounold[k])*pf_lam;
+	          xbounact[k]=xbounold[k]+(xboun[k]-xbounold[k])*pf.lam;
 	        }
 	      }
 	    }
-	    pf_applied=pathfollow_step(b,pf_uf,pf_pdu,&pf_lam,pf_clip,
-	                               &pf_dg,&pf_g,&pf_dlam,&pf_reason);
+	    pf.applied=pathfollow_step(b,pf.uf,pf.pdu,&pf.lam,pf.clip,
+	                               &pf.dg,&pf.g,&pf.dlam,&pf.reason);
 	  }
-	  if(pf_applied==1){
+	  if(pf.applied==1){
 	    for(k=0;k<*nboun;k++){
-	      xbounact[k]=xbounold[k]+(xboun[k]-xbounold[k])*pf_lam;
+	      xbounact[k]=xbounold[k]+(xboun[k]-xbounold[k])*pf.lam;
 	    }
 	  }
 	 pf_after_step:
 	  if(ccxopt_getenv("CCX_PATHFOLLOW_PROBE")!=NULL){
 	    printf("[PATHFOLLOW] it=%" ITGFORMAT " lambda=%.8f dlambda=%+.4e "
 	           "dG=%.6e g=%.4e applied=%" ITGFORMAT " reason=%" ITGFORMAT
-	           "\n",iit,pf_lam,pf_applied?pf_dlam:0.,pf_dg,pf_g,
-	           pf_applied,pf_reason);
+	           "\n",iit,pf.lam,pf.applied?pf.dlam:0.,pf.dg,pf.g,
+	           pf.applied,pf.reason);
 	    fflush(stdout);
 	  }
 	}
@@ -8564,70 +7723,70 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	   armed by the load-factor gate it would run on every iteration of
 	   every increment from the wall on, so under that gate it is taken
 	   once per attempt.  CCX_DAMAGE_NULLVEC on its own is unchanged. */
-	if((damage_null_inc>0)&&(iinc>=damage_null_inc)&&
-	   ((damage_wall_armed==0)||(iit==1))&&
+	if((prb.null_inc>0)&&(iinc>=prb.null_inc)&&
+	   ((prb.wall_armed==0)||(iit==1))&&
 	   (*isolver==7)&&(*ithermal<2)&&(*mortar<=1)){
-	  NNEW(damage_null_x,double,neq[1]);
+	  NNEW(prb.null_x,double,neq[1]);
 	  for(k=0;k<neq[1];k++){
-	    damage_null_seed=(1103515245*damage_null_seed+12345)&0x7fffffff;
-	    damage_null_x[k]=(double)(damage_null_seed%20001-10000)/10000.;
+	    prb.null_seed=(1103515245*prb.null_seed+12345)&0x7fffffff;
+	    prb.null_x[k]=(double)(prb.null_seed%20001-10000)/10000.;
 	  }
-	  for(damage_null_it=0;damage_null_it<damage_null_nit;damage_null_it++){
-	    damage_null_nb=0.;
+	  for(prb.null_it=0;prb.null_it<prb.null_nit;prb.null_it++){
+	    prb.null_nb=0.;
 	    for(k=0;k<neq[1];k++)
-	      damage_null_nb+=damage_null_x[k]*damage_null_x[k];
-	    damage_null_nb=sqrt(damage_null_nb);
-	    if(damage_null_nb>0.)
-	      for(k=0;k<neq[1];k++) damage_null_x[k]/=damage_null_nb;
+	      prb.null_nb+=prb.null_x[k]*prb.null_x[k];
+	    prb.null_nb=sqrt(prb.null_nb);
+	    if(prb.null_nb>0.)
+	      for(k=0;k<neq[1];k++) prb.null_x[k]/=prb.null_nb;
 #ifdef PARDISO
-	    pardiso_main(ad,au,adb,aub,&sigma,damage_null_x,icol,irow,
+	    pardiso_main(ad,au,adb,aub,&sigma,prb.null_x,icol,irow,
 			 &neq[0],&nzs[0],&symmetryflag,&inputformat,jq,
 			 &nzs[2],&nrhs);
 #endif
-	    damage_null_nx=0.;
+	    prb.null_nx=0.;
 	    for(k=0;k<neq[1];k++)
-	      damage_null_nx+=damage_null_x[k]*damage_null_x[k];
-	    damage_null_nx=sqrt(damage_null_nx);
-	    if((damage_null_it<3)||(damage_null_it==damage_null_nit-1))
+	      prb.null_nx+=prb.null_x[k]*prb.null_x[k];
+	    prb.null_nx=sqrt(prb.null_nx);
+	    if((prb.null_it<3)||(prb.null_it==prb.null_nit-1))
 	    printf("[DAMAGE NULLVEC] inc=%" ITGFORMAT " iteration %" ITGFORMAT
-		   " 1/sigma_min >= %.6e\n",iinc,damage_null_it+1,
-		   damage_null_nx);
+		   " 1/sigma_min >= %.6e\n",iinc,prb.null_it+1,
+		   prb.null_nx);
 	  }
 	  /* where does the mode live */
-	  damage_null_amax=0.;
+	  prb.null_amax=0.;
 	  for(i=0;i<*nk;i++){
 	    for(idir=1;idir<=3;idir++){
 	      k=nactdof[mt*i+idir];
 	      if(k<=0) continue;
-	      if(fabs(damage_null_x[k-1])>damage_null_amax)
-		damage_null_amax=fabs(damage_null_x[k-1]);
+	      if(fabs(prb.null_x[k-1])>prb.null_amax)
+		prb.null_amax=fabs(prb.null_x[k-1]);
 	    }
 	  }
 	  printf("[DAMAGE NULLVEC] nodes carrying the mode "
 		 "(|component| > 0.2 of the maximum):\n");
-	  damage_null_cnt=0;
+	  prb.null_cnt=0;
 	  for(i=0;i<*nk;i++){
-	    damage_null_nn=0.;
+	    prb.null_nn=0.;
 	    for(idir=1;idir<=3;idir++){
 	      k=nactdof[mt*i+idir];
 	      if(k<=0) continue;
-	      if(fabs(damage_null_x[k-1])>damage_null_nn)
-		damage_null_nn=fabs(damage_null_x[k-1]);
+	      if(fabs(prb.null_x[k-1])>prb.null_nn)
+		prb.null_nn=fabs(prb.null_x[k-1]);
 	    }
-	    if((damage_null_amax>0.)&&(damage_null_nn>0.2*damage_null_amax)){
-	      damage_null_cnt++;
-	      if(damage_null_cnt<=20){
+	    if((prb.null_amax>0.)&&(prb.null_nn>0.2*prb.null_amax)){
+	      prb.null_cnt++;
+	      if(prb.null_cnt<=20){
 		printf("[DAMAGE NULLVEC]   node %" ITGFORMAT
 		       " at (%.3f, %.3f, %.3f) amplitude %.4f\n",
 		       i+1,co[3*i],co[3*i+1],co[3*i+2],
-		       damage_null_nn/damage_null_amax);
+		       prb.null_nn/prb.null_amax);
 	      }
 	    }
 	  }
 	  printf("[DAMAGE NULLVEC] %" ITGFORMAT " node(s) above the "
-		 "threshold out of %" ITGFORMAT "\n",damage_null_cnt,*nk);
+		 "threshold out of %" ITGFORMAT "\n",prb.null_cnt,*nk);
 	  fflush(stdout);
-	  SFREE(damage_null_x);
+	  SFREE(prb.null_x);
 	  FORTRAN(stopwithout201,());
 	}
 
@@ -8664,11 +7823,11 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	     two halves of au, or use J where J^T is meant, and the identity
 	     fails at once.  It is checked on every armed iteration and the
 	     mechanism REFUSES TO ARM when it is off by more than 1e-3. */
-	  if(((damage_dl_on==1)||(damage_dl_lc_due==1))&&
-	     (damage_dl_r0!=NULL)&&(*mortar<=1)){
+	  if(((dog.on==1)||(dog.lc_due==1))&&
+	     (dog.r0!=NULL)&&(*mortar<=1)){
 	    if((nasym!=1)||(symmetryflag!=2)||(*ithermal>=2)||
 	       (nzs[2]!=nzs[1])||(neq[0]!=neq[1])){
-	      if(damage_dl_have>=0){
+	      if(dog.have>=0){
 	        printf("[DAMAGE TR] REFUSING TO ARM: the assembled operator is "
 	               "not the one this construction was proved on (nasym=%"
 	               ITGFORMAT " symmetryflag=%" ITGFORMAT " ithermal=%"
@@ -8679,113 +7838,113 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	               nzs[1],nzs[2],"\n");
 	        fflush(stdout);
 	      }
-	      damage_dl_have=(damage_dl_on==1)?-1:damage_dl_have;
-	      damage_dl_on=0;damage_dl_lc_due=0;
+	      dog.have=(dog.on==1)?-1:dog.have;
+	      dog.on=0;dog.lc_due=0;
 	    }else{
 	      ITG dk,dc,dr;
 	      double daden,dad;
-	      if(damage_dl_d==NULL){
-	        NNEW(damage_dl_d,double,neq[1]);
-	        NNEW(damage_dl_w,double,neq[1]);
-	        NNEW(damage_dl_pn,double,neq[1]);
+	      if(dog.d==NULL){
+	        NNEW(dog.d,double,neq[1]);
+	        NNEW(dog.w,double,neq[1]);
+	        NNEW(dog.pn,double,neq[1]);
 	      }
 	      /* d = J^T r0 */
 	      for(dk=0;dk<neq[1];dk++)
-	        damage_dl_d[dk]=ad[dk]*damage_dl_r0[dk];
+	        dog.d[dk]=ad[dk]*dog.r0[dk];
 	      for(dc=0;dc<neq[1];dc++){
 	        for(dk=jq[dc]-1;dk<jq[dc+1]-1;dk++){
 	          dr=irow[dk]-1;
-	          damage_dl_d[dc]+=au[dk]*damage_dl_r0[dr];
-	          damage_dl_d[dr]+=au[nzs[2]+dk]*damage_dl_r0[dc];
+	          dog.d[dc]+=au[dk]*dog.r0[dr];
+	          dog.d[dr]+=au[nzs[2]+dk]*dog.r0[dc];
 	        }
 	      }
 	      /* w = J d   (the same loop with the two halves exchanged) */
 	      for(dk=0;dk<neq[1];dk++)
-	        damage_dl_w[dk]=ad[dk]*damage_dl_d[dk];
+	        dog.w[dk]=ad[dk]*dog.d[dk];
 	      for(dc=0;dc<neq[1];dc++){
 	        for(dk=jq[dc]-1;dk<jq[dc+1]-1;dk++){
 	          dr=irow[dk]-1;
-	          damage_dl_w[dr]+=au[dk]*damage_dl_d[dc];
-	          damage_dl_w[dc]+=au[nzs[2]+dk]*damage_dl_d[dr];
+	          dog.w[dr]+=au[dk]*dog.d[dc];
+	          dog.w[dc]+=au[nzs[2]+dk]*dog.d[dr];
 	        }
 	      }
-	      isiz=neq[1];cpypardou(damage_dl_pn,b,&isiz,&num_cpus);
+	      isiz=neq[1];cpypardou(dog.pn,b,&isiz,&num_cpus);
 	      /* [WALLDIAG] MASKSTEP.  pm = p_N with every component that
 	         belongs to an AUTOSPC-masked node zeroed, and wm = J pm by the
 	         same proved loop.  Built HERE because ad and au are freed
 	         before the linearisation check runs; pm and wm are the only
 	         things that survive to it.  Nothing on a solution path reads
 	         either. */
-	      if((damage_wall_maskstep!=0)&&(damage_spc_mask!=NULL)&&
+	      if((prb.wall_maskstep!=0)&&(damage_spc_mask!=NULL)&&
 	         (damage_spc_nk>=*nk)){
 	        ITG mi_,mj_,mk_;
-	        if(damage_dl_pm==NULL){
-	          NNEW(damage_dl_pm,double,neq[1]);
-	          NNEW(damage_dl_wm,double,neq[1]);
+	        if(dog.pm==NULL){
+	          NNEW(dog.pm,double,neq[1]);
+	          NNEW(dog.wm,double,neq[1]);
 	        }
-	        for(dk=0;dk<neq[1];dk++) damage_dl_pm[dk]=damage_dl_pn[dk];
+	        for(dk=0;dk<neq[1];dk++) dog.pm[dk]=dog.pn[dk];
 	        for(mi_=0;mi_<*nk;mi_++){
 	          if(damage_spc_mask[mi_]==0) continue;
 	          for(mj_=1;mj_<mt;mj_++){
 	            mk_=nactdof[mt*mi_+mj_];
-	            if(mk_>0) damage_dl_pm[mk_-1]=0.;
+	            if(mk_>0) dog.pm[mk_-1]=0.;
 	          }
 	        }
 	        for(dk=0;dk<neq[1];dk++)
-	          damage_dl_wm[dk]=ad[dk]*damage_dl_pm[dk];
+	          dog.wm[dk]=ad[dk]*dog.pm[dk];
 	        for(dc=0;dc<neq[1];dc++){
 	          for(dk=jq[dc]-1;dk<jq[dc+1]-1;dk++){
 	            dr=irow[dk]-1;
-	            damage_dl_wm[dr]+=au[dk]*damage_dl_pm[dc];
-	            damage_dl_wm[dc]+=au[nzs[2]+dk]*damage_dl_pm[dr];
+	            dog.wm[dr]+=au[dk]*dog.pm[dc];
+	            dog.wm[dc]+=au[nzs[2]+dk]*dog.pm[dr];
 	          }
 	        }
-	        damage_dl_npm2=0.;
+	        dog.npm2=0.;
 	        for(dk=0;dk<neq[1];dk++)
-	          damage_dl_npm2+=damage_dl_pm[dk]*damage_dl_pm[dk];
+	          dog.npm2+=dog.pm[dk]*dog.pm[dk];
 	      }
-	      damage_dl_nb2=0.;damage_dl_nd2=0.;damage_dl_nw2=0.;
-	      damage_dl_npn2=0.;damage_dl_dtpn=0.;
+	      dog.nb2=0.;dog.nd2=0.;dog.nw2=0.;
+	      dog.npn2=0.;dog.dtpn=0.;
 	      for(dk=0;dk<neq[1];dk++){
-	        damage_dl_nb2+=damage_dl_r0[dk]*damage_dl_r0[dk];
-	        damage_dl_nd2+=damage_dl_d[dk]*damage_dl_d[dk];
-	        damage_dl_nw2+=damage_dl_w[dk]*damage_dl_w[dk];
-	        damage_dl_npn2+=damage_dl_pn[dk]*damage_dl_pn[dk];
-	        damage_dl_dtpn+=damage_dl_d[dk]*damage_dl_pn[dk];
+	        dog.nb2+=dog.r0[dk]*dog.r0[dk];
+	        dog.nd2+=dog.d[dk]*dog.d[dk];
+	        dog.nw2+=dog.w[dk]*dog.w[dk];
+	        dog.npn2+=dog.pn[dk]*dog.pn[dk];
+	        dog.dtpn+=dog.d[dk]*dog.pn[dk];
 	      }
 	      /* how far from symmetric the operator actually IS - measured,
 	         because the dogleg is only worth building if J^T != J */
-	      damage_dl_asym=0.;daden=0.;
+	      dog.asym=0.;daden=0.;
 	      for(dk=0;dk<nzs[1];dk++){
 	        dad=fabs(au[dk]-au[nzs[2]+dk]);
-	        if(dad>damage_dl_asym) damage_dl_asym=dad;
+	        if(dad>dog.asym) dog.asym=dad;
 	        if(fabs(au[dk])>daden) daden=fabs(au[dk]);
 	      }
-	      if(daden>0.) damage_dl_asym/=daden;
-	      damage_dl_ident=(damage_dl_nb2>0.)?
-	                       damage_dl_dtpn/damage_dl_nb2:0.;
-	      if((damage_dl_nb2<=0.)||(damage_dl_nw2<=0.)||
-	         (damage_dl_nd2<=0.)||(fabs(damage_dl_ident-1.)>1.e-3)){
+	      if(daden>0.) dog.asym/=daden;
+	      dog.ident=(dog.nb2>0.)?
+	                       dog.dtpn/dog.nb2:0.;
+	      if((dog.nb2<=0.)||(dog.nw2<=0.)||
+	         (dog.nd2<=0.)||(fabs(dog.ident-1.)>1.e-3)){
 	        printf("[DAMAGE TR] TRANSPOSE-CHECK FAILED at inc=%" ITGFORMAT
 	               " iter=%" ITGFORMAT ": dot(J^T R,p_N)/|R|^2 = %.12e, "
 	               "and it must be 1.  Either the transpose is not a "
 	               "transpose or the solve is not a solve.  The dogleg "
 	               "DISARMS and the wall goes to the original stock stop.%s",
-	               iinc,iit,damage_dl_ident,"\n");
+	               iinc,iit,dog.ident,"\n");
 	        fflush(stdout);
-	        damage_dl_have=-1;damage_dl_on=0;damage_dl_lc_due=0;
+	        dog.have=-1;dog.on=0;dog.lc_due=0;
 	      }else{
-	        damage_dl_tc=damage_dl_nd2/damage_dl_nw2;
-	        damage_dl_have=1;
-	        if(damage_dl_on==1) damage_dl_nfact++;
-	        if(damage_dl_banner==0){
-	          damage_dl_banner=1;
+	        dog.tc=dog.nd2/dog.nw2;
+	        dog.have=1;
+	        if(dog.on==1) dog.nfact++;
+	        if(dog.banner==0){
+	          dog.banner=1;
 	          printf("[DAMAGE TR] TRANSPOSE-CHECK inc=%" ITGFORMAT " iter=%"
 	                 ITGFORMAT " dot(J^T R,p_N)/|R|^2 = %.12e (exact value "
 	                 "1; a J used in place of J^T does not satisfy it).  "
 	                 "OPERATOR ASYMMETRY max|au_L-au_U|/max|au_L| = %.6e, "
 	                 "so J^T R is genuinely not J R here.%s",
-	                 iinc,iit,damage_dl_ident,damage_dl_asym,"\n");
+	                 iinc,iit,dog.ident,dog.asym,"\n");
 	          fflush(stdout);
 	        }
 	      }
@@ -8954,19 +8113,19 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         }
       }
 
-      if((damage_fd_inc>0)&&(iinc>=damage_fd_inc)&&(iit>=damage_fd_it)&&
-         ((damage_fd_step<=0)||(*istep==damage_fd_step))){
+      if((opd.fd_inc>0)&&(iinc>=opd.fd_inc)&&(iit>=opd.fd_it)&&
+         ((opd.fd_step<=0)||(*istep==opd.fd_step))){
 
-        opcheck damage_fd_all,damage_fd_col_o,damage_fd_bulk,damage_fd_coh;
+        opcheck oc_all,oc_col_o,oc_bulk,oc_coh;
 
-        NNEW(damage_fd_vsav,double,mt**nk);
-        NNEW(damage_fd_vtrue,double,mt**nk);
-        NNEW(damage_fd_fp,double,mt**nk);
-        NNEW(damage_fd_fm,double,mt**nk);
-        NNEW(damage_fd_f0,double,mt**nk);
+        NNEW(opd.fd_vsav,double,mt**nk);
+        NNEW(opd.fd_vtrue,double,mt**nk);
+        NNEW(opd.fd_fp,double,mt**nk);
+        NNEW(opd.fd_fm,double,mt**nk);
+        NNEW(opd.fd_f0,double,mt**nk);
         /* v must come back exactly as it was, whatever the probe uses as its
            base, or the solve continues from a state the probe invented. */
-        memcpy(damage_fd_vtrue,v,sizeof(double)*mt**nk);
+        memcpy(opd.fd_vtrue,v,sizeof(double)*mt**nk);
 
         /* WHICH STATE TO DIFFERENTIATE AROUND.  This decides whether the
            comparison means anything at all.
@@ -8983,8 +8142,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
            further down.  So CCX_STRUCT_FD_BASE=VOLD differentiates around the
            state the matrix actually came from, and the difference between the
            two settings IS the size of that objection. */
-        memcpy(damage_fd_vsav,
-               (damage_fd_base==1)?vold:v,sizeof(double)*mt**nk);
+        memcpy(opd.fd_vsav,
+               (opd.fd_base==1)?vold:v,sizeof(double)*mt**nk);
 
         /* columns are taken at the nodes of the most damaged element: a
            tangent that is right in the elastic bulk and wrong in the
@@ -8998,29 +8157,29 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
            no rank-1 term anywhere and the census would be a row of zeros
            pretending to mean something, so say that instead. */
         if(damage_damcat!=NULL){
-          ITG damage_fd_cc[8],damage_fd_c;
-          for(damage_fd_c=0;damage_fd_c<8;damage_fd_c++) damage_fd_cc[damage_fd_c]=0;
+          ITG oc_cc[8],oc_c;
+          for(oc_c=0;oc_c<8;oc_c++) oc_cc[oc_c]=0;
           for(i=0;i<ne0;i++){
-            damage_fd_c=damage_damcat[i];
-            if((damage_fd_c>=0)&&(damage_fd_c<8)) damage_fd_cc[damage_fd_c]++;
+            oc_c=damage_damcat[i];
+            if((oc_c>=0)&&(oc_c<8)) oc_cc[oc_c]++;
           }
           printf("[OPCHECK] rank-1 term by population: assembled=%" ITGFORMAT
                  " pre-initiation=%" ITGFORMAT " not-advancing=%" ITGFORMAT
                  " on-floor=%" ITGFORMAT " terminal-hole=%" ITGFORMAT
                  " advancing-live=%" ITGFORMAT " degenerate=%" ITGFORMAT "\n",
-                 damage_fd_cc[1],damage_fd_cc[2],damage_fd_cc[3],
-                 damage_fd_cc[4],damage_fd_cc[5],damage_fd_cc[6],
-                 damage_fd_cc[7]);
-          for(damage_fd_c=1;damage_fd_c<8;damage_fd_c++){
+                 oc_cc[1],oc_cc[2],oc_cc[3],
+                 oc_cc[4],oc_cc[5],oc_cc[6],
+                 oc_cc[7]);
+          for(oc_c=1;oc_c<8;oc_c++){
             ITG shown=0;
-            if((damage_fd_c==2)||(damage_fd_c==3)) continue;
-            if(damage_fd_cc[damage_fd_c]==0) continue;
-            printf("[OPCHECK]   category %" ITGFORMAT " elements:",damage_fd_c);
+            if((oc_c==2)||(oc_c==3)) continue;
+            if(oc_cc[oc_c]==0) continue;
+            printf("[OPCHECK]   category %" ITGFORMAT " elements:",oc_c);
             for(i=0;(i<ne0)&&(shown<10);i++){
-              if(damage_damcat[i]!=damage_fd_c) continue;
+              if(damage_damcat[i]!=oc_c) continue;
               printf(" %" ITGFORMAT,i+1);shown++;
             }
-            printf("%s\n",(damage_fd_cc[damage_fd_c]>shown)?" ...":"");
+            printf("%s\n",(oc_cc[oc_c]>shown)?" ...":"");
           }
           fflush(stdout);
         }else{
@@ -9029,20 +8188,20 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                  "carries the -sigma_eff (x) dD/d(eps) term at all\n");
         }
 
-        damage_fd_el=-1;damage_fd_dmax=-1.;
+        opd.fd_el=-1;opd.fd_dmax=-1.;
         /* A NAMED element needs no damage array: the decisive comparison is
            the same element probed on a deck with the damage module and on one
            without it, and the second has no dam[] at all. */
-        for(i=0;(i<ne0)&&((damage_fd_pick>0)||((*ndmat_>0)&&(dam!=NULL)));i++){
+        for(i=0;(i<ne0)&&((opd.fd_pick>0)||((*ndmat_>0)&&(dam!=NULL)));i++){
           if(ipkon[i]<0) continue;
           if(strncmp(&lakon[8*i],"C3D4",4)!=0) continue;
-          if(damage_fd_pick>0){
-            if(i+1!=damage_fd_pick) continue;
-            damage_fd_dmax=(dam!=NULL)?dam[mi[0]*i]:-1.;
-            damage_fd_el=i;break;
+          if(opd.fd_pick>0){
+            if(i+1!=opd.fd_pick) continue;
+            opd.fd_dmax=(dam!=NULL)?dam[mi[0]*i]:-1.;
+            opd.fd_el=i;break;
           }
-          if(dam[mi[0]*i]>damage_fd_dmax){
-            damage_fd_dmax=dam[mi[0]*i];damage_fd_el=i;
+          if(dam[mi[0]*i]>opd.fd_dmax){
+            opd.fd_dmax=dam[mi[0]*i];opd.fd_el=i;
           }
         }
         /* And the most damaged COHESIVE facet, because that is where the
@@ -9053,71 +8212,71 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
            verdict of "no kink" from bulk columns alone would be a statement
            about where the probe looked rather than about the model.
            UC6 damage is xstate[nstate_*(mi[0]*elem+ip)+1] over 3 points. */
-        damage_fd_uel=-1;damage_fd_udmax=-1.;
+        opd.fd_uel=-1;opd.fd_udmax=-1.;
         if(*nstate_>1){
           for(i=0;i<ne0;i++){
             if(ipkon[i]<0) continue;
             if((lakon[8*i]!='U')||(lakon[8*i+1]!='C')||(lakon[8*i+2]!='6'))
               continue;
             for(k=0;k<3;k++){
-              if(xstate[*nstate_*(mi[0]*i+k)+1]>damage_fd_udmax){
-                damage_fd_udmax=xstate[*nstate_*(mi[0]*i+k)+1];
-                damage_fd_uel=i;
+              if(xstate[*nstate_*(mi[0]*i+k)+1]>opd.fd_udmax){
+                opd.fd_udmax=xstate[*nstate_*(mi[0]*i+k)+1];
+                opd.fd_uel=i;
               }
             }
           }
         }
-        if((damage_fd_el<0)&&(damage_fd_uel<0)){
+        if((opd.fd_el<0)&&(opd.fd_uel<0)){
           printf("[OPCHECK] no active element to probe\n");
         }else if(opcheck_selftest()!=0){
           printf("[OPCHECK] *ERROR: the classifier self test failed; "
                  "reporting nothing rather than reporting a verdict that may "
                  "be wrong.\n");
-          damage_fd_el=-1;damage_fd_uel=-1;
+          opd.fd_el=-1;opd.fd_uel=-1;
         }else{
           printf("[OPCHECK] inc=%" ITGFORMAT " iter=%" ITGFORMAT
       	   " step=%" ITGFORMAT " h=%.3e base=%s\n",iinc,iit,*istep,
-             damage_fd_h,(damage_fd_base==1)?
+             opd.fd_h,(opd.fd_base==1)?
              "VOLD (the state the matrix was assembled at)":
              "V (the post-solve iterate)");
-          if(damage_fd_el>=0)
+          if(opd.fd_el>=0)
             printf("[OPCHECK]   bulk     element %" ITGFORMAT " dam=%.6f "
                    "population=%" ITGFORMAT "%s\n",
-                   damage_fd_el+1,damage_fd_dmax,
-                   (damage_damcat!=NULL)?damage_damcat[damage_fd_el]:-1,
+                   opd.fd_el+1,opd.fd_dmax,
+                   (damage_damcat!=NULL)?damage_damcat[opd.fd_el]:-1,
                    (damage_damcat!=NULL)?
-                   ((damage_damcat[damage_fd_el]==1)?" (ASSEMBLED)":
-                    (damage_damcat[damage_fd_el]==4)?" (on the floor - zero is correct)":
-                    (damage_damcat[damage_fd_el]==5)?" (terminal hole)":
-                    (damage_damcat[damage_fd_el]==6)?" (advancing, no term)":
-                    (damage_damcat[damage_fd_el]==7)?" (degenerate, dropped)":
+                   ((damage_damcat[opd.fd_el]==1)?" (ASSEMBLED)":
+                    (damage_damcat[opd.fd_el]==4)?" (on the floor - zero is correct)":
+                    (damage_damcat[opd.fd_el]==5)?" (terminal hole)":
+                    (damage_damcat[opd.fd_el]==6)?" (advancing, no term)":
+                    (damage_damcat[opd.fd_el]==7)?" (degenerate, dropped)":
                     " (no term needed)"):" (no census in this mode)");
-          if(damage_fd_uel>=0)
+          if(opd.fd_uel>=0)
             printf("[OPCHECK]   cohesive element %" ITGFORMAT " dv=%.6f "
-                   "(g=%.3e)\n",damage_fd_uel+1,damage_fd_udmax,
-                   1.-damage_fd_udmax);
+                   "(g=%.3e)\n",opd.fd_uel+1,opd.fd_udmax,
+                   1.-opd.fd_udmax);
           printf("[OPCHECK] one-sided differences taken SEPARATELY: a "
                  "central difference converges to their mean at a kink, so "
                  "it cannot tell a kink from a wrong tangent.\n");
           fflush(stdout);
         }
-        opcheck_begin(&damage_fd_all,1.e-4);
-        opcheck_begin(&damage_fd_bulk,1.e-4);
-        opcheck_begin(&damage_fd_coh,1.e-4);
+        opcheck_begin(&oc_all,1.e-4);
+        opcheck_begin(&oc_bulk,1.e-4);
+        opcheck_begin(&oc_coh,1.e-4);
 
-        damage_fd_ncol=0;
+        opd.fd_ncol=0;
         /* target 0 is the bulk element (4 nodes), target 1 the facet (6) */
-        for(damage_fd_t=0;damage_fd_t<2;damage_fd_t++){
-        damage_fd_tel=(damage_fd_t==0)?damage_fd_el:damage_fd_uel;
-        damage_fd_tnn=(damage_fd_t==0)?4:6;
-        for(damage_fd_j=0;(damage_fd_j<damage_fd_tnn)&&(damage_fd_tel>=0);
-            damage_fd_j++){
-          damage_fd_node=kon[ipkon[damage_fd_tel]+damage_fd_j]-1;
-          if((damage_fd_node<0)||(damage_fd_node>=*nk)) continue;
+        for(opd.fd_t=0;opd.fd_t<2;opd.fd_t++){
+        opd.fd_tel=(opd.fd_t==0)?opd.fd_el:opd.fd_uel;
+        opd.fd_tnn=(opd.fd_t==0)?4:6;
+        for(opd.fd_j=0;(opd.fd_j<opd.fd_tnn)&&(opd.fd_tel>=0);
+            opd.fd_j++){
+          opd.fd_node=kon[ipkon[opd.fd_tel]+opd.fd_j]-1;
+          if((opd.fd_node<0)||(opd.fd_node>=*nk)) continue;
 
           for(idir=1;idir<=3;idir++){
-            damage_fd_col=nactdof[mt*damage_fd_node+idir];
-            if(damage_fd_col<=0) continue;
+            opd.fd_col=nactdof[mt*opd.fd_node+idir];
+            if(opd.fd_col<=0) continue;
 
             /* central difference on the internal force */
 
@@ -9125,67 +8284,67 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                split the central difference into its two one-sided halves,
                which is the only reading that separates a kink from a
                tangent that is not the differential. */
-            for(damage_fd_s=0;damage_fd_s<3;damage_fd_s++){
-      	memcpy(v,damage_fd_vsav,sizeof(double)*mt**nk);
-      	if(damage_fd_s==0)      v[mt*damage_fd_node+idir]+=damage_fd_h;
-      	else if(damage_fd_s==1) v[mt*damage_fd_node+idir]-=damage_fd_h;
+            for(opd.fd_s=0;opd.fd_s<3;opd.fd_s++){
+      	memcpy(v,opd.fd_vsav,sizeof(double)*mt**nk);
+      	if(opd.fd_s==0)      v[mt*opd.fd_node+idir]+=opd.fd_h;
+      	else if(opd.fd_s==1) v[mt*opd.fd_node+idir]-=opd.fd_h;
       	trial_results(&nlgt);
-      	if(damage_fd_s==0)
-      	  memcpy(damage_fd_fp,fn,sizeof(double)*mt**nk);
-      	else if(damage_fd_s==1)
-      	  memcpy(damage_fd_fm,fn,sizeof(double)*mt**nk);
+      	if(opd.fd_s==0)
+      	  memcpy(opd.fd_fp,fn,sizeof(double)*mt**nk);
+      	else if(opd.fd_s==1)
+      	  memcpy(opd.fd_fm,fn,sizeof(double)*mt**nk);
       	else
-      	  memcpy(damage_fd_f0,fn,sizeof(double)*mt**nk);
+      	  memcpy(opd.fd_f0,fn,sizeof(double)*mt**nk);
             }
 
             /* Classify the column: opcheck.c owns the comparison and the
                verdict, this loop owns only the three evaluations that feed
                it. */
 
-            opcheck_begin(&damage_fd_col_o,1.e-4);
-            opcheck_column(&damage_fd_col_o,*nk,mt,nactdof,
-                           damage_fd_f0,damage_fd_fp,damage_fd_fm,
-                           damage_fd_h,damage_fd_col,
-                           damage_fd_ad,damage_fd_au,jq,irow,nzs,nasym);
-            monitor_opcheck(&damage_fd_col_o,iinc,iit,damage_fd_node+1,idir,
-                            damage_fd_h);
-            damage_fd_all.n+=damage_fd_col_o.n;
-            damage_fd_all.nok+=damage_fd_col_o.nok;
-            damage_fd_all.nkink+=damage_fd_col_o.nkink;
-            damage_fd_all.nwrong+=damage_fd_col_o.nwrong;
-            damage_fd_all.nboth+=damage_fd_col_o.nboth;
-            if(damage_fd_t==0){
-              damage_fd_bulk.n+=damage_fd_col_o.n;
-              damage_fd_bulk.nok+=damage_fd_col_o.nok;
-              damage_fd_bulk.nkink+=damage_fd_col_o.nkink;
-              damage_fd_bulk.nwrong+=damage_fd_col_o.nwrong;
-              damage_fd_bulk.nboth+=damage_fd_col_o.nboth;
+            opcheck_begin(&oc_col_o,1.e-4);
+            opcheck_column(&oc_col_o,*nk,mt,nactdof,
+                           opd.fd_f0,opd.fd_fp,opd.fd_fm,
+                           opd.fd_h,opd.fd_col,
+                           opd.fd_ad,opd.fd_au,jq,irow,nzs,nasym);
+            monitor_opcheck(&oc_col_o,iinc,iit,opd.fd_node+1,idir,
+                            opd.fd_h);
+            oc_all.n+=oc_col_o.n;
+            oc_all.nok+=oc_col_o.nok;
+            oc_all.nkink+=oc_col_o.nkink;
+            oc_all.nwrong+=oc_col_o.nwrong;
+            oc_all.nboth+=oc_col_o.nboth;
+            if(opd.fd_t==0){
+              oc_bulk.n+=oc_col_o.n;
+              oc_bulk.nok+=oc_col_o.nok;
+              oc_bulk.nkink+=oc_col_o.nkink;
+              oc_bulk.nwrong+=oc_col_o.nwrong;
+              oc_bulk.nboth+=oc_col_o.nboth;
             }else{
-              damage_fd_coh.n+=damage_fd_col_o.n;
-              damage_fd_coh.nok+=damage_fd_col_o.nok;
-              damage_fd_coh.nkink+=damage_fd_col_o.nkink;
-              damage_fd_coh.nwrong+=damage_fd_col_o.nwrong;
-              damage_fd_coh.nboth+=damage_fd_col_o.nboth;
+              oc_coh.n+=oc_col_o.n;
+              oc_coh.nok+=oc_col_o.nok;
+              oc_coh.nkink+=oc_col_o.nkink;
+              oc_coh.nwrong+=oc_col_o.nwrong;
+              oc_coh.nboth+=oc_col_o.nboth;
             }
             fflush(stdout);
-            damage_fd_ncol++;
+            opd.fd_ncol++;
           }
         }
         }
 
-        memcpy(v,damage_fd_vtrue,sizeof(double)*mt**nk);
-        SFREE(damage_fd_vsav);SFREE(damage_fd_vtrue);
-        SFREE(damage_fd_fp);SFREE(damage_fd_fm);SFREE(damage_fd_f0);
-        if(damage_fd_bulk.n>0){
+        memcpy(v,opd.fd_vtrue,sizeof(double)*mt**nk);
+        SFREE(opd.fd_vsav);SFREE(opd.fd_vtrue);
+        SFREE(opd.fd_fp);SFREE(opd.fd_fm);SFREE(opd.fd_f0);
+        if(oc_bulk.n>0){
           printf("[OPCHECK] --- bulk columns ---\n");
-          monitor_opcheck_total(&damage_fd_bulk,iinc,iit,damage_fd_el+1,
-                                damage_fd_dmax,damage_fd_h,damage_fd_ncol);
+          monitor_opcheck_total(&oc_bulk,iinc,iit,opd.fd_el+1,
+                                opd.fd_dmax,opd.fd_h,opd.fd_ncol);
         }
-        if(damage_fd_coh.n>0){
+        if(oc_coh.n>0){
           printf("[OPCHECK] --- cohesive columns, where the three documented "
                  "kinks live ---\n");
-          monitor_opcheck_total(&damage_fd_coh,iinc,iit,damage_fd_uel+1,
-                                damage_fd_udmax,damage_fd_h,damage_fd_ncol);
+          monitor_opcheck_total(&oc_coh,iinc,iit,opd.fd_uel+1,
+                                opd.fd_udmax,opd.fd_h,opd.fd_ncol);
         }
         printf("[OPCHECK] stopping: the probe perturbed v repeatedly and "
                "this run is diagnostic only\n");
@@ -9412,7 +8571,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
          It ends by evaluating p_N, which is the state the unprobed code
          would have had, and puts cam/qa/uam back first. */
 
-      if((damage_dl_lc_due==1)&&(damage_dl_have==1)){
+      if((dog.lc_due==1)&&(dog.have==1)){
         /* [WALLDIAG] The ladder has to reach BELOW the step the search
            actually takes, or it cannot tell a consistent tangent with a
            small radius of validity from an inconsistent one: the second
@@ -9431,11 +8590,11 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         double *lp=NULL,*ljp=NULL;
 
         lnst=*nstate_;
-        if(damage_dl_res==NULL){
-          NNEW(damage_dl_res,double,neq[1]);
-          NNEW(damage_dl_dam,double,mi[0]**ne);
-          NNEW(damage_dl_visc,double,mi[0]**ne);
-          if(lnst>0) NNEW(damage_dl_xs,double,lnst*mi[0]**ne);
+        if(dog.res==NULL){
+          NNEW(dog.res,double,neq[1]);
+          NNEW(dog.dam,double,mi[0]**ne);
+          NNEW(dog.visc,double,mi[0]**ne);
+          if(lnst>0) NNEW(dog.xs,double,lnst*mi[0]**ne);
         }
         NNEW(lp,double,neq[1]);
         NNEW(ljp,double,neq[1]);
@@ -9466,18 +8625,18 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                "= %.12e (exact 1); operator asymmetry "
                "max|au_L-au_U|/max|au_L| = %.6e; |p_N|=%.6e |p_C|=%.6e "
                "|R|2=%.6e%s",
-               damage_dl_ident,damage_dl_asym,sqrt(damage_dl_npn2),
-               damage_dl_tc*sqrt(damage_dl_nd2),sqrt(damage_dl_nb2),"\n");
+               dog.ident,dog.asym,sqrt(dog.npn2),
+               dog.tc*sqrt(dog.nd2),sqrt(dog.nb2),"\n");
         fflush(stdout);
 
-        isiz=mi[0]**ne;cpypardou(damage_dl_dam,dam,&isiz,&num_cpus);
+        isiz=mi[0]**ne;cpypardou(dog.dam,dam,&isiz,&num_cpus);
         if(damage_damvisc!=NULL){
           isiz=mi[0]**ne;
-          cpypardou(damage_dl_visc,damage_damvisc,&isiz,&num_cpus);
+          cpypardou(dog.visc,damage_damvisc,&isiz,&num_cpus);
         }
-        if((lnst>0)&&(damage_dl_xs!=NULL)){
+        if((lnst>0)&&(dog.xs!=NULL)){
           isiz=lnst*mi[0]**ne;
-          cpypardou(damage_dl_xs,xstate,&isiz,&num_cpus);
+          cpypardou(dog.xs,xstate,&isiz,&num_cpus);
         }
         for(ljj=0;ljj<4;ljj++) lqas[ljj]=qa[ljj];
         for(ljj=0;ljj<2;ljj++) luams[ljj]=uam[ljj];
@@ -9488,28 +8647,28 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
            compared against this one census, so a transition count is the
            number of integration points the step moved across a branch. */
 
-        if(damage_wall_cat==NULL) NNEW(damage_wall_cat,ITG,mi[0]**ne);
-        damage_ray_census(damage_wall_cat,xstate,xstateini,dam,damdamageini,
+        if(prb.wall_cat==NULL) NNEW(prb.wall_cat,ITG,mi[0]**ne);
+        damage_ray_census(prb.wall_cat,xstate,xstateini,dam,damdamageini,
                           damage_damvisc,stx,ipkon,lakon,ne0,mi[0],*nstate_);
         {
           ITG wj,wnadv=0,wnlive=0;
           double wpinf=0.;
           for(wj=0;wj<mi[0]*ne0;wj++){
-            if(damage_wall_cat[wj]&DAMCAT_USOFT) wnlive++;
-            if(damage_wall_cat[wj]&DAMCAT_UADV) wnadv++;
+            if(prb.wall_cat[wj]&DAMCAT_USOFT) wnlive++;
+            if(prb.wall_cat[wj]&DAMCAT_UADV) wnadv++;
           }
           for(wj=0;wj<neq[1];wj++)
-            if(fabs(damage_dl_pn[wj])>wpinf) wpinf=fabs(damage_dl_pn[wj]);
+            if(fabs(dog.pn[wj])>wpinf) wpinf=fabs(dog.pn[wj]);
           printf("[WALLDIAG] inc=%" ITGFORMAT " iter=%" ITGFORMAT
                  " base state: UC6 points past initiation %" ITGFORMAT
                  ", of which ADVANCING (deff>dmax0) %" ITGFORMAT
                  "; |p_N|inf=%.6e |p_N|2=%.6e |R|2=%.6e%s",
-                 iinc,iit,wnlive,wnadv,wpinf,sqrt(damage_dl_npn2),
-                 sqrt(damage_dl_nb2),"\n");
-          damage_wall_where("residual",damage_dl_r0,neq[1],nactdof,mt,*nk,5,
+                 iinc,iit,wnlive,wnadv,wpinf,sqrt(dog.npn2),
+                 sqrt(dog.nb2),"\n");
+          damage_wall_where("residual",dog.r0,neq[1],nactdof,mt,*nk,5,
                             ipkon,kon,lakon,xstate,stx,dam,*ne,ne0,mi[0],
                             *nstate_);
-          damage_wall_where("correction",damage_dl_pn,neq[1],nactdof,mt,*nk,
+          damage_wall_where("correction",dog.pn,neq[1],nactdof,mt,*nk,
                             5,ipkon,kon,lakon,xstate,stx,dam,*ne,ne0,mi[0],
                             *nstate_);
           /* [WALLDIAG] STIFFNESS AT THE RESIDUAL PEAK.  The convergence test
@@ -9536,14 +8695,14 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
               wbest=-1;wa=-1.;
               for(wi=0;wi<neq[1];wi++){
                 if(wsn[wi]<0) continue;
-                if(fabs(damage_dl_r0[wi])>wa){wa=fabs(damage_dl_r0[wi]);wbest=wi;}
+                if(fabs(dog.r0[wi])>wa){wa=fabs(dog.r0[wi]);wbest=wi;}
               }
               if(wbest<0) break;
               wi=wsn[wbest];
               printf("[WALLDIAG]   Rpeak #%" ITGFORMAT ": node %" ITGFORMAT
                      " dir %" ITGFORMAT " R=%.6e  addiag=%.6e addiag0=%.6e "
                      "ratio=%.6e spc_masked=%" ITGFORMAT " need_du=|R|/k=%.6e"
-                     "%s",wt+1,wi+1,wsd[wbest],damage_dl_r0[wbest],
+                     "%s",wt+1,wi+1,wsd[wbest],dog.r0[wbest],
                      (damage_addiag!=NULL)?damage_addiag[wi]:0.,
                      (damage_addiag0!=NULL)?damage_addiag0[wi]:0.,
                      ((damage_addiag!=NULL)&&(damage_addiag0!=NULL)&&
@@ -9552,7 +8711,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                      ((damage_spc_mask!=NULL)&&(damage_spc_nk>wi))?
                        damage_spc_mask[wi]:-1,
                      ((damage_addiag!=NULL)&&(damage_addiag[wi]>0.))?
-                       fabs(damage_dl_r0[wbest])/damage_addiag[wi]:-1.,"\n");
+                       fabs(dog.r0[wbest])/damage_addiag[wi]:-1.,"\n");
               wsn[wbest]=-1;
             }
             SFREE(wsn);SFREE(wsd);
@@ -9562,21 +8721,21 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 
         {
         ITG lpassn=2;
-        if((damage_wall_maskstep!=0)&&(damage_dl_pm!=NULL)) lpassn=3;
+        if((prb.wall_maskstep!=0)&&(dog.pm!=NULL)) lpassn=3;
         for(lpass=0;lpass<lpassn;lpass++){
           if(lpass==0){
             for(ljj=0;ljj<neq[1];ljj++){
-              lp[ljj]=damage_dl_pn[ljj];
-              ljp[ljj]=damage_dl_r0[ljj];
+              lp[ljj]=dog.pn[ljj];
+              ljp[ljj]=dog.r0[ljj];
             }
             printf("[DAMAGE TR LINCHECK] pass 1: p = p_N, so J p = r0 "
                    "EXACTLY.  res(u+eps p)/((1-eps)|r0|) must go to 1 and "
                    "the defect to zero like O(eps).%s","\n");
           }else if(lpass==1){
-            lsc=sqrt(damage_dl_npn2/damage_dl_nd2);
+            lsc=sqrt(dog.npn2/dog.nd2);
             for(ljj=0;ljj<neq[1];ljj++){
-              lp[ljj]=lsc*damage_dl_d[ljj];
-              ljp[ljj]=lsc*damage_dl_w[ljj];
+              lp[ljj]=lsc*dog.d[ljj];
+              ljp[ljj]=lsc*dog.w[ljj];
             }
             printf("[DAMAGE TR LINCHECK] pass 2: p = %.6e * d (scaled to "
                    "|p_N|), so J p = %.6e * w.  d comes from the TRANSPOSE "
@@ -9589,8 +8748,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                actually does once the collapsed-diagonal dofs are taken out
                of it, so eps=1 here means "the rest of the Newton step". */
             for(ljj=0;ljj<neq[1];ljj++){
-              lp[ljj]=damage_dl_pm[ljj];
-              ljp[ljj]=damage_dl_wm[ljj];
+              lp[ljj]=dog.pm[ljj];
+              ljp[ljj]=dog.wm[ljj];
             }
             printf("[DAMAGE TR LINCHECK] pass 3 (MASKSTEP): p = p_N with the "
                    "%" ITGFORMAT " AUTOSPC-masked nodes zeroed.  |p|=%.6e "
@@ -9599,10 +8758,10 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                    "(and the ladder's accepted alpha), the step is unusable "
                    "BECAUSE it is spent on collapsed-diagonal nodes; if it "
                    "does not, that hypothesis is dead.%s",
-                   damage_spc_count,sqrt(damage_dl_npm2),
-                   sqrt(damage_dl_npn2),
-                   (damage_dl_npn2>0.)?
-                     100.*(1.-damage_dl_npm2/damage_dl_npn2):0.,"\n");
+                   damage_spc_count,sqrt(dog.npm2),
+                   sqrt(dog.npn2),
+                   (dog.npn2>0.)?
+                     100.*(1.-dog.npm2/dog.npn2):0.,"\n");
           }
           fflush(stdout);
           lnjp=0.;
@@ -9614,27 +8773,27 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
              same reason as in the trust-region block. */
           for(ljj=0;ljj<3;ljj++) cam[ljj]=0.;
           for(ljj=3;ljj<5;ljj++) cam[ljj]=0.5;
-          isiz=mi[0]**ne;cpypardou(dam,damage_dl_dam,&isiz,&num_cpus);
+          isiz=mi[0]**ne;cpypardou(dam,dog.dam,&isiz,&num_cpus);
           if(damage_damvisc!=NULL){
             isiz=mi[0]**ne;
-            cpypardou(damage_damvisc,damage_dl_visc,&isiz,&num_cpus);
+            cpypardou(damage_damvisc,dog.visc,&isiz,&num_cpus);
           }
-          if((lnst>0)&&(damage_dl_xs!=NULL)){
+          if((lnst>0)&&(dog.xs!=NULL)){
             isiz=lnst*mi[0]**ne;
-            cpypardou(xstate,damage_dl_xs,&isiz,&num_cpus);
+            cpypardou(xstate,dog.xs,&isiz,&num_cpus);
           }
           for(ljj=0;ljj<neq[1];ljj++) b[ljj]=le*lp[ljj];
-          trial_residual(&nlgt,damage_dl_res);
+          trial_residual(&nlgt,dog.res);
 
-            damage_dl_neval++;
+            dog.neval++;
             lnum=0.;lnres=0.;linf=0.;linf0=0.;
-            if(damage_wall_def==NULL) NNEW(damage_wall_def,double,neq[1]);
+            if(prb.wall_def==NULL) NNEW(prb.wall_def,double,neq[1]);
             for(ljj=0;ljj<neq[1];ljj++){
-              lmv=damage_dl_r0[ljj]-le*ljp[ljj];
-              ldv=damage_dl_res[ljj]-lmv;
-              damage_wall_def[ljj]=ldv;
+              lmv=dog.r0[ljj]-le*ljp[ljj];
+              ldv=dog.res[ljj]-lmv;
+              prb.wall_def[ljj]=ldv;
               lnum+=ldv*ldv;
-              lnres+=damage_dl_res[ljj]*damage_dl_res[ljj];
+              lnres+=dog.res[ljj]*dog.res[ljj];
             }
             /* [WALLDIAG] The line search judges a trial by max|res| over the
                MECHANICAL block neq[0] (nonlingeo.c, damage_linesearch_*norm),
@@ -9644,8 +8803,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                measured on the SAME rung here, or the disagreement between
                them stays an inference. */
             for(ljj=0;ljj<neq[0];ljj++){
-              if(fabs(damage_dl_res[ljj])>linf) linf=fabs(damage_dl_res[ljj]);
-              if(fabs(damage_dl_r0[ljj])>linf0) linf0=fabs(damage_dl_r0[ljj]);
+              if(fabs(dog.res[ljj])>linf) linf=fabs(dog.res[ljj]);
+              if(fabs(dog.r0[ljj])>linf0) linf0=fabs(dog.r0[ljj]);
             }
             lnum=sqrt(lnum);lnres=sqrt(lnres);
             lden=le*lnjp;
@@ -9657,19 +8816,19 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
             printf("[WALLDIAG] pass %" ITGFORMAT " eps=%.9f  TWO NORMS: "
                    "|res|2/|r0|2=%.12f  |res|inf/|r0|inf=%.12f  "
                    "(|r0|2=%.6e |r0|inf=%.6e)%s",lpass+1,le,
-                   (damage_dl_nb2>0.)?lnres/sqrt(damage_dl_nb2):0.,
-                   (linf0>0.)?linf/linf0:0.,sqrt(damage_dl_nb2),linf0,"\n");
+                   (dog.nb2>0.)?lnres/sqrt(dog.nb2):0.,
+                   (linf0>0.)?linf/linf0:0.,sqrt(dog.nb2),linf0,"\n");
             if(lpass==0)
               printf("[DAMAGE TR LINCHECK]          ratio "
                      "|res|/((1-eps)|r0|) = %.12f  (must go to 1)%s",
-                     ((1.-le)>0.)?lnres/((1.-le)*sqrt(damage_dl_nb2)):0.,
+                     ((1.-le)>0.)?lnres/((1.-le)*sqrt(dog.nb2)):0.,
                      "\n");
             {
               ITG wtot;
-              wtot=damage_wall_setdiff(damage_wall_cat,xstate,xstateini,dam,
+              wtot=damage_wall_setdiff(prb.wall_cat,xstate,xstateini,dam,
                                        damdamageini,damage_damvisc,stx,
                                        ipkon,lakon,ne0,mi[0],*nstate_,
-                                       damage_wall_nb);
+                                       prb.wall_nb);
               printf("[WALLDIAG] pass %" ITGFORMAT " eps=%.9f  active-set "
                      "transitions %" ITGFORMAT " = UC6 loading/unloading %"
                      ITGFORMAT " + UC6 initiation %" ITGFORMAT
@@ -9677,9 +8836,9 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                      ITGFORMAT " + UC6 tension/compression %" ITGFORMAT
                      " + bulk plastic %" ITGFORMAT " + bulk initiation %"
                      ITGFORMAT " + bulk damage growth %" ITGFORMAT "%s",
-                     lpass+1,le,wtot,damage_wall_nb[6],damage_wall_nb[3],
-                     damage_wall_nb[4],damage_wall_nb[5],damage_wall_nb[7],
-                     damage_wall_nb[0],damage_wall_nb[1],damage_wall_nb[2],
+                     lpass+1,le,wtot,prb.wall_nb[6],prb.wall_nb[3],
+                     prb.wall_nb[4],prb.wall_nb[5],prb.wall_nb[7],
+                     prb.wall_nb[0],prb.wall_nb[1],prb.wall_nb[2],
                      "\n");
             }
             /* [WALLDIAG] IS THE MISSING TERM THE DAMAGE RANK-1 TERM?
@@ -9709,18 +8868,18 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                                    e1cat));
               SFREE(e1cat);
               for(e1k=0;e1k<neq[1];e1k++)
-                e1y[e1k]=e1ad[e1k]*damage_dl_pn[e1k];
+                e1y[e1k]=e1ad[e1k]*dog.pn[e1k];
               for(e1c=0;e1c<neq[1];e1c++){
                 for(e1k=jq[e1c]-1;e1k<jq[e1c+1]-1;e1k++){
                   e1r=irow[e1k]-1;
-                  e1y[e1r]+=e1au[e1k]*damage_dl_pn[e1c];
-                  e1y[e1c]+=e1au[nzs[2]+e1k]*damage_dl_pn[e1r];
+                  e1y[e1r]+=e1au[e1k]*dog.pn[e1c];
+                  e1y[e1c]+=e1au[nzs[2]+e1k]*dog.pn[e1r];
                 }
               }
               for(e1i=0;e1i<neq[1];e1i++){
                 e1n+=e1y[e1i]*e1y[e1i];
-                e1d+=damage_wall_def[e1i]*damage_wall_def[e1i];
-                e1w+=e1y[e1i]*damage_wall_def[e1i];
+                e1d+=prb.wall_def[e1i]*prb.wall_def[e1i];
+                e1w+=e1y[e1i]*prb.wall_def[e1i];
               }
               e1n=sqrt(e1n);e1d=sqrt(e1d);
               /* Is the rank-1 term small because dD/d(eps) is small, or
@@ -9765,16 +8924,16 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
               SFREE(e1ad);SFREE(e1au);SFREE(e1y);
             }
             if(lii==14){
-              damage_wall_split("linear-model defect",damage_wall_def,neq[1],
+              damage_wall_split("linear-model defect",prb.wall_def,neq[1],
                                 nactdof,mt,*nk,ipkon,kon,lakon,dam,xstate,
                                 *ne,ne0,mi[0],*nstate_);
-              damage_wall_split("residual r0",damage_dl_r0,neq[1],nactdof,mt,
+              damage_wall_split("residual r0",dog.r0,neq[1],nactdof,mt,
                                 *nk,ipkon,kon,lakon,dam,xstate,*ne,ne0,mi[0],
                                 *nstate_);
-              damage_wall_split("Newton step p_N",damage_dl_pn,neq[1],nactdof,
+              damage_wall_split("Newton step p_N",dog.pn,neq[1],nactdof,
                                 mt,*nk,ipkon,kon,lakon,dam,xstate,*ne,ne0,
                                 mi[0],*nstate_);
-              damage_wall_where("defect",damage_wall_def,neq[1],nactdof,mt,
+              damage_wall_where("defect",prb.wall_def,neq[1],nactdof,mt,
                                 *nk,5,ipkon,kon,lakon,xstate,stx,dam,*ne,ne0,
                                 mi[0],*nstate_);
             }
@@ -9787,33 +8946,33 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         for(ljj=0;ljj<4;ljj++) qa[ljj]=lqas[ljj];
         for(ljj=0;ljj<2;ljj++) uam[ljj]=luams[ljj];
         le=1.;
-        for(ljj=0;ljj<neq[1];ljj++) lp[ljj]=damage_dl_pn[ljj];
+        for(ljj=0;ljj<neq[1];ljj++) lp[ljj]=dog.pn[ljj];
           /* [DAMAGE TR LINCHECK] cam starts clean for every probe, for the
              same reason as in the trust-region block. */
           for(ljj=0;ljj<3;ljj++) cam[ljj]=0.;
           for(ljj=3;ljj<5;ljj++) cam[ljj]=0.5;
-          isiz=mi[0]**ne;cpypardou(dam,damage_dl_dam,&isiz,&num_cpus);
+          isiz=mi[0]**ne;cpypardou(dam,dog.dam,&isiz,&num_cpus);
           if(damage_damvisc!=NULL){
             isiz=mi[0]**ne;
-            cpypardou(damage_damvisc,damage_dl_visc,&isiz,&num_cpus);
+            cpypardou(damage_damvisc,dog.visc,&isiz,&num_cpus);
           }
-          if((lnst>0)&&(damage_dl_xs!=NULL)){
+          if((lnst>0)&&(dog.xs!=NULL)){
             isiz=lnst*mi[0]**ne;
-            cpypardou(xstate,damage_dl_xs,&isiz,&num_cpus);
+            cpypardou(xstate,dog.xs,&isiz,&num_cpus);
           }
           for(ljj=0;ljj<neq[1];ljj++) b[ljj]=le*lp[ljj];
-          trial_residual(&nlgt,damage_dl_res);
+          trial_residual(&nlgt,dog.res);
 
         lnres=0.;
         for(ljj=0;ljj<neq[1];ljj++)
-          lnres+=damage_dl_res[ljj]*damage_dl_res[ljj];
+          lnres+=dog.res[ljj]*dog.res[ljj];
         printf("[DAMAGE TR LINCHECK] restored to the full Newton step; "
                "|res| there = %.12e.  Compare with the eps=1 line of pass 1: "
                "equal means every probe rolled the mutable state back "
                "completely.%s",sqrt(lnres),"\n");
         fflush(stdout);
         SFREE(lp);SFREE(ljp);
-        damage_dl_lc_due=0;
+        dog.lc_due=0;
       }
 
 
@@ -9830,20 +8989,20 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
          a frozen m, so c is driven to zero every iteration by construction
          and its value is reported, never assumed. */
 
-      damage_ct_used=0;
-      if((damage_ct_on==1)&&(idamagereeq==0)&&(ncont==0)&&
+      ct.used=0;
+      if((ct.on==1)&&(idamagereeq==0)&&(ncont==0)&&
          (*nmethod!=4)&&(*nmethod!=5)&&(*ithermal<2)&&(*idrct==0)&&
          (*mortar<=1)){
         ITG ctj,ctk,ctnst,ctbad=0,ctnsw=0;
-        damage_ct_used=1;
+        ct.used=1;
         double ctlam,ctc,ctcuz,ctcuy,ctden,ctdlam,ctrho,ctyinf;
         double ctdl[3],ctrm[9],ctsh[3],ctnrm,ctb0;
 
         ctnst=*nstate_;
-        damage_ct_it++;damage_ct_ncorr++;
+        ct.it++;ct.ncorr++;
         /* z is what the solver returned in b.  The base snapshot was taken
            BEFORE the solve, at this iterate; it is only restored here. */
-        isiz=neq[1];cpypardou(damage_ct_z,b,&isiz,&num_cpus);
+        isiz=neq[1];cpypardou(ct.z,b,&isiz,&num_cpus);
 
         /* ---- q by transactional finite difference at the CURRENT u ----
            arc_r0 and the whole read-before-write set were captured BEFORE
@@ -9854,39 +9013,39 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         {
           ITG cthalve,ctacc=0,cte,ctp;
           double cteps,ctqn,ctdn,ctbase;
-          cteps=damage_ct_eps;
-          if(damage_ct_qh==NULL) NNEW(damage_ct_qh,double,neq[1]);
+          cteps=ct.eps;
+          if(ct.qh==NULL) NNEW(ct.qh,double,neq[1]);
 
           /* unperturbed baseline through the probe path: it fixes the
              category map AND proves the base state is reproduced */
-          ctlam=damage_ct_lam;
+          ctlam=ct.lam;
           for(ctj=0;ctj<neq[1];ctj++) b[ctj]=0.;
-          for(ctj=0;ctj<4;ctj++) qa[ctj]=damage_ct_qa[ctj];
-          for(ctj=0;ctj<5;ctj++) cam[ctj]=damage_ct_cam[ctj];
-          for(ctj=0;ctj<2;ctj++) uam[ctj]=damage_ct_uam[ctj];
-          isiz=mi[0]**ne;cpypardou(dam,damage_ct_dam,&isiz,&num_cpus);
+          for(ctj=0;ctj<4;ctj++) qa[ctj]=ct.qa[ctj];
+          for(ctj=0;ctj<5;ctj++) cam[ctj]=ct.cam[ctj];
+          for(ctj=0;ctj<2;ctj++) uam[ctj]=ct.uam[ctj];
+          isiz=mi[0]**ne;cpypardou(dam,ct.dam,&isiz,&num_cpus);
           if(damage_damvisc!=NULL){
             isiz=mi[0]**ne;
-            cpypardou(damage_damvisc,damage_ct_visc,&isiz,&num_cpus);
+            cpypardou(damage_damvisc,ct.visc,&isiz,&num_cpus);
           }
-          if((ctnst>0)&&(damage_ct_xs!=NULL)){
+          if((ctnst>0)&&(ct.xs!=NULL)){
             isiz=ctnst*mi[0]**ne;
-            cpypardou(xstate,damage_ct_xs,&isiz,&num_cpus);
+            cpypardou(xstate,ct.xs,&isiz,&num_cpus);
           }
-          if((damage_damjac!=NULL)&&(damage_ct_jac!=NULL)){
+          if((damage_damjac!=NULL)&&(ct.jac!=NULL)){
             isiz=12*mi[0]**ne;
-            cpypardou(damage_damjac,damage_ct_jac,&isiz,&num_cpus);
+            cpypardou(damage_damjac,ct.jac,&isiz,&num_cpus);
           }
           for(ctj=0;ctj<*nboun;ctj++)
             xbounact[ctj]=xbounold[ctj]+(xboun[ctj]-xbounold[ctj])*ctlam;
-          trial_residual(&nlgt,damage_ct_beps);
-          damage_ct_neval++;
-          damage_evt_sign(stx,ipkon,lakon,ne0,mi[0],damage_ct_sgn);
+          trial_residual(&nlgt,ct.beps);
+          ct.neval++;
+          damage_evt_sign(stx,ipkon,lakon,ne0,mi[0],ct.sgn);
           ctbase=0.;
           for(ctj=0;ctj<neq[1];ctj++)
-            if(fabs(damage_ct_beps[ctj]-damage_ct_r0[ctj])>ctbase)
-              ctbase=fabs(damage_ct_beps[ctj]-damage_ct_r0[ctj]);
-          if(damage_ct_it<=1){
+            if(fabs(ct.beps[ctj]-ct.r0[ctj])>ctbase)
+              ctbase=fabs(ct.beps[ctj]-ct.r0[ctj]);
+          if(ct.it<=1){
             printf("[DAMAGE CT FD] inc=%" ITGFORMAT " baseline reproduced: "
                    "max|R(base)-arc_r0|=%.6e (must be 0; a non-zero value "
                    "means the probe path does not start from the iterate the "
@@ -9895,66 +9054,66 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           }
 
           for(cthalve=0;cthalve<5;cthalve++){
-            ctlam=damage_ct_lam+cteps;
+            ctlam=ct.lam+cteps;
             for(ctj=0;ctj<neq[1];ctj++) b[ctj]=0.;
-          for(ctj=0;ctj<4;ctj++) qa[ctj]=damage_ct_qa[ctj];
-          for(ctj=0;ctj<5;ctj++) cam[ctj]=damage_ct_cam[ctj];
-          for(ctj=0;ctj<2;ctj++) uam[ctj]=damage_ct_uam[ctj];
-          isiz=mi[0]**ne;cpypardou(dam,damage_ct_dam,&isiz,&num_cpus);
+          for(ctj=0;ctj<4;ctj++) qa[ctj]=ct.qa[ctj];
+          for(ctj=0;ctj<5;ctj++) cam[ctj]=ct.cam[ctj];
+          for(ctj=0;ctj<2;ctj++) uam[ctj]=ct.uam[ctj];
+          isiz=mi[0]**ne;cpypardou(dam,ct.dam,&isiz,&num_cpus);
           if(damage_damvisc!=NULL){
             isiz=mi[0]**ne;
-            cpypardou(damage_damvisc,damage_ct_visc,&isiz,&num_cpus);
+            cpypardou(damage_damvisc,ct.visc,&isiz,&num_cpus);
           }
-          if((ctnst>0)&&(damage_ct_xs!=NULL)){
+          if((ctnst>0)&&(ct.xs!=NULL)){
             isiz=ctnst*mi[0]**ne;
-            cpypardou(xstate,damage_ct_xs,&isiz,&num_cpus);
+            cpypardou(xstate,ct.xs,&isiz,&num_cpus);
           }
-          if((damage_damjac!=NULL)&&(damage_ct_jac!=NULL)){
+          if((damage_damjac!=NULL)&&(ct.jac!=NULL)){
             isiz=12*mi[0]**ne;
-            cpypardou(damage_damjac,damage_ct_jac,&isiz,&num_cpus);
+            cpypardou(damage_damjac,ct.jac,&isiz,&num_cpus);
           }
           for(ctj=0;ctj<*nboun;ctj++)
             xbounact[ctj]=xbounold[ctj]+(xboun[ctj]-xbounold[ctj])*ctlam;
-          trial_residual(&nlgt,damage_ct_beps);
-          damage_ct_neval++;
+          trial_residual(&nlgt,ct.beps);
+          ct.neval++;
 
-            ctnsw=damage_evt_flips(stx,ipkon,lakon,ne0,mi[0],damage_ct_sgn,
+            ctnsw=damage_evt_flips(stx,ipkon,lakon,ne0,mi[0],ct.sgn,
                                    &cte,&ctp);
             for(ctj=0;ctj<neq[1];ctj++)
-              damage_ct_y[ctj]=(damage_ct_beps[ctj]-damage_ct_r0[ctj])/cteps;
+              ct.y[ctj]=(ct.beps[ctj]-ct.r0[ctj])/cteps;
             if(ctnsw!=0){
               printf("[DAMAGE CT FD] inc=%" ITGFORMAT " it=%" ITGFORMAT
                      " eps=%.3e REJECTED: %" ITGFORMAT " UC6 category "
                      "switch(es) between R(lambda) and R(lambda+eps)%s",
-                     iinc,damage_ct_it,cteps,ctnsw,"\n");
+                     iinc,ct.it,cteps,ctnsw,"\n");
               cteps*=0.5;continue;
             }
-            if((damage_ct_epsok==1)&&(cthalve==0)){ctacc=1;break;}
+            if((ct.epsok==1)&&(cthalve==0)){ctacc=1;break;}
             if(cthalve>0){
               ctqn=0.;ctdn=0.;
               for(ctj=0;ctj<neq[1];ctj++){
-                ctqn+=damage_ct_y[ctj]*damage_ct_y[ctj];
-                ctdn+=(damage_ct_y[ctj]-damage_ct_qh[ctj])
-                     *(damage_ct_y[ctj]-damage_ct_qh[ctj]);
+                ctqn+=ct.y[ctj]*ct.y[ctj];
+                ctdn+=(ct.y[ctj]-ct.qh[ctj])
+                     *(ct.y[ctj]-ct.qh[ctj]);
               }
               ctqn=sqrt(ctqn);ctdn=sqrt(ctdn);
               printf("[DAMAGE CT FD] inc=%" ITGFORMAT " it=%" ITGFORMAT
                      " eps=%.3e |q|=%.6e rel.change vs 2eps=%.6e %s%s",
-                     iinc,damage_ct_it,cteps,ctqn,(ctqn>0.)?ctdn/ctqn:0.,
+                     iinc,ct.it,cteps,ctqn,(ctqn>0.)?ctdn/ctqn:0.,
                      ((ctqn>0.)&&(ctdn/ctqn<0.1))?
                      "ACCEPT (refined q used)":"halve again","\n");
               if((ctqn>0.)&&(ctdn/ctqn<0.1)){
-                ctacc=1;damage_ct_eps=cteps;damage_ct_epsok=1;break;
+                ctacc=1;ct.eps=cteps;ct.epsok=1;break;
               }
             }
-            isiz=neq[1];cpypardou(damage_ct_qh,damage_ct_y,&isiz,&num_cpus);
+            isiz=neq[1];cpypardou(ct.qh,ct.y,&isiz,&num_cpus);
             cteps*=0.5;
           }
           fflush(stdout);
           if(ctacc==0) ctbad=9;
         }
 #ifdef PARDISO
-        pardiso_solve(damage_ct_y,&neq[0],&symmetryflag,&inputformat,&nrhs);
+        pardiso_solve(ct.y,&neq[0],&symmetryflag,&inputformat,&nrhs);
 #endif
 
         /* ---- the constraint at the current iterate ----
@@ -9966,58 +9125,58 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
            build and the first corrector call.  With this anchor c = -ds
            holds to machine precision at the start of every step, by
            construction rather than by argument. */
-        damage_ct_kin(co,kon,ipkon[damage_ct_elem],vold,mt,damage_ct_ip,
+        damcont_kin(co,kon,ipkon[ct.elem],vold,mt,ct.ip,
                       ctdl,ctrm,ctsh);
-        if(damage_ct_newstep==1){
-          damage_ct_newstep=0;
-          for(ctj=0;ctj<3;ctj++) damage_ct_dc[ctj]=ctdl[ctj];
-          damage_ct_lamc=damage_ct_lam;
-          damage_ct_epsok=0;
+        if(ct.newstep==1){
+          ct.newstep=0;
+          for(ctj=0;ctj<3;ctj++) ct.dc[ctj]=ctdl[ctj];
+          ct.lamc=ct.lam;
+          ct.epsok=0;
         }
-        ctc=damage_ct_m[0]*(ctdl[0]-damage_ct_dc[0])
-           +damage_ct_m[1]*(ctdl[1]-damage_ct_dc[1])
-           +damage_ct_m[2]*(ctdl[2]-damage_ct_dc[2])-damage_ct_ds;
+        ctc=ct.m[0]*(ctdl[0]-ct.dc[0])
+           +ct.m[1]*(ctdl[1]-ct.dc[1])
+           +ct.m[2]*(ctdl[2]-ct.dc[2])-ct.ds;
         ctcuz=0.;ctcuy=0.;ctnrm=0.;ctyinf=0.;
-        for(ctj=0;ctj<damage_ct_nsupp;ctj++){
-          ctk=damage_ct_supp[ctj];
+        for(ctj=0;ctj<ct.nsupp;ctj++){
+          ctk=ct.supp[ctj];
           if(ctk<0) continue;
-          ctcuz+=damage_ct_w[ctj]*damage_ct_z[ctk];
-          ctcuy+=damage_ct_w[ctj]*damage_ct_y[ctk];
-          ctnrm+=damage_ct_w[ctj]*damage_ct_w[ctj];
+          ctcuz+=ct.w[ctj]*ct.z[ctk];
+          ctcuy+=ct.w[ctj]*ct.y[ctk];
+          ctnrm+=ct.w[ctj]*ct.w[ctj];
         }
         ctnrm=sqrt(ctnrm);
         ctb0=0.;
-        for(ctj=0;ctj<damage_ct_nsupp;ctj++){
-          ctk=damage_ct_supp[ctj];
+        for(ctj=0;ctj<ct.nsupp;ctj++){
+          ctk=ct.supp[ctj];
           if(ctk<0) continue;
-          ctb0+=damage_ct_y[ctk]*damage_ct_y[ctk];
+          ctb0+=ct.y[ctk]*ct.y[ctk];
         }
         ctb0=sqrt(ctb0);
         for(ctj=0;ctj<neq[1];ctj++)
-          if(fabs(damage_ct_y[ctj])>ctyinf) ctyinf=fabs(damage_ct_y[ctj]);
+          if(fabs(ct.y[ctj])>ctyinf) ctyinf=fabs(ct.y[ctj]);
 
-        if(damage_ct_bordered(damage_ct_clam,ctcuz,ctcuy,ctc,
+        if(damcont_bordered(ct.clam,ctcuz,ctcuy,ctc,
                               &ctden,&ctdlam)==0) ctbad=1;
-        ctrho=damage_ct_rhoden(damage_ct_clam,ctnrm,ctb0,ctden);
-        damage_ct_den=ctden;damage_ct_rho=ctrho;damage_ct_cprev=ctc;
+        ctrho=damcont_rhoden(ct.clam,ctnrm,ctb0,ctden);
+        ct.den=ctden;ct.rho=ctrho;ct.cprev=ctc;
 
-        if((ctbad==0)&&(ctrho<damage_ct_rhomin)) ctbad=2;
+        if((ctbad==0)&&(ctrho<ct.rhomin)) ctbad=2;
         if((ctbad==0)&&
-           (fabs(ctdlam)>damage_ct_clim*damage_ct_lamref)) ctbad=3;
+           (fabs(ctdlam)>ct.clim*ct.lamref)) ctbad=3;
         if((ctbad==0)&&
-           (fabs(ctdlam)*ctyinf>damage_ct_ulim*damage_ct_duref)) ctbad=4;
+           (fabs(ctdlam)*ctyinf>ct.ulim*ct.duref)) ctbad=4;
         if((ctbad==0)&&(ctnsw!=0)) ctbad=5;
-        if((ctbad==0)&&(damage_ct_neval>=damage_ct_maxeval)) ctbad=6;
-        if((ctbad==0)&&(damage_ct_nfact>=damage_ct_maxfact)) ctbad=7;
-        if((ctbad==0)&&(damage_ct_it>damage_ct_maxcorr)) ctbad=8;
+        if((ctbad==0)&&(ct.neval>=ct.maxeval)) ctbad=6;
+        if((ctbad==0)&&(ct.nfact>=ct.maxfact)) ctbad=7;
+        if((ctbad==0)&&(ct.it>ct.maxcorr)) ctbad=8;
 
         printf("[DAMAGE CT] inc=%" ITGFORMAT " it=%" ITGFORMAT " step=%"
                ITGFORMAT " lambda=%.12e ds=%.6e c=%.6e den=%.6e rho_den=%.4e "
                "dlambda=%.6e |y|inf=%.4e cuz=%.4e cuy=%.4e switches=%"
                ITGFORMAT " evals=%" ITGFORMAT " fact=%" ITGFORMAT " %s%s",
-               iinc,damage_ct_it,damage_ct_step,damage_ct_lam,damage_ct_ds,
+               iinc,ct.it,ct.step,ct.lam,ct.ds,
                ctc,ctden,ctrho,ctdlam,ctyinf,ctcuz,ctcuy,ctnsw,
-               damage_ct_neval,damage_ct_nfact,
+               ct.neval,ct.nfact,
                (ctbad==0)?"OK":
                ((ctbad==1)?"REFUSE:degenerate-den":
                ((ctbad==2)?"REFUSE:rho_den":
@@ -10037,72 +9196,72 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
              a budget or FD refusal is not the point's fault and disarms the
              mechanism outright.  The epoch clears on proven progress. */
           if((ctbad==2)||(ctbad==3)||(ctbad==4)){
-            if(damage_ct_bl==NULL) NNEW(damage_ct_bl,ITG,64);
-            if(damage_ct_nbl<64){
-              damage_ct_bl[damage_ct_nbl++]=4*damage_ct_elem+damage_ct_ip;
+            if(ct.bl==NULL) NNEW(ct.bl,ITG,64);
+            if(ct.nbl<64){
+              ct.bl[ct.nbl++]=4*ct.elem+ct.ip;
               printf("[DAMAGE CT] control point element %" ITGFORMAT " ip %"
                      ITGFORMAT " BLACKLISTED for this epoch (%" ITGFORMAT
                      " blacklisted); the next wall may try another "
-                     "candidate.%s",damage_ct_elem+1,damage_ct_ip+1,
-                     damage_ct_nbl,"\n");
-              damage_ct_refused=0;    /* a re-arm is allowed */
+                     "candidate.%s",ct.elem+1,ct.ip+1,
+                     ct.nbl,"\n");
+              ct.refused=0;    /* a re-arm is allowed */
             }else{
-              damage_ct_refused=1;
+              ct.refused=1;
             }
           }else{
-            damage_ct_refused=1;
+            ct.refused=1;
           }
-          damage_ct_on=0;
-          if(damage_ct_refused==1) damage_ct_partial=1;
-          damage_ct_lam=damage_ct_lamc;
-          ctlam=damage_ct_lamc;
-          for(ctj=0;ctj<neq[1];ctj++) b[ctj]=damage_ct_z[ctj];
-          for(ctj=0;ctj<4;ctj++) qa[ctj]=damage_ct_qa[ctj];
-          for(ctj=0;ctj<5;ctj++) cam[ctj]=damage_ct_cam[ctj];
-          for(ctj=0;ctj<2;ctj++) uam[ctj]=damage_ct_uam[ctj];
-          isiz=mi[0]**ne;cpypardou(dam,damage_ct_dam,&isiz,&num_cpus);
+          ct.on=0;
+          if(ct.refused==1) ct.partial=1;
+          ct.lam=ct.lamc;
+          ctlam=ct.lamc;
+          for(ctj=0;ctj<neq[1];ctj++) b[ctj]=ct.z[ctj];
+          for(ctj=0;ctj<4;ctj++) qa[ctj]=ct.qa[ctj];
+          for(ctj=0;ctj<5;ctj++) cam[ctj]=ct.cam[ctj];
+          for(ctj=0;ctj<2;ctj++) uam[ctj]=ct.uam[ctj];
+          isiz=mi[0]**ne;cpypardou(dam,ct.dam,&isiz,&num_cpus);
           if(damage_damvisc!=NULL){
             isiz=mi[0]**ne;
-            cpypardou(damage_damvisc,damage_ct_visc,&isiz,&num_cpus);
+            cpypardou(damage_damvisc,ct.visc,&isiz,&num_cpus);
           }
-          if((ctnst>0)&&(damage_ct_xs!=NULL)){
+          if((ctnst>0)&&(ct.xs!=NULL)){
             isiz=ctnst*mi[0]**ne;
-            cpypardou(xstate,damage_ct_xs,&isiz,&num_cpus);
+            cpypardou(xstate,ct.xs,&isiz,&num_cpus);
           }
-          if((damage_damjac!=NULL)&&(damage_ct_jac!=NULL)){
+          if((damage_damjac!=NULL)&&(ct.jac!=NULL)){
             isiz=12*mi[0]**ne;
-            cpypardou(damage_damjac,damage_ct_jac,&isiz,&num_cpus);
+            cpypardou(damage_damjac,ct.jac,&isiz,&num_cpus);
           }
           for(ctj=0;ctj<*nboun;ctj++)
             xbounact[ctj]=xbounold[ctj]+(xboun[ctj]-xbounold[ctj])*ctlam;
-          trial_residual(&nlgt,damage_ct_beps);
-          damage_ct_neval++;
+          trial_residual(&nlgt,ct.beps);
+          ct.neval++;
 
         }else{
-          damage_ct_lam+=ctdlam;
-          ctlam=damage_ct_lam;
+          ct.lam+=ctdlam;
+          ctlam=ct.lam;
           for(ctj=0;ctj<neq[1];ctj++)
-            b[ctj]=damage_ct_z[ctj]+damage_ct_y[ctj]*ctdlam;
-          for(ctj=0;ctj<4;ctj++) qa[ctj]=damage_ct_qa[ctj];
-          for(ctj=0;ctj<5;ctj++) cam[ctj]=damage_ct_cam[ctj];
-          for(ctj=0;ctj<2;ctj++) uam[ctj]=damage_ct_uam[ctj];
-          isiz=mi[0]**ne;cpypardou(dam,damage_ct_dam,&isiz,&num_cpus);
+            b[ctj]=ct.z[ctj]+ct.y[ctj]*ctdlam;
+          for(ctj=0;ctj<4;ctj++) qa[ctj]=ct.qa[ctj];
+          for(ctj=0;ctj<5;ctj++) cam[ctj]=ct.cam[ctj];
+          for(ctj=0;ctj<2;ctj++) uam[ctj]=ct.uam[ctj];
+          isiz=mi[0]**ne;cpypardou(dam,ct.dam,&isiz,&num_cpus);
           if(damage_damvisc!=NULL){
             isiz=mi[0]**ne;
-            cpypardou(damage_damvisc,damage_ct_visc,&isiz,&num_cpus);
+            cpypardou(damage_damvisc,ct.visc,&isiz,&num_cpus);
           }
-          if((ctnst>0)&&(damage_ct_xs!=NULL)){
+          if((ctnst>0)&&(ct.xs!=NULL)){
             isiz=ctnst*mi[0]**ne;
-            cpypardou(xstate,damage_ct_xs,&isiz,&num_cpus);
+            cpypardou(xstate,ct.xs,&isiz,&num_cpus);
           }
-          if((damage_damjac!=NULL)&&(damage_ct_jac!=NULL)){
+          if((damage_damjac!=NULL)&&(ct.jac!=NULL)){
             isiz=12*mi[0]**ne;
-            cpypardou(damage_damjac,damage_ct_jac,&isiz,&num_cpus);
+            cpypardou(damage_damjac,ct.jac,&isiz,&num_cpus);
           }
           for(ctj=0;ctj<*nboun;ctj++)
             xbounact[ctj]=xbounold[ctj]+(xboun[ctj]-xbounold[ctj])*ctlam;
-          trial_residual(&nlgt,damage_ct_beps);
-          damage_ct_neval++;
+          trial_residual(&nlgt,ct.beps);
+          ct.neval++;
 
         }
       }
@@ -10146,9 +9305,9 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
          Convergence of the INCREMENT is untouched: checkconvergence still
          decides on ram/cam/qa/qam from the unmodified residual. */
 
-      damage_dl_used=0;
-      if((damage_dl_on==1)&&(damage_dl_have==1)&&(damage_de12_enabled)&&
-         (damage_ct_on==0)&&(damage_ct_used==0)&&
+      dog.used=0;
+      if((dog.on==1)&&(dog.have==1)&&(damage_de12_enabled)&&
+         (ct.on==0)&&(ct.used==0)&&
          (idamagereeq==0)&&(ncont==0)&&(*nmethod!=4)&&(*nmethod!=5)&&
          (*ithermal<2)&&(*idrct==0)&&(*mortar<=1)){
         ITG tnst,tii,tjj,tacc,tkind,tbnd,tkkind;
@@ -10159,39 +9318,39 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         const char *tname;
 
         tnst=*nstate_;
-        if(damage_dl_res==NULL){
-          NNEW(damage_dl_res,double,neq[1]);
-          NNEW(damage_dl_dam,double,mi[0]**ne);
-          NNEW(damage_dl_visc,double,mi[0]**ne);
-          if(tnst>0) NNEW(damage_dl_xs,double,tnst*mi[0]**ne);
+        if(dog.res==NULL){
+          NNEW(dog.res,double,neq[1]);
+          NNEW(dog.dam,double,mi[0]**ne);
+          NNEW(dog.visc,double,mi[0]**ne);
+          if(tnst>0) NNEW(dog.xs,double,tnst*mi[0]**ne);
         }
 
-        tpnn=sqrt(damage_dl_npn2);
-        tpcn=damage_dl_tc*sqrt(damage_dl_nd2);
-        damage_dl_phi0=0.5*damage_dl_nb2;
+        tpnn=sqrt(dog.npn2);
+        tpcn=dog.tc*sqrt(dog.nd2);
+        dog.phi0=0.5*dog.nb2;
         tname="NEWTON";tkind=1;tii=0;
-        if(damage_dl_delta<=0.){
-          damage_dl_delta=damage_dl_d0fac*tpnn;
-          damage_dl_dmax=1.e3*tpnn;
-          if(damage_dl_delta<=0.){damage_dl_delta=1.;damage_dl_dmax=1.e3;}
+        if(dog.delta<=0.){
+          dog.delta=dog.d0fac*tpnn;
+          dog.dmax=1.e3*tpnn;
+          if(dog.delta<=0.){dog.delta=1.;dog.dmax=1.e3;}
           printf("[DAMAGE TR] ARMED inc=%" ITGFORMAT " iter=%" ITGFORMAT
                  " attempt=%" ITGFORMAT ": |p_N|=%.6e |p_C|=%.6e |R|2=%.6e "
                  "phi=%.6e Delta0=%.6e.  BK3 is bypassed for this attempt; "
                  "the correction is chosen by the trust region.%s",
-                 iinc,iit,icutb+1,tpnn,tpcn,sqrt(damage_dl_nb2),
-                 damage_dl_phi0,damage_dl_delta,"\n");
+                 iinc,iit,icutb+1,tpnn,tpcn,sqrt(dog.nb2),
+                 dog.phi0,dog.delta,"\n");
           fflush(stdout);
         }
 
         /* snapshot the trial-derived state and the convergence bookkeeping */
-        isiz=mi[0]**ne;cpypardou(damage_dl_dam,dam,&isiz,&num_cpus);
+        isiz=mi[0]**ne;cpypardou(dog.dam,dam,&isiz,&num_cpus);
         if(damage_damvisc!=NULL){
           isiz=mi[0]**ne;
-          cpypardou(damage_dl_visc,damage_damvisc,&isiz,&num_cpus);
+          cpypardou(dog.visc,damage_damvisc,&isiz,&num_cpus);
         }
-        if((tnst>0)&&(damage_dl_xs!=NULL)){
+        if((tnst>0)&&(dog.xs!=NULL)){
           isiz=tnst*mi[0]**ne;
-          cpypardou(damage_dl_xs,xstate,&isiz,&num_cpus);
+          cpypardou(dog.xs,xstate,&isiz,&num_cpus);
         }
         /* uam is the running maximum correction over the WHOLE step and is
            updated only after this block, so the value captured here is the
@@ -10202,16 +9361,16 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         for(tjj=0;tjj<2;tjj++) tuams[tjj]=uam[tjj];
 
         tacc=-1;tkpa=0.;tkpb=1.;tkphi=0.;tknrm=tpnn;tkrho=0.;tkkind=1;
-        for(tii=0;tii<damage_dl_maxtrial;tii++){
-          if(damage_dl_neval>=damage_dl_maxeval) break;
-          tdold=damage_dl_delta;
+        for(tii=0;tii<dog.maxtrial;tii++){
+          if(dog.neval>=dog.maxeval) break;
+          tdold=dog.delta;
 
           /* ---- the dogleg step for the current radius.  Same function
              the geometry self-test exercised before the run started; a
              degenerate or non-finite input returns 0 and is a refusal, never
              a step of zero length. ---- */
-          tkind=damage_dl_pick(damage_dl_delta,damage_dl_nd2,damage_dl_nw2,
-                               damage_dl_npn2,damage_dl_dtpn,&tpa,&tpb,&tnrm);
+          tkind=dogleg_pick(dog.delta,dog.nd2,dog.nw2,
+                               dog.npn2,dog.dtpn,&tpa,&tpb,&tnrm);
           /* a REFUSAL is not a firing: tkind==0 means no step was
              constructed, and counting it would credit the mechanism for
              declining to act */
@@ -10223,24 +9382,24 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                    "|Jd|^2=%.6e |p_N|^2=%.6e dot=%.6e).  Nothing is accepted; "
                    "the full Newton step is restored and the stock divergence "
                    "and cutback machinery takes over unchanged.%s",
-                   iinc,iit,tii+1,damage_dl_delta,damage_dl_nd2,
-                   damage_dl_nw2,damage_dl_npn2,damage_dl_dtpn,"\n");
+                   iinc,iit,tii+1,dog.delta,dog.nd2,
+                   dog.nw2,dog.npn2,dog.dtpn,"\n");
             fflush(stdout);
             break;
           }
           tname=(tkind==1)?"NEWTON":((tkind==2)?"CAUCHY":"DOGLEG");
-          tbnd=(tnrm>=0.99*damage_dl_delta)?1:0;
-          tpred=damage_dl_pred(tpa,tpb,damage_dl_nb2,damage_dl_nd2,
-                               damage_dl_nw2);
+          tbnd=(tnrm>=0.99*dog.delta)?1:0;
+          tpred=dogleg_pred(tpa,tpb,dog.nb2,dog.nd2,
+                               dog.nw2);
           if(tpred<=0.){
             printf("[DAMAGE TR] inc=%" ITGFORMAT " iter=%" ITGFORMAT
                    " trial=%" ITGFORMAT " %s Delta=%.6e |p|=%.6e pred=%.6e "
                    "<= 0 - the model itself promises nothing, shrinking "
                    "without evaluating%s",
-                   iinc,iit,tii+1,tname,damage_dl_delta,tnrm,tpred,"\n");
+                   iinc,iit,tii+1,tname,dog.delta,tnrm,tpred,"\n");
             fflush(stdout);
-            damage_dl_delta=0.25*((tnrm>0.)?tnrm:damage_dl_delta);
-            if(damage_dl_delta<1.e-12*damage_dl_dmax) break;
+            dog.delta=0.25*((tnrm>0.)?tnrm:dog.delta);
+            if(dog.delta<1.e-12*dog.dmax) break;
             continue;
           }
 
@@ -10251,38 +9410,38 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
              correction.  Same initialisation the iteration top uses. */
           for(tjj=0;tjj<3;tjj++) cam[tjj]=0.;
           for(tjj=3;tjj<5;tjj++) cam[tjj]=0.5;
-          isiz=mi[0]**ne;cpypardou(dam,damage_dl_dam,&isiz,&num_cpus);
+          isiz=mi[0]**ne;cpypardou(dam,dog.dam,&isiz,&num_cpus);
           if(damage_damvisc!=NULL){
             isiz=mi[0]**ne;
-            cpypardou(damage_damvisc,damage_dl_visc,&isiz,&num_cpus);
+            cpypardou(damage_damvisc,dog.visc,&isiz,&num_cpus);
           }
-          if((tnst>0)&&(damage_dl_xs!=NULL)){
+          if((tnst>0)&&(dog.xs!=NULL)){
             isiz=tnst*mi[0]**ne;
-            cpypardou(xstate,damage_dl_xs,&isiz,&num_cpus);
+            cpypardou(xstate,dog.xs,&isiz,&num_cpus);
           }
           for(tjj=0;tjj<neq[1];tjj++)
-            b[tjj]=tpa*damage_dl_d[tjj]+tpb*damage_dl_pn[tjj];
-          trial_residual(&nlgt,damage_dl_res);
-          damage_dl_neval++;
+            b[tjj]=tpa*dog.d[tjj]+tpb*dog.pn[tjj];
+          trial_residual(&nlgt,dog.res);
+          dog.neval++;
           tphi=0.;tinf=0.;
           for(tjj=0;tjj<neq[1];tjj++){
-            tphi+=damage_dl_res[tjj]*damage_dl_res[tjj];
-            if(fabs(damage_dl_res[tjj])>tinf) tinf=fabs(damage_dl_res[tjj]);
+            tphi+=dog.res[tjj]*dog.res[tjj];
+            if(fabs(dog.res[tjj])>tinf) tinf=fabs(dog.res[tjj]);
           }
           tl2=sqrt(tphi);tphi*=0.5;
 
-          tared=damage_dl_phi0-tphi;
+          tared=dog.phi0-tphi;
           trho=tared/tpred;
           if(trho>1.e-4){
             tacc=tii;tkpa=tpa;tkpb=tpb;tkphi=tphi;tknrm=tnrm;
             tkrho=trho;tkkind=tkind;
           }
           if(trho<0.25){
-            damage_dl_delta=0.25*tnrm;
+            dog.delta=0.25*tnrm;
           }else if((trho>0.75)&&(tbnd==1)){
-            damage_dl_delta=2.*tnrm;
-            if(damage_dl_delta>damage_dl_dmax)
-              damage_dl_delta=damage_dl_dmax;
+            dog.delta=2.*tnrm;
+            if(dog.delta>dog.dmax)
+              dog.delta=dog.dmax;
           }
           printf("[DAMAGE TR] inc=%" ITGFORMAT " iter=%" ITGFORMAT " trial=%"
                  ITGFORMAT " %s Delta=%.6e |p|=%.6e boundary=%" ITGFORMAT
@@ -10290,14 +9449,14 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                  "rho=%.6e %s Delta %.6e -> %.6e%s",
                  iinc,iit,tii+1,tname,tdold,tnrm,tbnd,tl2,tinf,tphi,tpred,
                  tared,trho,(trho>1.e-4)?"ACCEPT":"REJECT",tdold,
-                 damage_dl_delta,"\n");
+                 dog.delta,"\n");
           fflush(stdout);
           if(tacc>=0) break;
-          if(damage_dl_delta<1.e-12*damage_dl_dmax){
+          if(dog.delta<1.e-12*dog.dmax){
             printf("[DAMAGE TR] inc=%" ITGFORMAT " iter=%" ITGFORMAT
                    ": the radius COLLAPSED to %.6e - no step of any length "
                    "along either leg reduces phi%s",
-                   iinc,iit,damage_dl_delta,"\n");
+                   iinc,iit,dog.delta,"\n");
             fflush(stdout);
             break;
           }
@@ -10310,14 +9469,14 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         for(tjj=0;tjj<2;tjj++) uam[tjj]=tuams[tjj];
         if(tacc<0){
           tkpa=0.;tkpb=1.;tkkind=0;
-          damage_dl_nfail++;
-          damage_dl_nrej+=tii;
+          dog.nfail++;
+          dog.nrej+=tii;
         }else{
-          damage_dl_nacc++;
-          damage_dl_nrej+=tacc;
-          if(tkkind==1) damage_dl_nnewt++;
-          else if(tkkind==2) damage_dl_ncau++;
-          else damage_dl_ndog++;
+          dog.nacc++;
+          dog.nrej+=tacc;
+          if(tkkind==1) dog.nnewt++;
+          else if(tkkind==2) dog.ncau++;
+          else dog.ndog++;
         }
         tpa=tkpa;tpb=tkpb;
           /* [DAMAGE TR] cam starts from the STOCK CLEAN state, never from a
@@ -10326,23 +9485,23 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
              correction.  Same initialisation the iteration top uses. */
           for(tjj=0;tjj<3;tjj++) cam[tjj]=0.;
           for(tjj=3;tjj<5;tjj++) cam[tjj]=0.5;
-          isiz=mi[0]**ne;cpypardou(dam,damage_dl_dam,&isiz,&num_cpus);
+          isiz=mi[0]**ne;cpypardou(dam,dog.dam,&isiz,&num_cpus);
           if(damage_damvisc!=NULL){
             isiz=mi[0]**ne;
-            cpypardou(damage_damvisc,damage_dl_visc,&isiz,&num_cpus);
+            cpypardou(damage_damvisc,dog.visc,&isiz,&num_cpus);
           }
-          if((tnst>0)&&(damage_dl_xs!=NULL)){
+          if((tnst>0)&&(dog.xs!=NULL)){
             isiz=tnst*mi[0]**ne;
-            cpypardou(xstate,damage_dl_xs,&isiz,&num_cpus);
+            cpypardou(xstate,dog.xs,&isiz,&num_cpus);
           }
           for(tjj=0;tjj<neq[1];tjj++)
-            b[tjj]=tpa*damage_dl_d[tjj]+tpb*damage_dl_pn[tjj];
-          trial_residual(&nlgt,damage_dl_res);
-          damage_dl_neval++;
+            b[tjj]=tpa*dog.d[tjj]+tpb*dog.pn[tjj];
+          trial_residual(&nlgt,dog.res);
+          dog.neval++;
           tphi=0.;tinf=0.;
           for(tjj=0;tjj<neq[1];tjj++){
-            tphi+=damage_dl_res[tjj]*damage_dl_res[tjj];
-            if(fabs(damage_dl_res[tjj])>tinf) tinf=fabs(damage_dl_res[tjj]);
+            tphi+=dog.res[tjj]*dog.res[tjj];
+            if(fabs(dog.res[tjj])>tinf) tinf=fabs(dog.res[tjj]);
           }
           tl2=sqrt(tphi);tphi*=0.5;
 
@@ -10354,8 +9513,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                (tkkind==0)?"FULL-NEWTON (nothing accepted; the stock "
                "divergence and cutback machinery takes over unchanged)":
                ((tkkind==1)?"NEWTON":((tkkind==2)?"CAUCHY":"DOGLEG")),
-               tknrm,tphi,damage_dl_phi0,tkrho,damage_dl_delta,
-               damage_dl_neval,damage_dl_nfact,
+               tknrm,tphi,dog.phi0,tkrho,dog.delta,
+               dog.neval,dog.nfact,
                ((tacc>=0)&&(tkphi>0.))?fabs(tphi-tkphi)/tkphi:0.,"\n");
         fflush(stdout);
         if((tacc>=0)&&(tkphi>0.)&&(fabs(tphi-tkphi)>1.e-12*tkphi)){
@@ -10376,54 +9535,54 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                  "Stopping the experiment.%s",iinc,iit,cam[0],tknrm,"\n");
           fflush(stdout);FORTRAN(stop,());
         }
-        damage_dl_used=1;
+        dog.used=1;
 
-        if((damage_dl_neval>=damage_dl_maxeval)||
-           (damage_dl_nfact>=damage_dl_maxfact)){
+        if((dog.neval>=dog.maxeval)||
+           (dog.nfact>=dog.maxfact)){
           printf("[DAMAGE TR] BUDGET EXHAUSTED (evaluations %" ITGFORMAT
                  "/%" ITGFORMAT ", armed factorisations %" ITGFORMAT "/%"
                  ITGFORMAT ").  The trust region switches OFF; the rest of "
                  "this attempt runs the stock path and the wall, if it "
                  "returns, goes to the original stock stop.%s",
-                 damage_dl_neval,damage_dl_maxeval,damage_dl_nfact,
-                 damage_dl_maxfact,"\n");
+                 dog.neval,dog.maxeval,dog.nfact,
+                 dog.maxfact,"\n");
           fflush(stdout);
-          damage_dl_on=0;
+          dog.on=0;
         }
       }
 
-      damage_linesearch_applied=0;
-      if((damage_linesearch_mode==1)&&(damage_de12_enabled)&&
-         (damage_dl_used==0)&&(damage_dl_on==0)&&(damage_ct_on==0)&&
-         (damage_ct_used==0)&&
+      rsc.linesearch_applied=0;
+      if((rsc.linesearch_mode==1)&&(damage_de12_enabled)&&
+         (dog.used==0)&&(dog.on==0)&&(ct.on==0)&&
+         (ct.used==0)&&
          (idamagereeq==0)&&(ncont==0)&&(*nmethod!=4)&&(*nmethod!=5)&&
          (*ithermal<2)&&(*idrct==0)){
         NNEW(res,double,neq[1]);
         trial_reduce(&nlgt,res);
 
-        damage_linesearch_oldnorm=0.;
-        damage_linesearch_fullnorm=0.;
+        rsc.linesearch_oldnorm=0.;
+        rsc.linesearch_fullnorm=0.;
         for(i=0;i<neq[0];i++){
-          if(fabs(resold[i])>damage_linesearch_oldnorm)
-            damage_linesearch_oldnorm=fabs(resold[i]);
-          if(fabs(res[i])>damage_linesearch_fullnorm)
-            damage_linesearch_fullnorm=fabs(res[i]);
+          if(fabs(resold[i])>rsc.linesearch_oldnorm)
+            rsc.linesearch_oldnorm=fabs(resold[i]);
+          if(fabs(res[i])>rsc.linesearch_fullnorm)
+            rsc.linesearch_fullnorm=fabs(res[i]);
         }
 
-        damage_linesearch_active=0;
-        damage_linesearch_nsoft=0;
-        damage_linesearch_maxdd=0.;
-        if((isfinite(damage_linesearch_oldnorm))&&
-           (isfinite(damage_linesearch_fullnorm))&&
-           (damage_linesearch_fullnorm>
-              DAMAGE_LINESEARCH_GROWTH*damage_linesearch_oldnorm)){
-          damage_linesearch_active=erosion_softening(
+        rsc.linesearch_active=0;
+        rsc.linesearch_nsoft=0;
+        rsc.linesearch_maxdd=0.;
+        if((isfinite(rsc.linesearch_oldnorm))&&
+           (isfinite(rsc.linesearch_fullnorm))&&
+           (rsc.linesearch_fullnorm>
+              DAMAGE_LINESEARCH_GROWTH*rsc.linesearch_oldnorm)){
+          rsc.linesearch_active=erosion_softening(
               dam,damdamageini,ipkon,lakon,ielmat,mi[2],ndmcon,dmcon,
-              *ndmat_,*ntmat_,ne0,mi[0],&damage_linesearch_nsoft,
-              &damage_linesearch_maxdd);
+              *ndmat_,*ntmat_,ne0,mi[0],&rsc.linesearch_nsoft,
+              &rsc.linesearch_maxdd);
         }
 
-        if(damage_linesearch_active){
+        if(rsc.linesearch_active){
           sum1=0.;sum2=0.;
           for(i=0;i<neq[0];i++){
             sum1+=b[i]*resold[i];
@@ -10440,16 +9599,16 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           }
           if(flinesearch>DAMAGE_LINESEARCH_MAX)
             flinesearch=DAMAGE_LINESEARCH_MAX;
-          if(flinesearch<damage_ls_min)
-            flinesearch=damage_ls_min;
+          if(flinesearch<rsc.ls_min)
+            flinesearch=rsc.ls_min;
 
-          NNEW(damage_linesearch_step,double,neq[1]);
-          isiz=neq[1];cpypardou(damage_linesearch_step,b,&isiz,&num_cpus);
-          damage_linesearch_contracted=0;
+          NNEW(rsc.linesearch_step,double,neq[1]);
+          isiz=neq[1];cpypardou(rsc.linesearch_step,b,&isiz,&num_cpus);
+          rsc.linesearch_contracted=0;
           glob_fired(&damage_glob,GLOB_LADDER);
           lsladder_start(&damage_lsl,flinesearch,
-                         damage_linesearch_oldnorm,damage_ls_min,0.5,
-                         damage_ls_trials,damage_ls_legacy);
+                         rsc.linesearch_oldnorm,rsc.ls_min,0.5,
+                         rsc.ls_trials,rsc.ls_legacy);
 
           /* ---- BACKTRACKING LADDER PROBE (CCX_DAMAGE_LS_PROBE) --------
              The line search backtracks 1.0 -> 0.5 -> 0.1 and stops: three
@@ -10473,14 +9632,14 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
              baseline on every results() call, and this is what shows it
              rather than assuming it. */
 
-          if(damage_ls_probe!=0){
+          if(rsc.ls_probe!=0){
             static const double lsp[9]={1.,1.,0.5,0.2,0.1,0.03,0.01,
                                         0.003,0.001};
             ITG lpi;
             double lpr,lp0=-1.;
             for(lpi=0;lpi<9;lpi++){
               for(i=0;i<neq[1];i++)
-                b[i]=lsp[lpi]*damage_linesearch_step[i];
+                b[i]=lsp[lpi]*rsc.linesearch_step[i];
               trial_residual(&nlgt,res);
               lpr=0.;
               for(i=0;i<neq[0];i++) if(fabs(res[i])>lpr) lpr=fabs(res[i]);
@@ -10489,8 +9648,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                      " iter=%" ITGFORMAT " alpha=%.4f |R|inf=%.6e"
                      " (res_old=%.6e, ratio=%.3e)%s\n",
                      iinc,icutb+1,iit,lsp[lpi],lpr,
-                     damage_linesearch_oldnorm,
-                     lpr/(damage_linesearch_oldnorm+1.e-300),
+                     rsc.linesearch_oldnorm,
+                     lpr/(rsc.linesearch_oldnorm+1.e-300),
                      ((lpi==1)&&(lp0>=0.))?
                      ((fabs(lpr-lp0)<=1.e-12*(lp0+1.e-300))?
                       "  [repeat of alpha=1: REPRODUCIBLE]":
@@ -10499,11 +9658,11 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
             fflush(stdout);
           }
 
-          for(damage_linesearch_trial=1;
-              damage_linesearch_trial<=damage_ls_trials;
-              damage_linesearch_trial++){
+          for(rsc.linesearch_trial=1;
+              rsc.linesearch_trial<=rsc.ls_trials;
+              rsc.linesearch_trial++){
             for(i=0;i<neq[1];i++)
-              b[i]=flinesearch*damage_linesearch_step[i];
+              b[i]=flinesearch*rsc.linesearch_step[i];
 
             /* The bordered step is ONE Newton step in (u,lambda).
                Damping only its displacement half leaves the prescribed
@@ -10512,17 +9671,17 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                along - and the constraint it was solved to satisfy is not
                satisfied at any point of that ray.  Contract both. */
 
-            if((pf_on==1)&&(pf_applied==1)){
-              pf_lam=pf_lam0it+flinesearch*pf_dlamit;
+            if((pf.on==1)&&(pf.applied==1)){
+              pf.lam=pf.lam0it+flinesearch*pf.dlamit;
               for(i=0;i<*nboun;i++)
-                xbounact[i]=xbounold[i]+(xboun[i]-xbounold[i])*pf_lam;
+                xbounact[i]=xbounold[i]+(xboun[i]-xbounold[i])*pf.lam;
             }
 
             trial_residual(&nlgt,res);
-            damage_linesearch_dampednorm=0.;
+            rsc.linesearch_dampednorm=0.;
             for(i=0;i<neq[0];i++){
-              if(fabs(res[i])>damage_linesearch_dampednorm)
-                damage_linesearch_dampednorm=fabs(res[i]);
+              if(fabs(res[i])>rsc.linesearch_dampednorm)
+                rsc.linesearch_dampednorm=fabs(res[i]);
             }
 
             /* The ladder decides: accept, descend, or give up.  It is a
@@ -10532,16 +9691,16 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                cause of the recorded wall. */
 
             damage_lsr=lsladder_step(&damage_lsl,
-                                     damage_linesearch_dampednorm);
+                                     rsc.linesearch_dampednorm);
             if(damage_lsr==1){
-              damage_linesearch_contracted=1;
+              rsc.linesearch_contracted=1;
               break;
             }
             if(damage_lsr<0) break;
             flinesearch=damage_lsl.alpha;
           }
-          if(damage_linesearch_trial>damage_ls_trials)
-            damage_linesearch_trial=damage_ls_trials;
+          if(rsc.linesearch_trial>rsc.ls_trials)
+            rsc.linesearch_trial=rsc.ls_trials;
 
           /* Nothing contracted.  Falling out with the LAST trial in b is
              the defect: the last trial is the floor, and the floor is not
@@ -10549,17 +9708,17 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
              instead, so the step the solver takes is never worse than the
              best step this search actually saw. */
 
-          if((damage_linesearch_contracted==0)&&
+          if((rsc.linesearch_contracted==0)&&
              (fabs(lsladder_final(&damage_lsl)-flinesearch)>1.e-12)){
             flinesearch=lsladder_final(&damage_lsl);
             for(i=0;i<neq[1];i++)
-              b[i]=flinesearch*damage_linesearch_step[i];
+              b[i]=flinesearch*rsc.linesearch_step[i];
             trial_residual(&nlgt,res);
-            damage_linesearch_dampednorm=damage_lsl.bestres;
-            damage_ls_bestused++;
+            rsc.linesearch_dampednorm=damage_lsl.bestres;
+            rsc.ls_bestused++;
           }
-          SFREE(damage_linesearch_step);
-          damage_linesearch_applied=1;
+          SFREE(rsc.linesearch_step);
+          rsc.linesearch_applied=1;
         }
         SFREE(res);
       }
@@ -10574,17 +9733,17 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
          iteration - cheap, and alpha=0 is the reference this pass has no
          other way to obtain, resold being stale under this gate.  The full
          ray is walked only when the full step GREW the norm, which is the
-         fatal signature, and at most damage_ray_max times.
+         fatal signature, and at most prb.ray_max times.
 
          The walk ends on alpha=1, so v/stx/fn/dam/xstate are left in exactly
          the state the unprobed code would have produced. */
-      damage_ray_incok=1;
-      if(damage_ray_ninc>0){
-        damage_ray_incok=0;
-        for(i=0;i<damage_ray_ninc;i++)
-          if(iinc==damage_ray_inc[i]) damage_ray_incok=1;
+      prb.ray_incok=1;
+      if(prb.ray_ninc>0){
+        prb.ray_incok=0;
+        for(i=0;i<prb.ray_ninc;i++)
+          if(iinc==prb.ray_inc[i]) prb.ray_incok=1;
       }
-      if((damage_ray_probe)&&(damage_ray_incok==1)&&
+      if((prb.ray_probe)&&(prb.ray_incok==1)&&
          (idamagereeq==1)&&(ncont==0)&&
          (*nmethod!=4)&&(*nmethod!=5)&&(*ithermal<2)&&(*idrct==0)){
         /* 0 and 1 first; then the ladder from 1/1024 up, ending on the
@@ -10597,25 +9756,25 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         ITG rnpt,rii,rjj,rfull,rflip,rnpl[14],rnuc[14];
         double ra,rinf[14],rl2[14],rptr[14],rn2[14],rs;
 
-        if(damage_ray_p==NULL){
-          NNEW(damage_ray_p,double,neq[1]);
-          NNEW(damage_ray_res,double,neq[1]);
+        if(prb.ray_p==NULL){
+          NNEW(prb.ray_p,double,neq[1]);
+          NNEW(prb.ray_res,double,neq[1]);
         }
-        isiz=neq[1];cpypardou(damage_ray_p,b,&isiz,&num_cpus);
+        isiz=neq[1];cpypardou(prb.ray_p,b,&isiz,&num_cpus);
 
         rs=(qam[0]>0.)?qam[0]:1.;
         rfull=0; rflip=0;
         rnpt=2;                       /* alpha=0 and alpha=1 only, at first */
         for(rii=0;rii<rnpt;rii++){
           ra=rayA[rii];
-          for(rjj=0;rjj<neq[1];rjj++) b[rjj]=ra*damage_ray_p[rjj];
-          trial_residual(&nlgt,damage_ray_res);
+          for(rjj=0;rjj<neq[1];rjj++) b[rjj]=ra*prb.ray_p[rjj];
+          trial_residual(&nlgt,prb.ray_res);
           rinf[rii]=0.; rl2[rii]=0.; rptr[rii]=0.;
           for(rjj=0;rjj<neq[0];rjj++){
-            if(fabs(damage_ray_res[rjj])>rinf[rii])
-              rinf[rii]=fabs(damage_ray_res[rjj]);
-            rl2[rii]+=damage_ray_res[rjj]*damage_ray_res[rjj];
-            rptr[rii]+=damage_ray_p[rjj]*damage_ray_res[rjj];
+            if(fabs(prb.ray_res[rjj])>rinf[rii])
+              rinf[rii]=fabs(prb.ray_res[rjj]);
+            rl2[rii]+=prb.ray_res[rjj]*prb.ray_res[rjj];
+            rptr[rii]+=prb.ray_p[rjj]*prb.ray_res[rjj];
           }
           rn2[rii]=sqrt(rl2[rii]);
           rl2[rii]=rn2[rii]/rs;
@@ -10629,10 +9788,10 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
              overreach in J-14 and it is corrected here by measuring the
              componentwise defect E(alpha)=R(alpha)-(1-alpha)R(0). */
           if(rii==0){
-            if(damage_ray_r0==NULL) NNEW(damage_ray_r0,double,neq[1]);
-            isiz=neq[1];cpypardou(damage_ray_r0,damage_ray_res,&isiz,&num_cpus);
-            if(damage_ray_cat==NULL) NNEW(damage_ray_cat,ITG,mi[0]*ne0);
-            damage_ray_census(damage_ray_cat,xstate,xstateini,dam,
+            if(prb.ray_r0==NULL) NNEW(prb.ray_r0,double,neq[1]);
+            isiz=neq[1];cpypardou(prb.ray_r0,prb.ray_res,&isiz,&num_cpus);
+            if(prb.ray_cat==NULL) NNEW(prb.ray_cat,ITG,mi[0]*ne0);
+            damage_ray_census(prb.ray_cat,xstate,xstateini,dam,
                               damdamageini,damage_damvisc,stx,ipkon,lakon,
                               ne0,mi[0],*nstate_);
           }
@@ -10644,9 +9803,9 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
              consumed by inc<=152, and inc=154 then printed flip=no for a
              step that had not been tested at all. */
           if((rii==1)&&(rinf[0]>0.)){
-            if(rinf[1]>damage_ray_growth*rinf[0]) rflip=1;
-            if((rflip)&&(damage_ray_shots<damage_ray_max)){
-              rfull=1; rnpt=14; damage_ray_shots++;
+            if(rinf[1]>prb.ray_growth*rinf[0]) rflip=1;
+            if((rflip)&&(prb.ray_shots<prb.ray_max)){
+              rfull=1; rnpt=14; prb.ray_shots++;
             }
           }
         }
@@ -10681,32 +9840,32 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           /* componentwise defect against the linear model, and the branch
              census transitions.  This is the part that can actually tell a
              consistent tangent from a change of branch. */
-          if(damage_ray_r0!=NULL){
+          if(prb.ray_r0!=NULL){
             ITG dii,djj,dworst,dncat,dfirste,dfirstip,dfirsta,dfirstb;
             double de,dn2,di,r0n2,r0ni,dwv,dpred;
             r0n2=0.;r0ni=0.;
             for(djj=0;djj<neq[0];djj++){
-              r0n2+=damage_ray_r0[djj]*damage_ray_r0[djj];
-              if(fabs(damage_ray_r0[djj])>r0ni) r0ni=fabs(damage_ray_r0[djj]);
+              r0n2+=prb.ray_r0[djj]*prb.ray_r0[djj];
+              if(fabs(prb.ray_r0[djj])>r0ni) r0ni=fabs(prb.ray_r0[djj]);
             }
             r0n2=sqrt(r0n2);
             if(r0n2<=0.) r0n2=1.e-300;
             if(r0ni<=0.) r0ni=1.e-300;
             for(dii=2;dii<14;dii++){
               for(djj=0;djj<neq[1];djj++)
-                b[djj]=rayA[dii]*damage_ray_p[djj];
-              trial_residual(&nlgt,damage_ray_res);
+                b[djj]=rayA[dii]*prb.ray_p[djj];
+              trial_residual(&nlgt,prb.ray_res);
               dn2=0.;di=0.;dworst=-1;dwv=0.;dpred=0.;
               for(djj=0;djj<neq[0];djj++){
-                de=damage_ray_res[djj]-(1.-rayA[dii])*damage_ray_r0[djj];
+                de=prb.ray_res[djj]-(1.-rayA[dii])*prb.ray_r0[djj];
                 dn2+=de*de;
                 if(fabs(de)>di){
-                  di=fabs(de);dworst=djj;dwv=damage_ray_res[djj];
-                  dpred=(1.-rayA[dii])*damage_ray_r0[djj];
+                  di=fabs(de);dworst=djj;dwv=prb.ray_res[djj];
+                  dpred=(1.-rayA[dii])*prb.ray_r0[djj];
                 }
               }
               dn2=sqrt(dn2);
-              dncat=damage_ray_census_diff(damage_ray_cat,xstate,xstateini,
+              dncat=damage_ray_census_diff(prb.ray_cat,xstate,xstateini,
                         dam,damdamageini,damage_damvisc,stx,ipkon,lakon,ne0,
                         mi[0],*nstate_,&dfirste,&dfirstip,&dfirsta,&dfirstb);
               printf("   DEFECT a=%.6f |E|2/|R0|2=%.6e |E|inf/|R0|inf=%.6e"
@@ -10732,7 +9891,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 
         /* restore the Newton direction; v/stx/fn already hold the alpha=1
            state because the ray ends there */
-        isiz=neq[1];cpypardou(b,damage_ray_p,&isiz,&num_cpus);
+        isiz=neq[1];cpypardou(b,prb.ray_p,&isiz,&num_cpus);
       }
 
       /* ---- [DAMAGE BT] transactional backtracking in re-equilibration ----
@@ -10759,7 +9918,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
          Acceptance is Armijo on the mechanical infinity norm:
              |R(alpha)|inf <= (1 - c1*alpha) * |R(0)|inf ,  c1 = 1e-4.
          Default off; unset the flag and not one array is allocated. */
-      if(((damage_bt_mode==1)||(damage_rescue_bt_on==1))&&
+      if(((rsc.bt_mode==1)||(rsc.rescue_bt_on==1))&&
          (idamagereeq==1)&&(ncont==0)&&
          (*nmethod!=4)&&(*nmethod!=5)&&(*ithermal<2)&&(*idrct==0)){
         static const double btA[]={0.,1.,0.5,0.25,0.125,0.0625,0.03125,
@@ -10768,90 +9927,90 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         double ba,br,bref,br2;
 
         bnst=*nstate_;
-        if(damage_ray_p==NULL){
-          NNEW(damage_ray_p,double,neq[1]);
-          NNEW(damage_ray_res,double,neq[1]);
+        if(prb.ray_p==NULL){
+          NNEW(prb.ray_p,double,neq[1]);
+          NNEW(prb.ray_res,double,neq[1]);
         }
-        if(damage_bt_dam==NULL){
-          NNEW(damage_bt_dam,double,mi[0]**ne);
-          NNEW(damage_bt_visc,double,mi[0]**ne);
-          if(bnst>0) NNEW(damage_bt_xs,double,bnst*mi[0]**ne);
+        if(rsc.bt_dam==NULL){
+          NNEW(rsc.bt_dam,double,mi[0]**ne);
+          NNEW(rsc.bt_visc,double,mi[0]**ne);
+          if(bnst>0) NNEW(rsc.bt_xs,double,bnst*mi[0]**ne);
         }
-        isiz=neq[1];cpypardou(damage_ray_p,b,&isiz,&num_cpus);
-        isiz=mi[0]**ne;cpypardou(damage_bt_dam,dam,&isiz,&num_cpus);
+        isiz=neq[1];cpypardou(prb.ray_p,b,&isiz,&num_cpus);
+        isiz=mi[0]**ne;cpypardou(rsc.bt_dam,dam,&isiz,&num_cpus);
         if(damage_damvisc!=NULL){
           isiz=mi[0]**ne;
-          cpypardou(damage_bt_visc,damage_damvisc,&isiz,&num_cpus);
+          cpypardou(rsc.bt_visc,damage_damvisc,&isiz,&num_cpus);
         }
-        if((bnst>0)&&(damage_bt_xs!=NULL)){
-          isiz=bnst*mi[0]**ne;cpypardou(damage_bt_xs,xstate,&isiz,&num_cpus);
+        if((bnst>0)&&(rsc.bt_xs!=NULL)){
+          isiz=bnst*mi[0]**ne;cpypardou(rsc.bt_xs,xstate,&isiz,&num_cpus);
         }
 
-        bacc=-1; damage_bt_ntrial=0;
+        bacc=-1; rsc.bt_ntrial=0;
         /* non-monotone reference: the largest residual over the window.  The
            ring is reset at the first iteration of each same-load solve. */
-        if(iit<=1){ damage_bt_nring=0; }
+        if(iit<=1){ rsc.bt_nring=0; }
         for(bii=0;bii<8;bii++){
           ba=btA[bii];
-          if((bii>=2)&&(ba<damage_bt_floor-1.e-12)) break;
-          isiz=mi[0]**ne;cpypardou(dam,damage_bt_dam,&isiz,&num_cpus);
+          if((bii>=2)&&(ba<rsc.bt_floor-1.e-12)) break;
+          isiz=mi[0]**ne;cpypardou(dam,rsc.bt_dam,&isiz,&num_cpus);
           if(damage_damvisc!=NULL){
             isiz=mi[0]**ne;
-            cpypardou(damage_damvisc,damage_bt_visc,&isiz,&num_cpus);
+            cpypardou(damage_damvisc,rsc.bt_visc,&isiz,&num_cpus);
           }
-          if((bnst>0)&&(damage_bt_xs!=NULL)){
+          if((bnst>0)&&(rsc.bt_xs!=NULL)){
             isiz=bnst*mi[0]**ne;
-            cpypardou(xstate,damage_bt_xs,&isiz,&num_cpus);
+            cpypardou(xstate,rsc.bt_xs,&isiz,&num_cpus);
           }
-          for(bjj=0;bjj<neq[1];bjj++) b[bjj]=ba*damage_ray_p[bjj];
-          trial_residual(&nlgt,damage_ray_res);
+          for(bjj=0;bjj<neq[1];bjj++) b[bjj]=ba*prb.ray_p[bjj];
+          trial_residual(&nlgt,prb.ray_res);
           br=0.;br2=0.;
           for(bjj=0;bjj<neq[0];bjj++){
-            if(fabs(damage_ray_res[bjj])>br) br=fabs(damage_ray_res[bjj]);
-            br2+=damage_ray_res[bjj]*damage_ray_res[bjj];
+            if(fabs(prb.ray_res[bjj])>br) br=fabs(prb.ray_res[bjj]);
+            br2+=prb.ray_res[bjj]*prb.ray_res[bjj];
           }
           br2=sqrt(br2);
 
-          if((damage_evt_on==1)&&(bii==0)){
-            if(damage_evt_sgn==NULL) NNEW(damage_evt_sgn,ITG,mi[0]*ne0);
-            damage_evt_sign(stx,ipkon,lakon,ne0,mi[0],damage_evt_sgn);
+          if((prb.evt_on==1)&&(bii==0)){
+            if(prb.evt_sgn==NULL) NNEW(prb.evt_sgn,ITG,mi[0]*ne0);
+            damage_evt_sign(stx,ipkon,lakon,ne0,mi[0],prb.evt_sgn);
             for(bjj=0;bjj<8;bjj++){
-              damage_evt_nsw[bjj]=0;damage_evt_fe[bjj]=0;damage_evt_fp[bjj]=0;
+              prb.evt_nsw[bjj]=0;prb.evt_fe[bjj]=0;prb.evt_fp[bjj]=0;
             }
-          }else if((damage_evt_on==1)&&(bii<8)){
-            damage_evt_nsw[bii]=damage_evt_flips(stx,ipkon,lakon,ne0,mi[0],
-                                                 damage_evt_sgn,
-                                                 &damage_evt_fe[bii],
-                                                 &damage_evt_fp[bii]);
+          }else if((prb.evt_on==1)&&(bii<8)){
+            prb.evt_nsw[bii]=damage_evt_flips(stx,ipkon,lakon,ne0,mi[0],
+                                                 prb.evt_sgn,
+                                                 &prb.evt_fe[bii],
+                                                 &prb.evt_fp[bii]);
           }
           if(bii==0){
-            damage_bt_r0=br;
+            rsc.bt_r0=br;
             bref=br;
-            for(bjj=0;bjj<damage_bt_nring;bjj++)
-              if(damage_bt_ring[bjj]>bref) bref=damage_bt_ring[bjj];
+            for(bjj=0;bjj<rsc.bt_nring;bjj++)
+              if(rsc.bt_ring[bjj]>bref) bref=rsc.bt_ring[bjj];
             continue;
           }
           if(bii==1){
             /* engagement gate: a full step that is not much worse than the
                current point is taken unchanged.  Newton is allowed to be
                temporarily worse; that is how the undamped run crosses. */
-            if(br<=damage_bt_growth*damage_bt_r0){ bacc=1; break; }
+            if(br<=rsc.bt_growth*rsc.bt_r0){ bacc=1; break; }
           }
-          damage_bt_ntrial++;
+          rsc.bt_ntrial++;
           printf("[DAMAGE BT] inc=%" ITGFORMAT " iter=%" ITGFORMAT
                  " trial=%" ITGFORMAT " alpha=%.6f R=%.6e R0=%.6e"
                  " Rref=%.6e R2=%.6e%s",
-                 iinc,iit,damage_bt_ntrial,ba,br,damage_bt_r0,bref,br2,"\n");
+                 iinc,iit,rsc.bt_ntrial,ba,br,rsc.bt_r0,bref,br2,"\n");
           if(br<=(1.-1.e-4*ba)*bref){ bacc=bii; break; }
         }
         /* push the residual actually kept into the non-monotone ring */
-        if(damage_bt_window>1){
-          if(damage_bt_nring<damage_bt_window){
-            damage_bt_ring[damage_bt_nring++]=damage_bt_r0;
+        if(rsc.bt_window>1){
+          if(rsc.bt_nring<rsc.bt_window){
+            rsc.bt_ring[rsc.bt_nring++]=rsc.bt_r0;
           }else{
-            for(bjj=1;bjj<damage_bt_window;bjj++)
-              damage_bt_ring[bjj-1]=damage_bt_ring[bjj];
-            damage_bt_ring[damage_bt_window-1]=damage_bt_r0;
+            for(bjj=1;bjj<rsc.bt_window;bjj++)
+              rsc.bt_ring[bjj-1]=rsc.bt_ring[bjj];
+            rsc.bt_ring[rsc.bt_window-1]=rsc.bt_r0;
           }
         }
 
@@ -10864,22 +10023,22 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
            ctan(1,1)=kn for it, which is the whole point.  If no alpha changes
            the set, nothing happens and level one's behaviour stands. */
         bevt=-1;
-        if((bacc<0)&&(damage_evt_on==1)){
+        if((bacc<0)&&(prb.evt_on==1)){
           for(bii=7;bii>=1;bii--){
-            if(damage_evt_nsw[bii]>0){ bevt=bii; break; }
+            if(prb.evt_nsw[bii]>0){ bevt=bii; break; }
           }
           if(bevt>=0){
             bacc=bevt;
-            damage_evt_nstep++;
+            prb.evt_nstep++;
             printf("[DAMAGE EVT] inc=%" ITGFORMAT " iter=%" ITGFORMAT
                    " no alpha satisfied Armijo; the UC6 compression set first "
                    "changes at alpha=%.6f (%" ITGFORMAT " point(s) cross, "
                    "first el=%" ITGFORMAT " ip=%" ITGFORMAT
                    "); taking that EVENT STEP so the next tangent is built on "
                    "the new branch.  event steps so far: %" ITGFORMAT "%s",
-                   iinc,iit,btA[bevt],damage_evt_nsw[bevt],
-                   damage_evt_fe[bevt],damage_evt_fp[bevt],
-                   damage_evt_nstep,"\n");
+                   iinc,iit,btA[bevt],prb.evt_nsw[bevt],
+                   prb.evt_fe[bevt],prb.evt_fp[bevt],
+                   prb.evt_nstep,"\n");
           }else{
             printf("[DAMAGE EVT] inc=%" ITGFORMAT " iter=%" ITGFORMAT
                    " no alpha satisfied Armijo and NO ladder alpha changes the "
@@ -10891,16 +10050,16 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         }
 
         ba=(bacc>=0)?btA[bacc]:1.;
-        isiz=mi[0]**ne;cpypardou(dam,damage_bt_dam,&isiz,&num_cpus);
+        isiz=mi[0]**ne;cpypardou(dam,rsc.bt_dam,&isiz,&num_cpus);
         if(damage_damvisc!=NULL){
           isiz=mi[0]**ne;
-          cpypardou(damage_damvisc,damage_bt_visc,&isiz,&num_cpus);
+          cpypardou(damage_damvisc,rsc.bt_visc,&isiz,&num_cpus);
         }
-        if((bnst>0)&&(damage_bt_xs!=NULL)){
-          isiz=bnst*mi[0]**ne;cpypardou(xstate,damage_bt_xs,&isiz,&num_cpus);
+        if((bnst>0)&&(rsc.bt_xs!=NULL)){
+          isiz=bnst*mi[0]**ne;cpypardou(xstate,rsc.bt_xs,&isiz,&num_cpus);
         }
         SFREE(v);SFREE(stx);SFREE(fn);
-        for(bjj=0;bjj<neq[1];bjj++) b[bjj]=ba*damage_ray_p[bjj];
+        for(bjj=0;bjj<neq[1];bjj++) b[bjj]=ba*prb.ray_p[bjj];
         MNEW(v,double,mt**nk);
         isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);
         NNEW(stx,double,6*mi[0]**ne);
@@ -10911,7 +10070,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         glob_fired(&damage_glob,GLOB_BACKTRACK);
         printf("[DAMAGE BT] inc=%" ITGFORMAT " iter=%" ITGFORMAT
                " R0=%.6e trials=%" ITGFORMAT " %s%.6f%s",
-               iinc,iit,damage_bt_r0,damage_bt_ntrial,
+               iinc,iit,rsc.bt_r0,rsc.bt_ntrial,
                (bevt>=0)?"EVENT-STEP alpha=":
                ((bacc>=0)?"ACCEPTED alpha=":
                           "NONE-ACCEPTED-full-step-restored alpha="),
@@ -10920,30 +10079,30 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
       }
 
       /* ---- [DAMAGE ABA] full-state purity test, fires once --------------- */
-      damage_aba_hit=0;
-      if((damage_aba_mode==1)&&(idamagereeq==1)&&(ncont==0)&&
+      prb.aba_hit=0;
+      if((prb.aba_mode==1)&&(idamagereeq==1)&&(ncont==0)&&
          (*nmethod!=4)&&(*nmethod!=5)&&(*ithermal<2)&&(*idrct==0)){
-        if(damage_aba_ninc==0){
-          if(damage_aba_done==0) damage_aba_hit=1;
+        if(prb.aba_ninc==0){
+          if(prb.aba_done==0) prb.aba_hit=1;
         }else{
-          for(i=0;i<damage_aba_ninc;i++)
-            if((damage_aba_inc[i]>0)&&(iinc==damage_aba_inc[i])){
-              damage_aba_hit=1; damage_aba_inc[i]=-damage_aba_inc[i];
+          for(i=0;i<prb.aba_ninc;i++)
+            if((prb.aba_inc[i]>0)&&(iinc==prb.aba_inc[i])){
+              prb.aba_hit=1; prb.aba_inc[i]=-prb.aba_inc[i];
             }
         }
       }
-      if(damage_aba_hit==1){
+      if(prb.aba_hit==1){
         ITG apass,abad=0,anst,nstx,nxst,neme;
         double aal;
         anst=*nstate_;
         nstx=6*mi[0]**ne;
         nxst=27*mi[0]**ne;
         neme=6*mi[0]**ne;
-        if(damage_ray_p==NULL){
-          NNEW(damage_ray_p,double,neq[1]);
-          NNEW(damage_ray_res,double,neq[1]);
+        if(prb.ray_p==NULL){
+          NNEW(prb.ray_p,double,neq[1]);
+          NNEW(prb.ray_res,double,neq[1]);
         }
-        isiz=neq[1];cpypardou(damage_ray_p,b,&isiz,&num_cpus);
+        isiz=neq[1];cpypardou(prb.ray_p,b,&isiz,&num_cpus);
         NNEW(daba_res,double,neq[1]);
         NNEW(daba_v,double,mt**nk);
         NNEW(daba_stx,double,nstx);
@@ -10958,11 +10117,11 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         NNEW(daba_cam,double,5);
 
         for(apass=0;apass<3;apass++){
-          aal=(apass==1)?(1.-damage_aba_a):damage_aba_a;
-          for(i=0;i<neq[1];i++) b[i]=aal*damage_ray_p[i];
-          trial_residual(&nlgt,damage_ray_res);
+          aal=(apass==1)?(1.-prb.aba_a):prb.aba_a;
+          for(i=0;i<neq[1];i++) b[i]=aal*prb.ray_p[i];
+          trial_residual(&nlgt,prb.ray_res);
           if(apass==0){
-            isiz=neq[1];cpypardou(daba_res,damage_ray_res,&isiz,&num_cpus);
+            isiz=neq[1];cpypardou(daba_res,prb.ray_res,&isiz,&num_cpus);
             isiz=mt**nk;cpypardou(daba_v,v,&isiz,&num_cpus);
             isiz=nstx;cpypardou(daba_stx,stx,&isiz,&num_cpus);
             isiz=mt**nk;cpypardou(daba_fn,fn,&isiz,&num_cpus);
@@ -10982,9 +10141,9 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           }else if(apass==2){
             printf("[DAMAGE ABA] inc=%" ITGFORMAT " iter=%" ITGFORMAT
                    " A=%.6f B=%.6f  full-state comparison of the two A"
-                   " evaluations:%s",iinc,iit,damage_aba_a,
-                   1.-damage_aba_a,"\n");
-            damage_aba_cmp("residual",daba_res,damage_ray_res,neq[1],&abad);
+                   " evaluations:%s",iinc,iit,prb.aba_a,
+                   1.-prb.aba_a,"\n");
+            damage_aba_cmp("residual",daba_res,prb.ray_res,neq[1],&abad);
             damage_aba_cmp("v",daba_v,v,mt**nk,&abad);
             damage_aba_cmp("stx",daba_stx,stx,nstx,&abad);
             damage_aba_cmp("fn",daba_fn,fn,mt**nk,&abad);
@@ -11009,11 +10168,11 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         SFREE(daba_f);SFREE(daba_dam);SFREE(daba_visc);
         if(anst>0) SFREE(daba_xs);
         SFREE(daba_eme);SFREE(daba_stiff);SFREE(daba_qa);SFREE(daba_cam);
-        damage_aba_done=1;
+        prb.aba_done=1;
 
         /* leave the full step, exactly as the unprobed code would have */
         SFREE(v);SFREE(stx);SFREE(fn);
-        isiz=neq[1];cpypardou(b,damage_ray_p,&isiz,&num_cpus);
+        isiz=neq[1];cpypardou(b,prb.ray_p,&isiz,&num_cpus);
         MNEW(v,double,mt**nk);
         isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);
         NNEW(stx,double,6*mi[0]**ne);
@@ -11030,11 +10189,11 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	trial_reduce(&nlgt,b);
       }
 
-      if(damage_linesearch_applied){
-        damage_linesearch_dampednorm=0.;
+      if(rsc.linesearch_applied){
+        rsc.linesearch_dampednorm=0.;
         for(i=0;i<neq[0];i++){
-          if(fabs(b[i])>damage_linesearch_dampednorm)
-            damage_linesearch_dampednorm=fabs(b[i]);
+          if(fabs(b[i])>rsc.linesearch_dampednorm)
+            rsc.linesearch_dampednorm=fabs(b[i]);
         }
         printf("[DAMAGE LINESEARCH BK3] inc=%" ITGFORMAT
                " attempt=%" ITGFORMAT " iter=%" ITGFORMAT
@@ -11042,10 +10201,10 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                "res_old=%.6e res_full=%.6e lambda=%.6f "
                "trials=%" ITGFORMAT " contracted=%" ITGFORMAT
                " res_damped=%.6e\n",iinc,icutb+1,iit,
-               damage_linesearch_nsoft,damage_linesearch_maxdd,
-               damage_linesearch_oldnorm,damage_linesearch_fullnorm,
-               flinesearch,damage_linesearch_trial,
-               damage_linesearch_contracted,damage_linesearch_dampednorm);
+               rsc.linesearch_nsoft,rsc.linesearch_maxdd,
+               rsc.linesearch_oldnorm,rsc.linesearch_fullnorm,
+               flinesearch,rsc.linesearch_trial,
+               rsc.linesearch_contracted,rsc.linesearch_dampednorm);
         fflush(stdout);
       }
 
@@ -11123,15 +10282,15 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
            ctrl[3] is restored immediately after the call. */
 
         ctrl[3]=icref;
-        damage_slow_active=0;
-        damage_slow_allow=0;
-        damage_slow_nsoft=0;
-        damage_slow_maxdd=0.;
-        damage_slow_estres=DAMAGE_SLOW_NEWTON_INVALID_EST;
-        damage_slow_estcorr=DAMAGE_SLOW_NEWTON_INVALID_EST;
-        damage_slow_esttotal=DAMAGE_SLOW_NEWTON_INVALID_EST;
-        damage_slow_rratio=0.;
-        damage_slow_cratio=0.;
+        slow.active=0;
+        slow.allow=0;
+        slow.nsoft=0;
+        slow.maxdd=0.;
+        slow.estres=DAMAGE_SLOW_NEWTON_INVALID_EST;
+        slow.estcorr=DAMAGE_SLOW_NEWTON_INVALID_EST;
+        slow.esttotal=DAMAGE_SLOW_NEWTON_INVALID_EST;
+        slow.rratio=0.;
+        slow.cratio=0.;
 
         if((damage_de12_enabled)&&(damdamageini!=NULL)&&
            (*iexpl<=1)&&(*nmethod!=4)&&(*nmethod!=5)&&
@@ -11144,29 +10303,29 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
              below.  Legacy A3 transactions do not set
              damage_de13_transaction and therefore remain stock. */
           if((idamagereeq==1)&&(damage_de13_transaction==1)){
-            damage_slow_active=1;
-            damage_slow_nsoft=dtxn.count;
+            slow.active=1;
+            slow.nsoft=dtxn.count;
           }else{
-            damage_slow_active=erosion_softening(
+            slow.active=erosion_softening(
                 dam,damdamageini,ipkon,lakon,ielmat,mi[2],ndmcon,dmcon,
-                *ndmat_,*ntmat_,ne0,mi[0],&damage_slow_nsoft,
-                &damage_slow_maxdd);
+                *ndmat_,*ntmat_,ne0,mi[0],&slow.nsoft,
+                &slow.maxdd);
           }
         }
 
-        if(damage_slow_active){
-          damage_slow_allow=damage_slow_newton_allow(
-              iit,ram,ram1,ram2,cam,uam,damage_slow_camprev1,
-              damage_slow_camprev2,qa,qam,ctrl,damage_slow_maxiters,
-              &damage_slow_estres,&damage_slow_estcorr,
-              &damage_slow_esttotal,&damage_slow_rratio,
-              &damage_slow_cratio);
+        if(slow.active){
+          slow.allow=slownewton_allow(
+              iit,ram,ram1,ram2,cam,uam,slow.camprev1,
+              slow.camprev2,qa,qam,ctrl,slow.maxiters,
+              &slow.estres,&slow.estcorr,
+              &slow.esttotal,&slow.rratio,
+              &slow.cratio);
         }
 
-        if((damage_slow_allow)&&
-           ((damage_slow_esttotal>(ITG)icref)||damage_slow_extended)){
-          ctrl[3]=(double)damage_slow_maxiters+0.5;
-          if((damage_slow_extended==0)||(iit==(ITG)icref)||
+        if((slow.allow)&&
+           ((slow.esttotal>(ITG)icref)||slow.extended)){
+          ctrl[3]=(double)slow.maxiters+0.5;
+          if((slow.extended==0)||(iit==(ITG)icref)||
              ((iit%5)==0)){
             printf("[DAMAGE NEWTON EXTEND] inc=%" ITGFORMAT
                    " attempt=%" ITGFORMAT " iter=%" ITGFORMAT
@@ -11174,14 +10333,14 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                    "est_res=%" ITGFORMAT " est_corr=%" ITGFORMAT
                    " est_total=%" ITGFORMAT " cap=%" ITGFORMAT
                    " r_ratio=%.6f c_ratio=%.6f\n",
-                   iinc,icutb+1,iit,damage_slow_nsoft,damage_slow_maxdd,
-                   damage_slow_estres,damage_slow_estcorr,
-                   damage_slow_esttotal,damage_slow_maxiters,
-                   damage_slow_rratio,damage_slow_cratio);
+                   iinc,icutb+1,iit,slow.nsoft,slow.maxdd,
+                   slow.estres,slow.estcorr,
+                   slow.esttotal,slow.maxiters,
+                   slow.rratio,slow.cratio);
             fflush(stdout);
           }
-          damage_slow_extended=1;
-        }else if((damage_slow_extended)&&(iit>(ITG)icref)){
+          slow.extended=1;
+        }else if((slow.extended)&&(iit>(ITG)icref)){
           /* Avoid checkconvergence's fatal iit>ic guard: ic==iit reaches its
              ordinary too-slow cutback path on this iteration. */
           ctrl[3]=(double)iit+0.5;
@@ -11192,8 +10351,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           fflush(stdout);
         }
 
-        damage_slow_camprev2=damage_slow_camprev1;
-        damage_slow_camprev1=cam[0];
+        slow.camprev2=slow.camprev1;
+        slow.camprev1=cam[0];
 
         /* NC2: a terminal topology solve has zero external load increment.
            Stock therefore normalizes its correction by the tiny displacement
@@ -11218,30 +10377,30 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           if(dtheta<*tmin) dtheta=*tmin;
         }
 
-        damage_reeq_uam_actual[0]=uam[0];
-        damage_reeq_uam_actual[1]=uam[1];
-        if((damage_reeq_scale_mode==1)&&(idamagereeq==1)&&
+        rsc.reeq_uam_actual[0]=uam[0];
+        rsc.reeq_uam_actual[1]=uam[1];
+        if((rsc.reeq_scale_mode==1)&&(idamagereeq==1)&&
            (damage_de13_transaction==1)){
-          if(uam[0]<damage_reeq_uam_ref[0])
-            uam[0]=damage_reeq_uam_ref[0];
-          if(uam[1]<damage_reeq_uam_ref[1])
-            uam[1]=damage_reeq_uam_ref[1];
+          if(uam[0]<rsc.reeq_uam_ref[0])
+            uam[0]=rsc.reeq_uam_ref[0];
+          if(uam[1]<rsc.reeq_uam_ref[1])
+            uam[1]=rsc.reeq_uam_ref[1];
           if(iit==1){
             printf("[DAMAGE REEQ NC2] inc=%" ITGFORMAT
                    " actual_uam=%.6e physical_ref=%.6e\n",
-                   iinc,damage_reeq_uam_actual[0],damage_reeq_uam_ref[0]);
+                   iinc,rsc.reeq_uam_actual[0],rsc.reeq_uam_ref[0]);
             fflush(stdout);
           }
         }
 
         /* [DAMAGE RESCUE] the step the failing attempt actually used is
            the last admissible one; checkconvergence is about to shrink it. */
-        damage_rescue_dtheta_last=dtheta;
-        damage_rescue_dthetaref_last=dthetaref;
+        rsc.rescue_dtheta_last=dtheta;
+        rsc.rescue_dthetaref_last=dthetaref;
         ccx_rescue_req=0;
         ccx_rescue_arm=0;
-        if((damage_rescue_mode==1)&&(damage_rec_disarmed==0)&&
-           (damage_rescue_used<damage_rescue_maxlevel)&&(ncont==0)&&
+        if((rsc.rescue_mode==1)&&(damage_rec_disarmed==0)&&
+           (rsc.rescue_used<rsc.rescue_maxlevel)&&(ncont==0)&&
            (*nmethod!=4)&&(*nmethod!=5)&&(*ithermal<2)&&(*idrct==0)){
           ccx_rescue_arm=1;
           /* [DAMAGE CT] level 4 is granted only if the continuation could
@@ -11249,16 +10408,16 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
              only, so it is evaluated HERE, before checkconvergence defers
              the stop - a refusal then leaves the stock path byte-identical
              to the Rescue2+dogleg control. */
-          if((damage_ct_mode==1)&&(damage_rescue_used>=3)&&
-             (damage_ct_on==0)){
+          if((ct.mode==1)&&(rsc.rescue_used>=3)&&
+             (ct.on==0)){
             ITG cse,csi,csn,csr,csok=0;
             double csm[3],csk,csd,cst;
-            if((damage_ct_alloc==1)&&(damage_ct_nring>=6)&&
-               (damage_ct_refused==0)){
-              csok=damage_ct_select(damage_ct_ring,damage_ct_fl,damage_ct_dt,
+            if((ct.alloc==1)&&(ct.nring>=6)&&
+               (ct.refused==0)){
+              csok=damcont_select(ct.ring,ct.fl,ct.dt,
                                     ipkon,lakon,ielprop,prop,ne0,mi[0],
-                                    damage_ct_head,&cse,&csi,csm,&csk,&csd,
-                                    &cst,&csn,&csr,damage_ct_kaptol,damage_ct_bl,damage_ct_nbl);
+                                    ct.head,&cse,&csi,csm,&csk,&csd,
+                                    &cst,&csn,&csr,ct.kaptol,ct.bl,ct.nbl);
             }else{csn=0;csr=1;}
             if(csok==0){
               printf("[DAMAGE CT] level 4 NOT granted at inc=%" ITGFORMAT
@@ -11266,14 +10425,14 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                      "/6).  No continuation attempt is taken, the stock path "
                      "is untouched and this wall goes to the ORIGINAL stock "
                      "stop.%s",iinc,
-                     (damage_ct_alloc==0)?"ring not allocated":
-                     ((damage_ct_nring<6)?"ring incomplete":
-                      ((damage_ct_refused!=0)?"already refused once":
+                     (ct.alloc==0)?"ring not allocated":
+                     ((ct.nring<6)?"ring incomplete":
+                      ((ct.refused!=0)?"already refused once":
                        ((csr==2)?"kappa unstable over the five intervals":
                         "no candidate with five admissible intervals"))),
-                     csn,damage_ct_nring,"\n");
+                     csn,ct.nring,"\n");
               fflush(stdout);
-              damage_ct_refused=1;
+              ct.refused=1;
               ccx_rescue_arm=0;
             }
           }
@@ -11305,44 +10464,44 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         if(ccx_rescue_req==1){
           ccx_rescue_req=0;
           ccx_rescue_arm=0;
-          if(damage_corr_on==1){
+          if(rsc.corr_on==1){
             /* Wall inside the corridor.  Counted and judged HERE, not
                after some later converged increment, so a chain of walls
                is bounded even if nothing ever converges again. */
             ITG cwclose=0;
-            damage_corr_nint++;
-            damage_corr_nwalltot++;
-            if(damage_corr_nwalltot>damage_corr_maxwall){
+            rsc.corr_nint++;
+            rsc.corr_nwalltot++;
+            if(rsc.corr_nwalltot>rsc.corr_maxwall){
               printf("[DAMAGE CORR] CIRCUIT BREAKER (walls): %" ITGFORMAT
                      " walls inside the corridor%s",
-                     damage_corr_nwalltot,"\n");
+                     rsc.corr_nwalltot,"\n");
               cwclose=1;
-            }else if(damage_corr_trial==1){
+            }else if(rsc.corr_trial==1){
               /* the probe failed - fall back to the proven lambda.  This
                  is not a repeat: lambda changes. */
-              damage_corr_trial=0;
-              damage_corr_lam=damage_corr_lamstable;
-              damage_corr_nsince=0;
+              rsc.corr_trial=0;
+              rsc.corr_lam=rsc.corr_lamstable;
+              rsc.corr_nsince=0;
               printf("[DAMAGE CORR] the probe did not hold at inc=%"
                      ITGFORMAT "; back to the proven lambda=%.3e "
                      "(intervention %" ITGFORMAT ")%s",
-                     iinc,damage_corr_lam,damage_corr_nint,"\n");
+                     iinc,rsc.corr_lam,rsc.corr_nint,"\n");
             }else{
               /* Wall on the HELD lambda.  Repeating it would recompute
                  the identical attempt, so escalate one ladder step -
                  bounded - or close. */
               ITG ei;double lnext=0.;
-              damage_corr_nwallstab++;
+              rsc.corr_nwallstab++;
               for(ei=0;ei<damage_reg_nlam;ei++){
-                if(damage_reg_lam[ei]>damage_corr_lam*1.0000001){
+                if(damage_reg_lam[ei]>rsc.corr_lam*1.0000001){
                   lnext=damage_reg_lam[ei];break;
                 }
               }
-              if((damage_corr_nwallstab>damage_corr_maxesc)||(lnext<=0.)){
+              if((rsc.corr_nwallstab>rsc.corr_maxesc)||(lnext<=0.)){
                 printf("[DAMAGE CORR] CIRCUIT BREAKER (escalation): wall "
                        "on the held lambda=%.3e at inc=%" ITGFORMAT ", %"
                        ITGFORMAT " consecutive, ladder %s%s",
-                       damage_corr_lam,iinc,damage_corr_nwallstab,
+                       rsc.corr_lam,iinc,rsc.corr_nwallstab,
                        (lnext<=0.)?"exhausted":"still open","\n");
                 cwclose=1;
               }else{
@@ -11350,11 +10509,11 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                        ITGFORMAT ": an identical retry is refused; lambda "
                        "escalated %.3e -> %.3e (escalation %" ITGFORMAT
                        " of %" ITGFORMAT ")%s",
-                       iinc,damage_corr_lam,lnext,damage_corr_nwallstab,
-                       damage_corr_maxesc,"\n");
-                damage_corr_lam=lnext;
-                damage_corr_lamstable=lnext;
-                damage_corr_nsince=0;
+                       iinc,rsc.corr_lam,lnext,rsc.corr_nwallstab,
+                       rsc.corr_maxesc,"\n");
+                rsc.corr_lam=lnext;
+                rsc.corr_lamstable=lnext;
+                rsc.corr_nsince=0;
               }
             }
             if(cwclose==1){
@@ -11363,22 +10522,22 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                      ITGFORMAT " regularized factorisation(s), step time "
                      "gained %.6e.  The mechanism DISARMS; the next wall "
                      "goes to the original stock stop%s",
-                     damage_corr_ninc,damage_corr_nint,damage_corr_nfact,
-                     (theta-damage_corr_theta0)**tper,"\n");
-              damage_corr_on=0;damage_corr_lam=0.;
+                     rsc.corr_ninc,rsc.corr_nint,rsc.corr_nfact,
+                     (theta-rsc.corr_theta0)**tper,"\n");
+              rsc.corr_on=0;rsc.corr_lam=0.;
               damage_rec_disarmed=1;
             }
-            damage_reg_lambda=damage_corr_lam;
-            damage_reg_on=(damage_corr_lam>0.)?1:0;
+            damage_reg_lambda=rsc.corr_lam;
+            damage_reg_on=(rsc.corr_lam>0.)?1:0;
             /* Bank BEFORE zeroing.  Dropping this counts only the
                factorisations of attempts that succeeded, so the price
                of the corridor would be understated by exactly the cost
                of its failures. */
-            damage_corr_nfact+=damage_reg_napply;
+            rsc.corr_nfact+=damage_reg_napply;
             damage_reg_napply=0;
-            damage_rescue_used=0;
-            damage_rescue_bt_on=0;
-            damage_evt_on=0;
+            rsc.rescue_used=0;
+            rsc.rescue_bt_on=0;
+            prb.evt_on=0;
             damage_rec_used_in_inc=1;
             fflush(stdout);
           }else{
@@ -11386,7 +10545,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
              untouched increments have gone by has not recovered
              anything; MAXUNREC of those in a row and the mechanism
              stops pretending and disarms. */
-          if(damage_rescue_used==0){
+          if(rsc.rescue_used==0){
             if(damage_rec_healthy<damage_rec_window){
               damage_rec_unrec++;
             }else{
@@ -11407,11 +10566,11 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
             }
           }
           if(damage_rec_disarmed==1){
-            damage_rescue_used=damage_rescue_maxlevel;
+            rsc.rescue_used=rsc.rescue_maxlevel;
           }else{
-          damage_rescue_used++;
+          rsc.rescue_used++;
           damage_rec_used_in_inc=1;
-          damage_rescue_bt_on=1;
+          rsc.rescue_bt_on=1;
           /* A wall reached with idamagereeq==0 never enters a same-load
              solve, so BT and the event step - both gated on
              idamagereeq==1 - cannot act on it, and levels 1 and 2 would
@@ -11419,27 +10578,27 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
              carries four [DAMAGE RESCUE] lines and not one [DAMAGE BT],
              and both retries there failed identically. */
           if((idamagereeq==0)&&(damage_reg_nlam>0)&&
-             (damage_rescue_used<2)){
+             (rsc.rescue_used<2)){
             printf("[DAMAGE RESCUE] this wall has idamagereeq=0: no "
                    "same-load solve, so levels 1 and 2 cannot act on it; "
                    "skipping straight to the regularized level%s","\n");
-            damage_rescue_used=2;
+            rsc.rescue_used=2;
           }
           /* [DAMAGE CT] level 4: Rescue2 levels 1-2 and the dogleg have
              all failed on this wall.  The standard cutback rollback has
              already restored the increment-start state, so everything below
              is measured on the last COMMITTED state.  Any refusal leaves
              that state untouched and hands the wall to the stock stop. */
-          if((damage_ct_mode==1)&&(damage_rescue_used>=4)&&
-             (damage_ct_on==0)&&(damage_ct_refused==0)){
+          if((ct.mode==1)&&(rsc.rescue_used>=4)&&
+             (ct.on==0)&&(ct.refused==0)){
             ITG cse,csi,csn,csr;
             double csm[3],csk,csd,cst;
-            if((damage_ct_alloc==1)&&(damage_ct_nring>=6)&&
-               (damage_ct_select(damage_ct_ring,damage_ct_fl,damage_ct_dt,
+            if((ct.alloc==1)&&(ct.nring>=6)&&
+               (damcont_select(ct.ring,ct.fl,ct.dt,
                                  ipkon,lakon,ielprop,prop,ne0,mi[0],
-                                 damage_ct_head,&cse,&csi,csm,&csk,&csd,
-                                 &cst,&csn,&csr,damage_ct_kaptol,damage_ct_bl,damage_ct_nbl)==1)){
-              damage_ct_arm=1;   /* already gated above; this only reports */
+                                 ct.head,&cse,&csi,csm,&csk,&csd,
+                                 &cst,&csn,&csr,ct.kaptol,ct.bl,ct.nbl)==1)){
+              ct.arm=1;   /* already gated above; this only reports */
               printf("[DAMAGE CT] level 4 pre-check PASSED at inc=%" ITGFORMAT
                      ": %" ITGFORMAT " candidate(s) with five admissible "
                      "committed intervals; best element %" ITGFORMAT " ip %"
@@ -11452,26 +10611,26 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                      "/6).  No continuation attempt is granted, so the stock "
                      "path is untouched and this wall goes to the ORIGINAL "
                      "stock stop.%s",iinc,
-                     (damage_ct_alloc==0)?"ring not allocated":
-                     ((damage_ct_nring<6)?"ring incomplete":
+                     (ct.alloc==0)?"ring not allocated":
+                     ((ct.nring<6)?"ring incomplete":
                       ((csr==2)?"kappa unstable over the five intervals":
                        "no candidate with five admissible intervals")),
-                     (damage_ct_alloc==1)?csn:0,damage_ct_nring,"\n");
-              damage_ct_refused=1;
-              damage_rescue_used=damage_rescue_maxlevel;
+                     (ct.alloc==1)?csn:0,ct.nring,"\n");
+              ct.refused=1;
+              rsc.rescue_used=rsc.rescue_maxlevel;
               ccx_rescue_arm=0;
             }
             fflush(stdout);
           }
-          damage_evt_on=(damage_rescue_used==2)?1:0;
+          prb.evt_on=(rsc.rescue_used==2)?1:0;
           damage_reg_on=0;
           /* [DAMAGE TR] guard: without damage_reg_nlam>0 this block indexes
              damage_reg_lam[-1] and switches the diagonal shift on with a
              garbage lambda.  Unreachable while only RESCUE3/CORRIDOR could
              raise the level count; reachable the moment any other mechanism
              claims level 3, which the dogleg does. */
-          if((damage_rescue_used>=3)&&(damage_reg_nlam>0)){
-            damage_reg_level=damage_rescue_used-3;
+          if((rsc.rescue_used>=3)&&(damage_reg_nlam>0)){
+            damage_reg_level=rsc.rescue_used-3;
             if(damage_reg_level>=damage_reg_nlam)
               damage_reg_level=damage_reg_nlam-1;
             damage_reg_lambda=damage_reg_lam[damage_reg_level];
@@ -11485,29 +10644,29 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
              to here is the Rescue2 trajectory.  Only now is the increment
              given one more attempt, with the trust region choosing every
              correction inside it. */
-          damage_dl_lasthelp=iinc;
-          damage_dl_selfrec=0;
-          damage_dl_on=0;
-          if((damage_dl_mode==1)&&(damage_rescue_used>=3)&&
+          dog.lasthelp=iinc;
+          dog.selfrec=0;
+          dog.on=0;
+          if((dog.mode==1)&&(rsc.rescue_used>=3)&&
              (damage_rec_disarmed==0)){
-            if(damage_dl_have<0){
+            if(dog.have<0){
               printf("[DAMAGE TR] not re-arming: the transpose check has "
                      "already failed once in this run.  The wall goes to "
                      "the original stock stop.%s","\n");
               fflush(stdout);
-              damage_rescue_used=damage_rescue_maxlevel;
-            }else if(damage_dl_narm>=damage_dl_maxarm){
+              rsc.rescue_used=rsc.rescue_maxlevel;
+            }else if(dog.narm>=dog.maxarm){
               printf("[DAMAGE TR] ATTEMPT BUDGET EXHAUSTED: %" ITGFORMAT
                      " armed attempts of %" ITGFORMAT " used.  The mechanism "
                      "DISARMS, the state is left as the standard cutback "
                      "rollback restored it, and this wall goes to the "
                      "ORIGINAL stock stop.%s",
-                     damage_dl_narm,damage_dl_maxarm,"\n");
+                     dog.narm,dog.maxarm,"\n");
               fflush(stdout);
               damage_rec_disarmed=1;
-              damage_rescue_used=damage_rescue_maxlevel;
+              rsc.rescue_used=rsc.rescue_maxlevel;
             }else{
-              if(damage_dl_narm>0){
+              if(dog.narm>0){
                 printf("[DAMAGE TR] inc=%" ITGFORMAT " running total "
                        "BEFORE this attempt: "
                        "armed %" ITGFORMAT ", accepted steps %" ITGFORMAT
@@ -11516,17 +10675,17 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                        "nothing %" ITGFORMAT ", rejected trials %" ITGFORMAT
                        ", residual evaluations %" ITGFORMAT
                        ", armed factorisations %" ITGFORMAT "%s",
-                       iinc,damage_dl_narm,damage_dl_nacc,damage_dl_nnewt,
-                       damage_dl_ncau,damage_dl_ndog,damage_dl_nfail,
-                       damage_dl_nrej,damage_dl_neval,damage_dl_nfact,"\n");
+                       iinc,dog.narm,dog.nacc,dog.nnewt,
+                       dog.ncau,dog.ndog,dog.nfail,
+                       dog.nrej,dog.neval,dog.nfact,"\n");
                 fflush(stdout);
               }
-              damage_dl_narm++;
-              damage_dl_on=1;
-              damage_dl_have=0;
-              damage_dl_delta=0.;
-              damage_dl_banner=0;
-              damage_dl_incarm=iinc;
+              dog.narm++;
+              dog.on=1;
+              dog.have=0;
+              dog.delta=0.;
+              dog.banner=0;
+              dog.incarm=iinc;
               printf("[DAMAGE TR] LEVEL 3 armed for inc=%" ITGFORMAT
                      " (attempt %" ITGFORMAT " of %" ITGFORMAT ").  Levels 1 "
                      "and 2 both failed on this wall; idamagereeq=%" ITGFORMAT
@@ -11536,21 +10695,21 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                      "changes: no matrix entry, no material constant, no "
                      "deletion rule, and convergence is still decided by "
                      "checkconvergence on the unmodified residual.%s",
-                     iinc,damage_dl_narm,damage_dl_maxarm,idamagereeq,"\n");
+                     iinc,dog.narm,dog.maxarm,idamagereeq,"\n");
               fflush(stdout);
             }
           }
-          damage_rescue_nfired++;
-          dtheta=damage_rescue_dtheta_last;
-          dthetaref=damage_rescue_dthetaref_last;
-          glob_fired(&damage_glob,(damage_rescue_used>=2)?
+          rsc.rescue_nfired++;
+          dtheta=rsc.rescue_dtheta_last;
+          dthetaref=rsc.rescue_dthetaref_last;
+          glob_fired(&damage_glob,(rsc.rescue_used>=2)?
                      GLOB_RESCUE2:GLOB_RESCUE1);
           printf("[DAMAGE RESCUE] FIRED #%" ITGFORMAT " inc=%" ITGFORMAT
                  " iter=%" ITGFORMAT " time=%.12e dtime=%.12e; dtheta restored "
                  "to the last admissible %.12e; transactional BT armed for "
                  "THIS attempt only (level %" ITGFORMAT ")%s",
-                 damage_rescue_nfired,iinc,iit,time,dtime,dtheta,
-                 damage_rescue_used,"\n");
+                 rsc.rescue_nfired,iinc,iit,time,dtime,dtheta,
+                 rsc.rescue_used,"\n");
           fflush(stdout);
         }
 
@@ -11580,8 +10739,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         }
 
         ctrl[3]=icref;
-        uam[0]=damage_reeq_uam_actual[0];
-        uam[1]=damage_reeq_uam_actual[1];
+        uam[0]=rsc.reeq_uam_actual[0];
+        uam[1]=rsc.reeq_uam_actual[1];
 
 	if(*mortar>1){
 	  SFREE(f_cs);SFREE(f_cm);
@@ -11657,11 +10816,11 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                           ithermal,t1,xstate,xstateini,nstate_,vold,
                           &idamage,&damage_mode,&damage_alphaevent));
 
-      damage_de1_stats(dam,damde1prev,ipkon,lakon,ne0,mi[0],
-                       &damage_de1_nactive,&damage_de1_gt01,
-                       &damage_de1_gt05,&damage_de1_gt09,
-                       &damage_de1_nfull,&damage_de1_nchanged,
-                       &damage_de1_dmax,&damage_de1_maxdelta);
+      damstats_element(dam,damde1prev,ipkon,lakon,ne0,mi[0],
+                       &de1.nactive,&de1.gt01,
+                       &de1.gt05,&de1.gt09,
+                       &de1.nfull,&de1.nchanged,
+                       &de1.dmax,&de1.maxdelta);
 
       /* DE1.3 terminal active-set extension.  The just-converged same-load
          equilibrium may have driven additional surviving DE1.2 elements
@@ -12004,20 +11163,20 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                  " D>0.5=%" ITGFORMAT " D>0.9=%" ITGFORMAT
                  " Dfull=%" ITGFORMAT " Dmax=%.6e max_dD=%.6e "
                  "changed_tol=%" ITGFORMAT "\n",
-                 damage_active_pass,damage_de1_nactive,damage_de1_gt01,
-                 damage_de1_gt05,damage_de1_gt09,damage_de1_nfull,
-                 damage_de1_dmax,damage_de1_maxdelta,
-                 damage_de1_nchanged);
+                 damage_active_pass,de1.nactive,de1.gt01,
+                 de1.gt05,de1.gt09,de1.nfull,
+                 de1.dmax,de1.maxdelta,
+                 de1.nchanged);
           fflush(stdout);
 
           /* DE1.1 closes the staggered fixed point on the largest scalar
              damage correction, not on the number of elements whose last
              bits changed.  The latter can stay O(1e5) for many passes even
              when every individual correction is negligible. */
-          if(damage_de1_maxdelta<=DAMAGE_DE1_FP_TOL){
+          if(de1.maxdelta<=DAMAGE_DE1_FP_TOL){
             printf("[DAMAGE DE1 FP CONVERGED] inc=%" ITGFORMAT
                    " pass=%" ITGFORMAT " max_dD=%.6e tol=%.6e\n",
-                   iinc,damage_active_pass,damage_de1_maxdelta,
+                   iinc,damage_active_pass,de1.maxdelta,
                    DAMAGE_DE1_FP_TOL);
             fflush(stdout);
             goto damage_active_set_closed;
@@ -12025,11 +11184,11 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 
           if(damage_active_pass>=DAMAGE_DE1_MAX_PASSES){
 
-            if(damage_de1_maxdelta<=DAMAGE_DE1_FP_RELAX_TOL){
+            if(de1.maxdelta<=DAMAGE_DE1_FP_RELAX_TOL){
               printf("[DAMAGE DE1 FP ACCEPT] inc=%" ITGFORMAT
                      " pass=%" ITGFORMAT
                      " max_dD=%.6e relaxed_tol=%.6e\n",
-                     iinc,damage_active_pass,damage_de1_maxdelta,
+                     iinc,damage_active_pass,de1.maxdelta,
                      DAMAGE_DE1_FP_RELAX_TOL);
               fflush(stdout);
               goto damage_active_set_closed;
@@ -12048,7 +11207,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
             printf("[DAMAGE DE1 CUTBACK] inc=%" ITGFORMAT
                    " pass=%" ITGFORMAT " max_dD=%.6e > %.6e "
                    "old_dt=%.6e retry_dt=%.6e\n",
-                   iinc,damage_active_pass,damage_de1_maxdelta,
+                   iinc,damage_active_pass,de1.maxdelta,
                    DAMAGE_DE1_FP_RELAX_TOL,dthetadamage**tper,
                    dtheta**tper);
             fflush(stdout);
@@ -12470,17 +11629,17 @@ damage_active_set_closed:
                " time=%.12e passes=%" ITGFORMAT
                " active=%" ITGFORMAT " Dmax=%.6e max_dD=%.6e\n",
                iinc,theta**tper,damage_active_pass,
-               damage_de1_nactive,damage_de1_dmax,
-               damage_de1_maxdelta);
+               de1.nactive,de1.dmax,
+               de1.maxdelta);
 
-        damage_de1_append_stats(jobnamec,*istep,iinc,theta**tper,
+        damstats_append(jobnamec,*istep,iinc,theta**tper,
                                 *ttime+theta**tper,damage_active_pass,
-                                damage_de1_nactive,damage_de1_gt01,
-                                damage_de1_gt05,damage_de1_gt09,
-                                damage_de1_nfull,damage_de1_dmax,
-                                damage_de1_maxdelta);
+                                de1.nactive,de1.gt01,
+                                de1.gt05,de1.gt09,
+                                de1.nfull,de1.dmax,
+                                de1.maxdelta);
 
-        damage_de1_write_vtk(jobnamec,co,vold,*nk,mt,kon,ipkon,lakon,
+        damstats_write_vtk(jobnamec,co,vold,*nk,mt,kon,ipkon,lakon,
                              ielmat,mi[2],dam,mi[0],ne0,*istep,iinc,
                              theta**tper);
 
@@ -12664,11 +11823,11 @@ damage_active_set_closed:
 			    xstateini,nstate_,vold,&idamage,
 			    &damage_mode,&damage_alphaevent));
 
-        damage_de1_stats(dam,damde1prev,ipkon,lakon,ne0,mi[0],
-                         &damage_de1_nactive,&damage_de1_gt01,
-                         &damage_de1_gt05,&damage_de1_gt09,
-                         &damage_de1_nfull,&damage_de1_nchanged,
-                         &damage_de1_dmax,&damage_de1_maxdelta);
+        damstats_element(dam,damde1prev,ipkon,lakon,ne0,mi[0],
+                         &de1.nactive,&de1.gt01,
+                         &de1.gt05,&de1.gt09,
+                         &de1.nfull,&de1.nchanged,
+                         &de1.dmax,&de1.maxdelta);
 
       if((idamage>0)&&(*iexpl<=1)){
 
@@ -12859,9 +12018,9 @@ damage_active_set_closed:
                  " D>0.1=%" ITGFORMAT " D>0.5=%" ITGFORMAT
                  " D>0.9=%" ITGFORMAT " Dfull=%" ITGFORMAT
                  " Dmax=%.6e max_dD=%.6e changed_tol=%" ITGFORMAT "\n",
-                 damage_de1_nactive,damage_de1_gt01,damage_de1_gt05,
-                 damage_de1_gt09,damage_de1_nfull,damage_de1_dmax,
-                 damage_de1_maxdelta,damage_de1_nchanged);
+                 de1.nactive,de1.gt01,de1.gt05,
+                 de1.gt09,de1.nfull,de1.dmax,
+                 de1.maxdelta,de1.nchanged);
           fflush(stdout);
 
           theta=thetadamage;
@@ -13050,20 +12209,20 @@ damage_controller_done:
         damage_de13_transaction=1;
         damage_soft_reeq=0;
         damage_active_pass=1;
-        damage_reeq_uam_ref[0]=uam[0];
-        damage_reeq_uam_ref[1]=uam[1];
+        rsc.reeq_uam_ref[0]=uam[0];
+        rsc.reeq_uam_ref[1]=uam[1];
         /* J-09: keep the reference from collapsing with the step.  The peak
            is a running maximum over the whole step, never reset per
            increment - the same shape as damage_qam_peak. */
-        if(damage_reeq_uam_floor>0.){
-          if(damage_reeq_uam_ref[0]>damage_reeq_uam_peak[0])
-            damage_reeq_uam_peak[0]=damage_reeq_uam_ref[0];
-          if(damage_reeq_uam_ref[1]>damage_reeq_uam_peak[1])
-            damage_reeq_uam_peak[1]=damage_reeq_uam_ref[1];
-          if(damage_reeq_uam_ref[0]<damage_reeq_uam_floor*damage_reeq_uam_peak[0])
-            damage_reeq_uam_ref[0]=damage_reeq_uam_floor*damage_reeq_uam_peak[0];
-          if(damage_reeq_uam_ref[1]<damage_reeq_uam_floor*damage_reeq_uam_peak[1])
-            damage_reeq_uam_ref[1]=damage_reeq_uam_floor*damage_reeq_uam_peak[1];
+        if(rsc.reeq_uam_floor>0.){
+          if(rsc.reeq_uam_ref[0]>rsc.reeq_uam_peak[0])
+            rsc.reeq_uam_peak[0]=rsc.reeq_uam_ref[0];
+          if(rsc.reeq_uam_ref[1]>rsc.reeq_uam_peak[1])
+            rsc.reeq_uam_peak[1]=rsc.reeq_uam_ref[1];
+          if(rsc.reeq_uam_ref[0]<rsc.reeq_uam_floor*rsc.reeq_uam_peak[0])
+            rsc.reeq_uam_ref[0]=rsc.reeq_uam_floor*rsc.reeq_uam_peak[0];
+          if(rsc.reeq_uam_ref[1]<rsc.reeq_uam_floor*rsc.reeq_uam_peak[1])
+            rsc.reeq_uam_ref[1]=rsc.reeq_uam_floor*rsc.reeq_uam_peak[1];
         }
 
         topo_txn_discard(&dtxn);
@@ -13444,29 +12603,29 @@ damage_controller_done:
        exact integration-point state directly. */
     if((damage_de12_enabled)&&(icutb==0)&&(idamagereeq==0)&&
        (damdamageini!=NULL)){
-      damage_de1_stats(dam,damdamageini,ipkon,lakon,ne0,mi[0],
-                       &damage_de1_nactive,&damage_de1_gt01,
-                       &damage_de1_gt05,&damage_de1_gt09,
-                       &damage_de1_nfull,&damage_de1_nchanged,
-                       &damage_de1_dmax,&damage_de1_maxdelta);
+      damstats_element(dam,damdamageini,ipkon,lakon,ne0,mi[0],
+                       &de1.nactive,&de1.gt01,
+                       &de1.gt05,&de1.gt09,
+                       &de1.nfull,&de1.nchanged,
+                       &de1.dmax,&de1.maxdelta);
 
-      if(damage_de1_nactive>0){
+      if(de1.nactive>0){
         printf("[DAMAGE DE1.2 COMMIT] inc=%" ITGFORMAT
                " time=%.12e active=%" ITGFORMAT
                " D>0.1=%" ITGFORMAT " D>0.5=%" ITGFORMAT
                " D>0.9=%" ITGFORMAT " Dfull=%" ITGFORMAT
                " Dmax=%.6e max_dD_inc=%.6e\n",
-               iinc,theta**tper,damage_de1_nactive,damage_de1_gt01,
-               damage_de1_gt05,damage_de1_gt09,damage_de1_nfull,
-               damage_de1_dmax,damage_de1_maxdelta);
+               iinc,theta**tper,de1.nactive,de1.gt01,
+               de1.gt05,de1.gt09,de1.nfull,
+               de1.dmax,de1.maxdelta);
 
-        damage_de1_append_stats(jobnamec,*istep,iinc,theta**tper,
-                                *ttime+theta**tper,1,damage_de1_nactive,
-                                damage_de1_gt01,damage_de1_gt05,
-                                damage_de1_gt09,damage_de1_nfull,
-                                damage_de1_dmax,damage_de1_maxdelta);
+        damstats_append(jobnamec,*istep,iinc,theta**tper,
+                                *ttime+theta**tper,1,de1.nactive,
+                                de1.gt01,de1.gt05,
+                                de1.gt09,de1.nfull,
+                                de1.dmax,de1.maxdelta);
 
-        damage_de1_write_vtk(jobnamec,co,vold,*nk,mt,kon,ipkon,lakon,
+        damstats_write_vtk(jobnamec,co,vold,*nk,mt,kon,ipkon,lakon,
                              ielmat,mi[2],dam,mi[0],ne0,*istep,iinc,
                              theta**tper);
         fflush(stdout);
@@ -13563,7 +12722,7 @@ damage_controller_done:
 
     if(icutb!=0){
 
-      if(damage_rescue_bt_on==1){
+      if(rsc.rescue_bt_on==1){
         printf("[DAMAGE RESCUE] STANDARD cutback rollback executed: vold, "
                "xbounact, f, sti, eme, ener, xstate, dam, damvisc and ipkon "
                "restored from the increment-start baselines; no additional "
@@ -13774,7 +12933,7 @@ damage_controller_done:
        complete" and therefore cannot be mistaken for COMPLETED; a
        dedicated code would need a change outside nonlingeo.c, which this
        MVP is not allowed to make. */
-    if((damage_ct_partial==1)&&(icutb!=0)){
+    if((ct.partial==1)&&(icutb!=0)){
         ITG cq1=0,cq2=0,cq3=0,cqi,cqj,cqk;
         double cqd0,cqdl[3],cqrm[9],cqsh[3],cqop=0.;
         for(cqi=0;cqi<ne0;cqi++){
@@ -13791,13 +12950,13 @@ damage_controller_done:
             if(xstate[*nstate_*cqk]>cqd0) cq3++;
           }
         }
-        if((damage_ct_elem>=0)&&(damage_ct_elem<ne0)&&
-           (ipkon[damage_ct_elem]>=0)&&(damage_ct_w!=NULL)){
-          damage_ct_kin(co,kon,ipkon[damage_ct_elem],vold,mt,damage_ct_ip,
+        if((ct.elem>=0)&&(ct.elem<ne0)&&
+           (ipkon[ct.elem]>=0)&&(ct.w!=NULL)){
+          damcont_kin(co,kon,ipkon[ct.elem],vold,mt,ct.ip,
                         cqdl,cqrm,cqsh);
-          cqop=damage_ct_m[0]*(cqdl[0]-damage_ct_dc[0])
-              +damage_ct_m[1]*(cqdl[1]-damage_ct_dc[1])
-              +damage_ct_m[2]*(cqdl[2]-damage_ct_dc[2]);
+          cqop=ct.m[0]*(cqdl[0]-ct.dc[0])
+              +ct.m[1]*(cqdl[1]-ct.dc[1])
+              +ct.m[2]*(cqdl[2]-ct.dc[2]);
         }
         printf("%s","\n");
         printf("[DAMAGE CT] ===== PARTIAL - bounded experimental "
@@ -13809,14 +12968,14 @@ damage_controller_done:
                "ttime = %.12e%s",theta,theta**tper,*ttime,"\n");
         printf("[DAMAGE CT]   lambda = %.12e   lambda_c = %.12e   "
                "ds = %.6e   kappa = %.6e%s",
-               damage_ct_lam,damage_ct_lamc,damage_ct_ds,damage_ct_kappa,
+               ct.lam,ct.lamc,ct.ds,ct.kappa,
                "\n");
         printf("[DAMAGE CT]   control point: element %" ITGFORMAT " ip %"
                ITGFORMAT "   m = (%.6f,%.6f,%.6f)   m.(delta-delta_c) = "
                "%.6e   |c| last = %.6e   tol_c = %.6e%s",
-               damage_ct_elem+1,damage_ct_ip+1,damage_ct_m[0],
-               damage_ct_m[1],damage_ct_m[2],cqop,fabs(damage_ct_cprev),
-               damage_ct_tolc,"\n");
+               ct.elem+1,ct.ip+1,ct.m[0],
+               ct.m[1],ct.m[2],cqop,fabs(ct.cprev),
+               ct.tolc,"\n");
         printf("[DAMAGE CT]   observables: P1 failed facets %" ITGFORMAT
                ", P2 deleted elements %" ITGFORMAT ", P3 ip with dmax>d0 %"
                ITGFORMAT "%s",cq1,cq2,cq3,"\n");
@@ -13824,8 +12983,8 @@ damage_controller_done:
                "commits, %" ITGFORMAT " corrector iterations, %" ITGFORMAT
                " factorisations, %" ITGFORMAT " residual evaluations, %"
                ITGFORMAT " blacklisted control point(s)%s",
-               damage_ct_ncommit,damage_ct_ncorr,damage_ct_nfact,
-               damage_ct_neval,damage_ct_nbl,"\n");
+               ct.ncommit,ct.ncorr,ct.nfact,
+               ct.neval,ct.nbl,"\n");
         printf("[DAMAGE CT] ===== end PARTIAL report =====%s","\n");
         fflush(stdout);
         FORTRAN(stop,());
@@ -14368,46 +13527,46 @@ damage_controller_done:
     if(damage_diss_uf!=NULL) SFREE(damage_diss_uf);
     if(damage_damvisc!=NULL) SFREE(damage_damvisc);
     if(damage_damviscini!=NULL) SFREE(damage_damviscini);
-    if(damage_bt_dam!=NULL) SFREE(damage_bt_dam);
-    if(damage_bt_visc!=NULL) SFREE(damage_bt_visc);
-    if(damage_bt_xs!=NULL) SFREE(damage_bt_xs);
-    if(damage_evt_sgn!=NULL) SFREE(damage_evt_sgn);
-    if(damage_ray_r0!=NULL) SFREE(damage_ray_r0);
-    if(damage_ray_cat!=NULL) SFREE(damage_ray_cat);
-    if(damage_ray_p!=NULL) SFREE(damage_ray_p);
-    if(damage_ray_res!=NULL) SFREE(damage_ray_res);
-    if(damage_ct_sgn!=NULL) SFREE(damage_ct_sgn);
-    if(damage_ct_ring!=NULL) SFREE(damage_ct_ring);
-    if(damage_ct_fl!=NULL) SFREE(damage_ct_fl);
-    if(damage_ct_bl!=NULL) SFREE(damage_ct_bl);
-    if(damage_ct_w!=NULL) SFREE(damage_ct_w);
-    if(damage_ct_r0!=NULL) SFREE(damage_ct_r0);
-    if(damage_ct_beps!=NULL) SFREE(damage_ct_beps);
-    if(damage_ct_y!=NULL) SFREE(damage_ct_y);
-    if(damage_ct_z!=NULL) SFREE(damage_ct_z);
-    if(damage_ct_qh!=NULL) SFREE(damage_ct_qh);
-    if(damage_ct_dam!=NULL) SFREE(damage_ct_dam);
-    if(damage_ct_visc!=NULL) SFREE(damage_ct_visc);
-    if(damage_ct_xs!=NULL) SFREE(damage_ct_xs);
-    if(damage_ct_jac!=NULL) SFREE(damage_ct_jac);
-    if(damage_dl_r0!=NULL) SFREE(damage_dl_r0);
-    if(damage_dl_d!=NULL) SFREE(damage_dl_d);
-    if(damage_dl_w!=NULL) SFREE(damage_dl_w);
-    if(damage_dl_pn!=NULL) SFREE(damage_dl_pn);
-    if(damage_dl_res!=NULL) SFREE(damage_dl_res);
-    if(damage_dl_dam!=NULL) SFREE(damage_dl_dam);
-    if(damage_dl_visc!=NULL) SFREE(damage_dl_visc);
-    if(damage_dl_xs!=NULL) SFREE(damage_dl_xs);
-    if(damage_dl_mode==1){
+    if(rsc.bt_dam!=NULL) SFREE(rsc.bt_dam);
+    if(rsc.bt_visc!=NULL) SFREE(rsc.bt_visc);
+    if(rsc.bt_xs!=NULL) SFREE(rsc.bt_xs);
+    if(prb.evt_sgn!=NULL) SFREE(prb.evt_sgn);
+    if(prb.ray_r0!=NULL) SFREE(prb.ray_r0);
+    if(prb.ray_cat!=NULL) SFREE(prb.ray_cat);
+    if(prb.ray_p!=NULL) SFREE(prb.ray_p);
+    if(prb.ray_res!=NULL) SFREE(prb.ray_res);
+    if(ct.sgn!=NULL) SFREE(ct.sgn);
+    if(ct.ring!=NULL) SFREE(ct.ring);
+    if(ct.fl!=NULL) SFREE(ct.fl);
+    if(ct.bl!=NULL) SFREE(ct.bl);
+    if(ct.w!=NULL) SFREE(ct.w);
+    if(ct.r0!=NULL) SFREE(ct.r0);
+    if(ct.beps!=NULL) SFREE(ct.beps);
+    if(ct.y!=NULL) SFREE(ct.y);
+    if(ct.z!=NULL) SFREE(ct.z);
+    if(ct.qh!=NULL) SFREE(ct.qh);
+    if(ct.dam!=NULL) SFREE(ct.dam);
+    if(ct.visc!=NULL) SFREE(ct.visc);
+    if(ct.xs!=NULL) SFREE(ct.xs);
+    if(ct.jac!=NULL) SFREE(ct.jac);
+    if(dog.r0!=NULL) SFREE(dog.r0);
+    if(dog.d!=NULL) SFREE(dog.d);
+    if(dog.w!=NULL) SFREE(dog.w);
+    if(dog.pn!=NULL) SFREE(dog.pn);
+    if(dog.res!=NULL) SFREE(dog.res);
+    if(dog.dam!=NULL) SFREE(dog.dam);
+    if(dog.visc!=NULL) SFREE(dog.visc);
+    if(dog.xs!=NULL) SFREE(dog.xs);
+    if(dog.mode==1){
       printf("[DAMAGE TR] SUMMARY: armed %" ITGFORMAT " time(s); accepted "
              "steps %" ITGFORMAT " (Newton %" ITGFORMAT ", Cauchy %" ITGFORMAT
              ", dogleg %" ITGFORMAT "); iterations that accepted nothing %"
              ITGFORMAT "; rejected trials %" ITGFORMAT "; residual "
              "evaluations %" ITGFORMAT "; armed factorisations %" ITGFORMAT
              "; last transpose check %.12e; operator asymmetry %.6e\n",
-             damage_dl_narm,damage_dl_nacc,damage_dl_nnewt,damage_dl_ncau,
-             damage_dl_ndog,damage_dl_nfail,damage_dl_nrej,damage_dl_neval,
-             damage_dl_nfact,damage_dl_ident,damage_dl_asym);
+             dog.narm,dog.nacc,dog.nnewt,dog.ncau,
+             dog.ndog,dog.nfail,dog.nrej,dog.neval,
+             dog.nfact,dog.ident,dog.asym);
       fflush(stdout);
     }
     if(damage_frel!=NULL) SFREE(damage_frel);

@@ -1039,7 +1039,12 @@ dynboun.c \
 electromagnetics.c \
 elementcpuload.c \
 expand.c \
+damcont.c \
+damstats.c \
 damdiag.c \
+dogleg.c \
+rescue.c \
+slownewton.c \
 erosion.c \
 external.c \
 feasibledirection.c \

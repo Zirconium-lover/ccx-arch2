@@ -55,6 +55,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <string.h>
 #include "CalculiX.h"
 
 /* One coefficient of the assembled operator, out of CalculiX's own storage.
@@ -283,4 +284,26 @@ ITG opcheck_selftest(void){
     printf("[OPCHECK] *ERROR: a value at twice the threshold was tolerated\n");
     bad++;}
   return bad;
+}
+
+/* The values the thirty-nine driver locals carried at their declarations
+   in nonlingeo().  The probe is opt-in and every one of them is inert
+   until a CCX_STRUCT_FD_* or CCX_DAMAGE_TANGENT_* switch arms it. */
+void opcheckdrv_init(opcheckdrv *p)
+{
+  memset(p,0,sizeof(*p));
+  p->fd_ad=NULL;
+  p->fd_au=NULL;
+  p->fd_f0=NULL;
+  p->fd_fm=NULL;
+  p->fd_fp=NULL;
+  p->fd_vsav=NULL;
+  p->fd_vtrue=NULL;
+  p->fd_el=-1;
+  p->fd_it=1;
+  p->fd_tel=-1;
+  p->fd_uel=-1;
+  p->fd_h=1.e-7;
+  p->fd_udmax=-1.;
+  p->unsym_advrep=-1;
 }

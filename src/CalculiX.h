@@ -5137,6 +5137,340 @@ void topo_txn_commit(const topo_txn *t,FILE *fdamage,ITG batch,
                      ITG de13_transaction,ITG active_pass);
 ITG  topo_selftest(void);
 
+/* ---- the operator check's driver state (opcheck.c) --------------------
+
+   opcheck.c owns the comparison - the assembled tangent, column by column,
+   against a central difference of the internal force - and the
+   classification of what a discrepancy means.  What it did not own was the
+   thirty-nine locals of nonlingeo() that arm it, hold the perturbed states
+   it differentiates around, and tally the rank-1 census that says WHY the
+   assembled tangent is not the differential of the residual.          */
+
+typedef struct{
+  /* the central-difference operator check (CCX_STRUCT_FD_*) */
+  double  *fd_ad,*fd_au,*fd_f0,*fd_fm,*fd_fp,*fd_vsav,*fd_vtrue;
+  ITG     fd_base,fd_col,fd_el,fd_inc,fd_it,fd_j,fd_ncol,fd_node,fd_pick,
+          fd_s,fd_step,fd_t,fd_tel,fd_tnn,fd_uel;
+  double  fd_dmax,fd_h,fd_udmax;
+  /* the asymmetric tangent and its census (CCX_DAMAGE_TANGENT) */
+  ITG     unsym_active,unsym_adv,unsym_advrep,unsym_census,unsym_degen,
+          unsym_elems,unsym_floor,unsym_hole,unsym_holerep,unsym_live,
+          unsym_report,unsym_skip,unsym_tanfull;   /* unsym_skiprep
+          was declared in nonlingeo() and never read; it is gone */
+}opcheckdrv;
+void opcheckdrv_init(opcheckdrv *p);
+
+/* ---- the probes' driver state (damdiag.c) -----------------------------
+
+   damdiag.c owns ten pure observers.  This is what nonlingeo() holds
+   between calls to them: which probe is armed, at which increment, the
+   category maps they compare against, and the counters they fill.  Fifty
+   locals, six clusters, one object - each field keeps its cluster's name
+   because more than one cluster had an `inc'.                         */
+
+typedef struct{
+  /* the residual ray along the Newton direction */
+  ITG     *ray_cat;
+  double  ray_growth;
+  ITG     ray_inc[4],ray_incok,ray_max,ray_ninc,ray_probe,ray_shots;
+  double  *ray_p,*ray_r0,*ray_res;
+  /* the wall probes: where the correction lives */
+  ITG     wall_armed,wall_maskstep,wall_nb[8],wall_null;
+  ITG     *wall_cat;
+  double  *wall_def;
+  double  wall_theta;
+  /* the A-B-A full-state purity test */
+  double  aba_a;
+  ITG     aba_done,aba_hit,aba_inc[4],aba_mode,aba_ninc;
+  /* the tension/compression event census */
+  ITG     evt_fe[8],evt_fp[8],evt_nstep,evt_nsw[8],evt_on;
+  ITG     *evt_sgn;
+  /* the per-node dump */
+  ITG     dump_alive,dump_hit,dump_idx,dump_inc,dump_n,dump_nb,dump_node,
+          dump_np,dump_nu;
+  double  dump_dv;
+  /* the null-vector probe */
+  double  null_amax,null_nb,null_nn,null_nx;
+  ITG     null_cnt,null_inc,null_it,null_nit,null_seed;
+  double  *null_x;
+}probedrv;
+void probedrv_init(probedrv *p);
+
+/* ---- what happens when an increment will not converge (rescue.c) -----
+
+   Sixty-seven locals of nonlingeo(), across six clusters that are one
+   mechanism: the damage line search and its probe, transactional
+   backtracking, the same-load re-equilibration after a deletion, the
+   bounded recovery corridor, and the rescue levels that order them.
+
+   They are grouped, not merged.  Each field keeps the name of the cluster
+   it came from, because four of those clusters had a `mode' and a flat
+   rename would have silently made them one field - a change that compiles
+   and is wrong.  That is the failure mode of this transformation, and the
+   reason the field list is printed and read before the struct is written.
+
+   The LADDER that orders these levels is still in nonlingeo(): it cuts
+   increments, rolls back topology and ends steps.  This is its state.  */
+
+/* The damage line search: a full Newton correction is kept whenever it
+   contracts the residual, and only a genuine increase in an active
+   softening trial buys one safeguarded secant correction. */
+#define DAMAGE_LINESEARCH_GROWTH 1.10
+#define DAMAGE_LINESEARCH_MIN 0.10
+#define DAMAGE_LINESEARCH_MAX 0.80
+#define DAMAGE_LINESEARCH_FALLBACK 0.50
+#define DAMAGE_LINESEARCH_MAX_TRIALS 3
+
+typedef struct{
+  /* transactional backtracking (CCX_DAMAGE_BT_*) */
+  double  *bt_dam,*bt_visc,*bt_xs;
+  double  bt_floor,bt_growth,bt_r0,bt_ring[8];
+  ITG     bt_mode,bt_nring,bt_ntrial,bt_window;
+  /* the bounded recovery corridor (CCX_DAMAGE_CORR_*) */
+  ITG     corr_clean,corr_dtn,corr_exit,corr_grace,corr_maxesc,corr_maxinc;
+  ITG     corr_maxwall,corr_mode,corr_nfact,corr_ninc,corr_nint,corr_nsince;
+  ITG     corr_nwallstab,corr_nwalltot,corr_on,corr_stableneed,corr_trial;
+  ITG     corr_try,corr_tryevery;
+  double  corr_dtref,corr_dtsum,corr_lam,corr_lamstable,corr_minfrac;
+  double  corr_theta0;
+  /* the damage line search */
+  ITG     linesearch_active,linesearch_applied,linesearch_contracted;
+  ITG     linesearch_mode,linesearch_nsoft,linesearch_trial;
+  double  linesearch_dampednorm,linesearch_fullnorm,linesearch_maxdd;
+  double  linesearch_oldnorm;
+  char    *linesearch_env;
+  double  *linesearch_step;
+  /* the line-search probe */
+  ITG     ls_bestused,ls_legacy,ls_probe,ls_trials;
+  double  ls_min;
+  /* same-load re-equilibration after a deletion */
+  char    *reeq_scale_env;
+  ITG     reeq_scale_mode;
+  double  reeq_uam_actual[2],reeq_uam_floor,reeq_uam_peak[2],reeq_uam_ref[2];
+  /* the rescue levels themselves */
+  ITG     rescue_bt_on,rescue_maxlevel,rescue_mode,rescue_nfired;
+  ITG     rescue_nok,rescue_used;
+  double  rescue_dtheta_last,rescue_dthetaref_last;
+}rescue;
+
+void rescue_init(rescue *r);
+
+/* ---- the Newton iteration budget (slownewton.c) -----------------------
+
+   A decision that was two file-statics and thirteen locals: how many
+   iterations may this increment have before the stock controller cuts it?
+   The extension is bounded, and it applies only while erosion_softening()
+   says damage is actually advancing.  It extends a budget; it relaxes no
+   tolerance and closes no divergence path.                            */
+
+#define DAMAGE_SLOW_NEWTON_MAX_ITERS 40
+#define DAMAGE_SLOW_NEWTON_MAX_EXTRA 20
+#define DAMAGE_SLOW_NEWTON_INVALID_EST 1000000000
+
+typedef struct{
+  ITG    active,allow,extended,maxiters;
+  ITG    estres,estcorr,esttotal,nsoft;
+  double camprev1,camprev2,cratio,rratio,maxdd;
+}slownewton;
+
+void slownewton_init(slownewton *s);
+void slownewton_init(slownewton *s);
+ITG slownewton_estimate(ITG iit,double value,
+                                       double previous,double target);
+ITG slownewton_allow(ITG iit,const double *ram,
+                                    const double *ram1,const double *ram2,
+                                    const double *cam,const double *uam,
+                                    double camprev1,double camprev2,
+                                    const double *qa,const double *qam,
+                                    const double *ctrl,ITG maxiters,
+                                    ITG *iestres,ITG *iestcorr,
+                                    ITG *iesttotal,double *rratio,
+                                    double *cratio);
+
+/* ---- what the damage state looks like, reported (damstats.c) ---------
+
+   Three writers and the eight counters they fill.  None of them decides
+   anything and the solver never reads back what they wrote.           */
+
+/* DE1.1 fixed-point closure: the tolerance an accepted same-load pass has
+   to meet, the relaxed one allowed at the pass limit, that limit, and the
+   factor a failed closure cuts the physical increment by. */
+#define DAMAGE_DE1_FP_TOL 1.e-4
+#define DAMAGE_DE1_FP_RELAX_TOL 5.e-4
+#define DAMAGE_DE1_MAX_PASSES 8
+#define DAMAGE_DE1_CUTBACK_FACTOR 0.50
+
+typedef struct{
+  ITG    nactive,gt01,gt05,gt09,nfull,nchanged;
+  double dmax,maxdelta;
+}damstats;
+
+void damstats_init(damstats *d);
+
+/* Exact DE1 element statistics.
+   For each element the maximum degradation over its active integration
+   points is used.  In the present DE1 implementation only C3D4 is enabled,
+   therefore this is exactly the single integration-point value. */
+void damstats_element(const double *dam,const double *damold,
+                             const ITG *ipkon,const char *lakon,
+                             ITG ne0,ITG mi0,
+                             ITG *nactive,ITG *ngt01,ITG *ngt05,
+                             ITG *ngt09,ITG *nfull,ITG *nchanged,
+                             double *dmax,double *maxdelta);
+void damstats_append(const char *jobnamec,ITG istep,ITG iinc,
+                                    double steptime,double totaltime,
+                                    ITG passes,ITG nactive,ITG ngt01,
+                                    ITG ngt05,ITG ngt09,ITG nfull,
+                                    double dmax,double maxdelta);
+void damstats_write_vtk(const char *jobnamec,
+                                 const double *co,const double *vold,
+                                 ITG nk,ITG mt,const ITG *kon,
+                                 const ITG *ipkon,const char *lakon,
+                                 const ITG *ielmat,ITG mi2,
+                                 const double *dam,ITG mi0,ITG ne0,
+                                 ITG istep,ITG iinc,double steptime);
+
+/* ---- the path-following DRIVER's state (declared here, driven from
+   nonlingeo()) ---------------------------------------------------------
+
+   pathfollow.c owns the method: the constraint, the bordered step, the
+   predictor, the commit.  What it did not own was the sixty-three locals
+   of nonlingeo() that drive it - whether it is armed, whether it has
+   engaged, the frozen snapshot a rejected attempt is restored from, the
+   nine workspace vectors, the linearity check and the mixed-mode crack
+   control that rides on the same machinery.  Those are one object with
+   one lifetime and they all already carried the prefix.
+
+   The driver LOOP stays in nonlingeo(): it sets boundary conditions,
+   decides cutbacks and ends increments.  This is its state, not its
+   algorithm.                                                          */
+
+typedef struct{
+  /* armed, engaged, and why */
+  ITG    on,engaged,applied,pending,reason,neqarm,lincheck,codmode;
+  ITG    ncut,ncutfloor,nstep,icutbprev;
+  char  *env;
+  /* the constraint and the load factor it drives */
+  double tauv,taucur,clip,eps,dtheta_eng;
+  double lam,lamprev,lam0it,dlam,dlamit,dlamjump,dlampred;
+  double g,dg,dgc,pdu,cu;
+  double dphi,dphicur,gacc,phiacc;
+  double fhcos,fhrat;
+  double *cvec,*lhs,*rhs,*rhs0,*p,*q,*r0,*r1,*uf,*uref,*y;
+  /* the snapshot a rejected attempt is restored from */
+  double *sv,*sxs,*sxst,*sf,*sfn,*sstx,*sdam,*sxb;
+  double sqa[4],scam[5];
+  /* mixed-mode crack control, which rides on the same machinery */
+  ITG    ccmode,ccnw,ccengage,ccarmed;
+  double ccgrow;
+  crackcontrol_census cs;
+}pathdrv;
+
+void pathdrv_init(pathdrv *p);
+double pathfollow_dot(const double *a,const double *b,ITG n);
+double pathfollow_project(const double *fh,const double *a,const double *c,
+                          const ITG *nactdof,ITG nk,ITG mt);
+
+/* ---- the bounded local continuation (damcont.c) -----------------------
+
+   Eighty-eight locals of nonlingeo() with no owner, across seventeen sites
+   and 13,661 lines - the largest single cluster this fork added - are one
+   object with one lifetime.  What was frozen, what the bordered system is
+   solving, what the budgets are, what has been spent.
+
+   The arithmetic (the bordered solve, the curvature denominator, the
+   control-point choice) is here and has a self test against a closed form.
+   The DRIVER - arming, the corrector loop, the commit lifecycle, the
+   partial exit - is still in nonlingeo(); damcont.c says why.          */
+
+typedef struct{
+  /* Twelve more were declared here and never read - `have', `pred',
+     `nstep', `nkink', `nretry', `lastminc', `taupr', `p1'..`p3' and two
+     budgets.  They are gone.  Nothing in a function with a thousand
+     locals could have shown that; an object can. */
+  /* is it on, and how it was armed */
+  ITG    on,arm,mode,alloc,used,refused,partial;
+  /* the frozen control point and its kinematics */
+  ITG    elem,ip,head,nring,nsupp,nbl,p1r,p2r,p3r;
+  ITG    node[18],dir[18],supp[18];
+  double m[3],g[3],dc[3];
+  double duinf[6],dt[6],dlam[6];
+  double clam,cprev,duref,lam,lamc,lamref,lamsnap;
+  double qa[4],cam[5],uam[2];
+  /* the bordered system and the step */
+  double ds,ds0,dsmin,dsmax,den,rho,tau,kappa,tolc;
+  double eps,kaptol,rhomin,clim,ulim;
+  ITG    epsok;
+  double *beps,*dam,*jac,*qh,*r0,*ring,*visc,*w,*xs,*y,*z;
+  ITG    *bl,*fl,*sgn;
+  /* budgets, and what has been spent against them */
+  ITG    maxcorr,maxeval,maxfact,maxstep;
+  ITG    it,step,ncorr,neval,nfact,nprog,ncommit;
+  ITG    newstep;
+}damcont;
+
+void damcont_init(damcont *c);
+void damcont_init(damcont *c);
+void damcont_kin(const double *co,const ITG *kon,ITG indexe,
+                          const double *v,ITG mt,ITG mint,
+                          double *dl,double *rmat,double *shape);
+void damcont_snap(const double *co,const ITG *kon,const ITG *ipkon,
+                           const char *lakon,const double *v,
+                           const double *stx,const double *xstate,
+                           ITG ne0,ITG mi0,ITG nstate,ITG mt,
+                           double *ring,ITG *fl);
+ITG damcont_bordered(double clam,double cuz,double cuy,double c,
+                              double *den,double *dlam);
+double damcont_rhoden(double clam,double cunorm,double ysupp,
+                               double den);
+ITG damcont_select(const double *ring,const ITG *fl,
+                            const double *dtr,const ITG *ipkon,
+                            const char *lakon,const ITG *ielprop,
+                            const double *prop,ITG ne0,ITG mi0,ITG head,
+                            ITG *belem,ITG *bip,double *m,double *kappa,
+                            double *ds0,double *tau,ITG *ncand,ITG *reason,
+                            double kaptol,const ITG *bl,ITG nbl);
+ITG damcont_selftest(void);
+
+/* ---- the trust region and its state (dogleg.c) ------------------------
+
+   Forty-nine locals of nonlingeo() with no owner, across twenty sites and
+   15,498 lines, are one object: they are created together, they mean
+   nothing apart, and every one of them was already called damage_dl_*.
+   Policy, workspace and census, in that order.
+
+   dogleg_pick() is the step CHOICE alone - a radius and five scalars in,
+   a branch and two coefficients out - which is what makes it testable
+   against a closed form.  The LOOP that accepts, rejects and resizes is
+   still in nonlingeo(); see the block comment in dogleg.c for why, and
+   for what changed about whether it has to be.                        */
+
+typedef struct{
+  /* policy - read from the switches at arming */
+  ITG    on,mode,banner,lincheck,selfrec,incarm;
+  ITG    maxarm,maxeval,maxfact,maxtrial;
+  double d0fac;
+  /* workspace - allocated when the region arms, freed with it */
+  double *d,*pn,*pm,*r0,*res,*w,*wm;
+  double *xs,*dam,*visc;          /* the snapshot a trial is rolled back to */
+  /* the current step: the five scalars dogleg_pick() works in, and the
+     radius and residual they belong to */
+  double nb2,nd2,nw2,npn2,npm2,dtpn,tc,delta,phi0,dmax,ident,asym;
+  ITG    have;
+  /* census - what the mechanism actually did, over the run */
+  ITG    narm,nacc,nrej,nnewt,ncau,ndog,neval,nfact,nfail,used;
+  ITG    recdone,lasthelp,lc_due,lc_it,lc_nit;
+}dogleg;
+
+void dogleg_init(dogleg *d);
+/* the step: 1 NEWTON, 2 CAUCHY, 3 DOGLEG, 0 REFUSE (degenerate or NaN -
+   which the caller must treat as no step, never as a step of length 0) */
+ITG  dogleg_pick(double dl,double nd2,double nw2,double npn2,
+                 double dtpn,double *pa,double *pb,double *nrm);
+/* the model's predicted reduction for that step: the denominator of rho */
+double dogleg_pred(double pa,double pb,double nb2,double nd2,double nw2);
+ITG  dogleg_selftest(void);
+
 /* ---- the probes (damdiag.c) -------------------------------------------
 
    Ten pure observers that were file-statics of nonlingeo.c.  They print
