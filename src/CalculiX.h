@@ -5137,6 +5137,474 @@ void topo_txn_commit(const topo_txn *t,FILE *fdamage,ITG batch,
                      ITG de13_transaction,ITG active_pass);
 ITG  topo_selftest(void);
 
+/* ---- the probes (damdiag.c) -------------------------------------------
+
+   Ten pure observers that were file-statics of nonlingeo.c.  They print
+   and they return numbers; they change no solver state, which is the
+   whole boundary and the reason moving them could not change an answer.
+   damage_ray_catof() stays private to that file: what a category IS
+   belongs with the three functions that ask.                          */
+
+/* ---- discrete-branch census -------------------------------------------
+   J-14 measured a sharp loss of local linearity between alpha=0.0625 and
+   alpha=0.125 and called it a "discrete switch".  That was a hypothesis, not
+   a measurement: nothing had been counted.  These two helpers count it.
+
+   One bitmask per integration point.  The element type decides which bits are
+   meaningful, and getting that wrong is not hypothetical - xstate slot 1 is
+   the equivalent plastic strain for a bulk C3D4 (calcdamage.f:649) and dmax
+   for a UC6 facet (resultsmech_uc6.f:43).  Reading one as the other yields a
+   plausible, meaningless census.
+
+   Layout: dam(mi(1),*)          -> dam[mi0*i+j]
+           xstate(nstate_,mi(1),*) -> xstate[nstate_*mi0*i + nstate_*j + k] */
+
+#define DAMCAT_PLAST   1   /* bulk: accumulated plastic strain this increment */
+#define DAMCAT_DINIT   2   /* bulk: damage initiated (dam >= 1)               */
+#define DAMCAT_DGROW   4   /* bulk: damage grew from the committed baseline   */
+#define DAMCAT_USOFT   8   /* UC6 : dmax > 0, law has left the elastic branch */
+#define DAMCAT_UVISC  16   /* UC6 : viscous damage active                     */
+#define DAMCAT_UFAIL  32   /* UC6 : fully failed flag set                     */
+#define DAMCAT_UADV   64   /* UC6 : dmax ADVANCED this trial, i.e. deff>dmax0  */
+#define DAMCAT_UCOMP 128   /* UC6 : traction(1)<0, the compression branch     */
+
+void damage_aba_cmp(const char *name,const double *a,
+                    const double *b,ITG n,ITG *nbad);
+void damage_ray_census(ITG *cat,const double *xstate,
+                       const double *xstateini,const double *dam,
+                       const double *dambase,const double *visc,
+                       const double *stx,
+                       const ITG *ipkon,const char *lakon,
+                       ITG ne0,ITG mi0,ITG nstate);
+void damage_ray_tally(const double *xstate,const double *xstateini,
+                      const double *dam,const double *dambase,
+                      const double *visc,const double *stx,
+                      const ITG *ipkon,const char *lakon,
+                      ITG ne0,ITG mi0,ITG nstate,
+                      ITG *nplast,ITG *nucomp);
+void damage_evt_sign(const double *stx,const ITG *ipkon,
+                     const char *lakon,ITG ne0,ITG mi0,ITG *sgn);
+ITG damage_evt_flips(const double *stx,const ITG *ipkon,
+                     const char *lakon,ITG ne0,ITG mi0,const ITG *sgn,
+                     ITG *firste,ITG *firstip);
+ITG damage_ray_census_diff(const ITG *cat,const double *xstate,
+                           const double *xstateini,const double *dam,
+                           const double *dambase,const double *visc,
+                           const double *stx,
+                           const ITG *ipkon,const char *lakon,
+                           ITG ne0,ITG mi0,ITG nstate,
+                           ITG *firste,ITG *firstip,
+                           ITG *firsta,ITG *firstb);
+void damage_wall_where(const char *tag,const double *x,ITG neq1,
+                       const ITG *nactdof,ITG mt,ITG nk,ITG ntop,
+                       const ITG *ipkon,const ITG *kon,
+                       const char *lakon,const double *xstate,
+                       const double *stx,const double *dam,
+                       ITG ne,ITG ne0,ITG mi0,ITG nstate);
+void damage_wall_split(const char *tag,const double *x,ITG neq1,
+                       const ITG *nactdof,ITG mt,ITG nk,
+                       const ITG *ipkon,const ITG *kon,
+                       const char *lakon,const double *dam,
+                       const double *xstate,ITG ne,ITG ne0,ITG mi0,
+                       ITG nstate);
+ITG damage_wall_setdiff(const ITG *cat,const double *xstate,
+                        const double *xstateini,const double *dam,
+                        const double *dambase,const double *visc,
+                        const double *stx,
+                        const ITG *ipkon,const char *lakon,
+                        ITG ne0,ITG mi0,ITG nstate,ITG *nb);
+
+/* ---- evaluating the residual at a trial state (trial.c) ---------------
+
+   The one operation every globalisation mechanism here is built from, and
+   the one that was written out by hand seventeen times inside nonlingeo():
+   put a step in b, evaluate the model, read the residual.
+
+   trialctx is NOT an abstraction of the model.  It is the argument list of
+   results() and calcresidual() written down once - one field per argument,
+   each holding the ADDRESS of the caller's local so that the binding
+   survives every NNEW, SFREE and remastruct.  The struct, TRIAL_BIND and
+   the calls in trial.c were GENERATED from the call text and these
+   prototypes; the rule is uniform (`&x' for an argument written `x' or
+   `&x') which is what makes trial_check() able to catch a field the bind
+   forgot.  See the block comment at the top of trial.c.              */
+
+typedef struct{
+  double **    co;
+  ITG **       nk;
+  ITG **       kon;
+  ITG **       ipkon;
+  char **      lakon;
+  ITG **       ne;
+  double **    v;
+  double **    stn;
+  ITG **       inum;
+  double **    stx;
+  double **    elcon;
+  ITG **       nelcon;
+  double **    rhcon;
+  ITG **       nrhcon;
+  double **    alcon;
+  ITG **       nalcon;
+  double **    alzero;
+  ITG **       ielmat;
+  ITG **       ielorien;
+  ITG **       norien;
+  double **    orab;
+  ITG **       ntmat_;
+  double **    t0;
+  double **    t1act;
+  ITG **       ithermal;
+  double **    prestr;
+  ITG **       iprestr;
+  char **      filab;
+  double **    eme;
+  double **    emn;
+  double **    een;
+  ITG **       iperturb;
+  double **    f;
+  double **    fn;
+  ITG **       nactdof;
+  ITG *        iout;
+  double *     qa;   /* an array local: it never moves */
+  double **    vold;
+  double **    b;
+  ITG **       nodeboun;
+  ITG **       ndirboun;
+  double **    xbounact;
+  ITG **       nboun;
+  ITG **       ipompc;
+  ITG **       nodempc;
+  double **    coefmpc;
+  char **      labmpc;
+  ITG **       nmpc;
+  ITG **       nmethod;
+  double *     cam;   /* an array local: it never moves */
+  ITG *        neq1;
+  double **    veold;
+  double **    accold;
+  double *     bet;
+  double *     gam;
+  double *     dtime;
+  double *     time;
+  double **    ttime;
+  double **    plicon;
+  ITG **       nplicon;
+  double **    plkcon;
+  ITG **       nplkcon;
+  double **    xstateini;
+  double **    xstiff;
+  double **    xstate;
+  ITG **       npmat_;
+  double **    epn;
+  char **      matname;
+  ITG **       mi;
+  ITG *        ielas;
+  ITG *        icmd;
+  ITG **       ncmat_;
+  ITG **       nstate_;
+  double **    stiini;
+  double **    vini;
+  ITG **       ikboun;
+  ITG **       ilboun;
+  double **    ener;
+  double **    enern;
+  double **    emeini;
+  double **    xstaten;
+  double **    eei;
+  double **    enerini;
+  double **    cocon;
+  ITG **       ncocon;
+  char **      set;
+  ITG **       nset;
+  ITG **       istartset;
+  ITG **       iendset;
+  ITG **       ialset;
+  ITG **       nprint;
+  char **      prlab;
+  char **      prset;
+  double **    qfx;
+  double **    qfn;
+  double **    trab;
+  ITG **       inotr;
+  ITG **       ntrans;
+  double **    fmpc;
+  ITG **       nelemload;
+  ITG **       nload;
+  ITG **       ikmpc;
+  ITG **       ilmpc;
+  ITG **       istep;
+  ITG *        iinc;
+  double **    springarea;
+  double *     reltime;
+  ITG *        ne0;
+  double **    thicke;
+  double **    shcon;
+  ITG **       nshcon;
+  char **      sideload;
+  double **    xloadact;
+  double **    xloadold;
+  ITG *        icfd;
+  ITG **       inomat;
+  double **    pslavsurf;
+  double **    pmastsurf;
+  ITG **       mortar;
+  ITG **       islavact;
+  double **    cdn;
+  ITG **       islavnode;
+  ITG **       nslavnode;
+  ITG **       ntie;
+  double **    clearini;
+  ITG **       islavsurf;
+  ITG **       ielprop;
+  double **    prop;
+  double *     energyini;   /* an array local: it never moves */
+  double **    energy;
+  ITG *        kscale;
+  ITG **       iponoeln;
+  ITG **       inoeln;
+  ITG **       nener;
+  char **      orname;
+  ITG **       network;
+  ITG **       ipobody;
+  double **    xbodyact;
+  ITG **       ibody;
+  char **      typeboun;
+  ITG **       itiefac;
+  char **      tieset;
+  double **    smscale;
+  ITG *        mscalmethod;
+  ITG **       nbody;
+  double **    t0g;
+  double **    t1g;
+  ITG **       islavquadel;
+  double **    aut;
+  ITG **       irowt;
+  ITG **       jqt;
+  ITG *        mortartrafoflag;
+  ITG *        intscheme;
+  double **    physcon;
+  double **    dam;
+  double **    damn;
+  ITG **       iponoel;
+  ITG **       neq;
+  double **    res;
+  double **    fext;
+  ITG **       iexpl;
+  double **    aux2;
+  double **    adb;
+  double **    aub;
+  ITG **       jq;
+  ITG **       irow;
+  ITG **       nzl;
+  double **    alpha;
+  double **    fextini;
+  double **    fini;
+  ITG **       nzs;
+  ITG *        nasym;
+  ITG *        idamping;
+  double **    adc;
+  double **    auc;
+  double **    cvini;
+  double **    cv;
+  double *     alpham;
+  ITG *        num_cpus;
+  /* not an argument of either call, but the atom brackets results()
+     with it: the 1d/2d expansion needs inum and nothing else does. */
+  ITG *        ne1d2d;
+}trialctx;
+
+/* Bind the context to the caller's frame.  One line per field, next to the
+   struct so the two cannot drift apart; trial_check() catches it if they
+   do.  Call it once, after every local it names exists. */
+#define TRIAL_BIND(T) do{ \
+  (T).co=&co; \
+  (T).nk=&nk; \
+  (T).kon=&kon; \
+  (T).ipkon=&ipkon; \
+  (T).lakon=&lakon; \
+  (T).ne=&ne; \
+  (T).v=&v; \
+  (T).stn=&stn; \
+  (T).inum=&inum; \
+  (T).stx=&stx; \
+  (T).elcon=&elcon; \
+  (T).nelcon=&nelcon; \
+  (T).rhcon=&rhcon; \
+  (T).nrhcon=&nrhcon; \
+  (T).alcon=&alcon; \
+  (T).nalcon=&nalcon; \
+  (T).alzero=&alzero; \
+  (T).ielmat=&ielmat; \
+  (T).ielorien=&ielorien; \
+  (T).norien=&norien; \
+  (T).orab=&orab; \
+  (T).ntmat_=&ntmat_; \
+  (T).t0=&t0; \
+  (T).t1act=&t1act; \
+  (T).ithermal=&ithermal; \
+  (T).prestr=&prestr; \
+  (T).iprestr=&iprestr; \
+  (T).filab=&filab; \
+  (T).eme=&eme; \
+  (T).emn=&emn; \
+  (T).een=&een; \
+  (T).iperturb=&iperturb; \
+  (T).f=&f; \
+  (T).fn=&fn; \
+  (T).nactdof=&nactdof; \
+  (T).iout=&iout; \
+  (T).qa=qa; \
+  (T).vold=&vold; \
+  (T).b=&b; \
+  (T).nodeboun=&nodeboun; \
+  (T).ndirboun=&ndirboun; \
+  (T).xbounact=&xbounact; \
+  (T).nboun=&nboun; \
+  (T).ipompc=&ipompc; \
+  (T).nodempc=&nodempc; \
+  (T).coefmpc=&coefmpc; \
+  (T).labmpc=&labmpc; \
+  (T).nmpc=&nmpc; \
+  (T).nmethod=&nmethod; \
+  (T).cam=cam; \
+  (T).neq1=&neq[1]; \
+  (T).veold=&veold; \
+  (T).accold=&accold; \
+  (T).bet=&bet; \
+  (T).gam=&gam; \
+  (T).dtime=&dtime; \
+  (T).time=&time; \
+  (T).ttime=&ttime; \
+  (T).plicon=&plicon; \
+  (T).nplicon=&nplicon; \
+  (T).plkcon=&plkcon; \
+  (T).nplkcon=&nplkcon; \
+  (T).xstateini=&xstateini; \
+  (T).xstiff=&xstiff; \
+  (T).xstate=&xstate; \
+  (T).npmat_=&npmat_; \
+  (T).epn=&epn; \
+  (T).matname=&matname; \
+  (T).mi=&mi; \
+  (T).ielas=&ielas; \
+  (T).icmd=&icmd; \
+  (T).ncmat_=&ncmat_; \
+  (T).nstate_=&nstate_; \
+  (T).stiini=&stiini; \
+  (T).vini=&vini; \
+  (T).ikboun=&ikboun; \
+  (T).ilboun=&ilboun; \
+  (T).ener=&ener; \
+  (T).enern=&enern; \
+  (T).emeini=&emeini; \
+  (T).xstaten=&xstaten; \
+  (T).eei=&eei; \
+  (T).enerini=&enerini; \
+  (T).cocon=&cocon; \
+  (T).ncocon=&ncocon; \
+  (T).set=&set; \
+  (T).nset=&nset; \
+  (T).istartset=&istartset; \
+  (T).iendset=&iendset; \
+  (T).ialset=&ialset; \
+  (T).nprint=&nprint; \
+  (T).prlab=&prlab; \
+  (T).prset=&prset; \
+  (T).qfx=&qfx; \
+  (T).qfn=&qfn; \
+  (T).trab=&trab; \
+  (T).inotr=&inotr; \
+  (T).ntrans=&ntrans; \
+  (T).fmpc=&fmpc; \
+  (T).nelemload=&nelemload; \
+  (T).nload=&nload; \
+  (T).ikmpc=&ikmpc; \
+  (T).ilmpc=&ilmpc; \
+  (T).istep=&istep; \
+  (T).iinc=&iinc; \
+  (T).springarea=&springarea; \
+  (T).reltime=&reltime; \
+  (T).ne0=&ne0; \
+  (T).thicke=&thicke; \
+  (T).shcon=&shcon; \
+  (T).nshcon=&nshcon; \
+  (T).sideload=&sideload; \
+  (T).xloadact=&xloadact; \
+  (T).xloadold=&xloadold; \
+  (T).icfd=&icfd; \
+  (T).inomat=&inomat; \
+  (T).pslavsurf=&pslavsurf; \
+  (T).pmastsurf=&pmastsurf; \
+  (T).mortar=&mortar; \
+  (T).islavact=&islavact; \
+  (T).cdn=&cdn; \
+  (T).islavnode=&islavnode; \
+  (T).nslavnode=&nslavnode; \
+  (T).ntie=&ntie; \
+  (T).clearini=&clearini; \
+  (T).islavsurf=&islavsurf; \
+  (T).ielprop=&ielprop; \
+  (T).prop=&prop; \
+  (T).energyini=energyini; \
+  (T).energy=&energy; \
+  (T).kscale=&kscale; \
+  (T).iponoeln=&iponoeln; \
+  (T).inoeln=&inoeln; \
+  (T).nener=&nener; \
+  (T).orname=&orname; \
+  (T).network=&network; \
+  (T).ipobody=&ipobody; \
+  (T).xbodyact=&xbodyact; \
+  (T).ibody=&ibody; \
+  (T).typeboun=&typeboun; \
+  (T).itiefac=&itiefac; \
+  (T).tieset=&tieset; \
+  (T).smscale=&smscale; \
+  (T).mscalmethod=&mscalmethod; \
+  (T).nbody=&nbody; \
+  (T).t0g=&t0g; \
+  (T).t1g=&t1g; \
+  (T).islavquadel=&islavquadel; \
+  (T).aut=&aut; \
+  (T).irowt=&irowt; \
+  (T).jqt=&jqt; \
+  (T).mortartrafoflag=&mortartrafoflag; \
+  (T).intscheme=&intscheme; \
+  (T).physcon=&physcon; \
+  (T).dam=&dam; \
+  (T).damn=&damn; \
+  (T).iponoel=&iponoel; \
+  (T).neq=&neq; \
+  (T).res=&res; \
+  (T).fext=&fext; \
+  (T).iexpl=&iexpl; \
+  (T).aux2=&aux2; \
+  (T).adb=&adb; \
+  (T).aub=&aub; \
+  (T).jq=&jq; \
+  (T).irow=&irow; \
+  (T).nzl=&nzl; \
+  (T).alpha=&alpha; \
+  (T).fextini=&fextini; \
+  (T).fini=&fini; \
+  (T).nzs=&nzs; \
+  (T).nasym=&nasym; \
+  (T).idamping=&idamping; \
+  (T).adc=&adc; \
+  (T).auc=&auc; \
+  (T).cvini=&cvini; \
+  (T).cv=&cv; \
+  (T).alpham=&alpham; \
+  (T).num_cpus=&num_cpus; \
+  (T).ne1d2d=&ne1d2d; \
+  }while(0)
+
+void trial_results(const trialctx *t);          /* evaluate the model   */
+void trial_reduce(const trialctx *t,double *dst);/* ...reduce to a residual */
+void trial_residual(const trialctx *t,double *dst);/* scratch + both halves */
+ITG  trial_check(const trialctx *t);
+
 /* ---- which elements leave the assembly (erosion.c) --------------------
 
    Three rules - the terminal damage threshold, DEADALL and DEADSOLE -

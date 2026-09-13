@@ -171,33 +171,47 @@ def measure():
     fns=functions(ng)
     big=max(fns,key=lambda f:f[3]-f[1])
     loc=locals_of(ng,big[2],big[3])
-    pre=[('damage_ct_','the bounded continuation'),
-         ('pf_','dissipation path following'),
-         ('damage_diss_','dissipation control'),
-         ('damage_corr_','the recovery corridor'),
-         ('damage_slow_','the Newton iteration budget'),
-         ('damage_release_','the release probe'),
-         ('damage_bt_','transactional backtracking'),
-         ('damage_ray_','the residual ray'),
-         ('td_','topology diagnostics'),
-         ('damage_de13_','terminal deletion'),
-         ('damage_wall_','the wall probes'),
-         ('damage_evt_','the event census'),
-         ('damage_fracture_','the termination test'),
-         ('damage_stab_','stabilisation'),
-         ('damage_','the rest of the damage extension')]
-    clusters=[]
-    left=set(loc)
-    for p,what in pre:
-        got={n for n in left if n.startswith(p)}
-        left-=got
-        clusters.append({'prefix':p,'what':what,'locals':len(got)})
+    # The clusters are DERIVED, not listed: a hand-kept taxonomy flatters
+    # itself by leaving out what it forgot.  Any prefix that four or more
+    # locals share is a piece of state somebody already named; the map below
+    # only supplies English for the ones that have been looked at.
+    what={'damage_ct_':'the bounded continuation',
+          'pf_':'dissipation path following',
+          'damage_dl_':'the trust-region dogleg',
+          'damage_diss_':'dissipation control',
+          'damage_corr_':'the recovery corridor',
+          'damage_fd_':'the operator finite-difference probe',
+          'damage_slow_':'the Newton iteration budget',
+          'damage_release_':'the release probe',
+          'damage_bt_':'transactional backtracking',
+          'damage_ray_':'the residual ray',
+          'td_':'topology diagnostics',
+          'damage_de13_':'terminal deletion',
+          'damage_wall_':'the wall probes',
+          'damage_evt_':'the event census',
+          'damage_fracture_':'the termination test',
+          'damage_stab_':'stabilisation',
+          'damage_aba_':'the A-B-A purity test',
+          'damage_linesearch_':'the damage line search',
+          'damage_unsym_':'the asymmetric tangent',
+          'damage_path_':'path control'}
+    import collections as _c
+    cnt=_c.Counter()
+    for n in loc:
+        m2=re.match(r'^(damage_[a-z0-9]+_|pf_|td_)',n)
+        if m2: cnt[m2.group(1)]+=1
+    clusters=[{'prefix':p,'what':what.get(p,'-'),'locals':k}
+              for p,k in cnt.most_common() if k>=4]
+    named=sum(c['locals'] for c in clusters)
+    fork=sum(1 for n in loc if n.startswith(('damage_','pf_','td_')))
+    clusters.append({'prefix':'(smaller clusters)','what':'fewer than four locals each',
+                     'locals':fork-named})
     m={'nonlingeo_lines':len(txt.split('\n')),
        'longest_function':big[0],
        'longest_function_lines':big[3]-big[1]+1,
        'locals_in_longest':len(loc),
-       'fork_locals':sum(c['locals'] for c in clusters),
-       'stock_locals':len(left),
+       'fork_locals':fork,
+       'stock_locals':len(loc)-fork,
        'clusters':clusters,
        'file_scope_functions':len(fns),
        'subsystems':{}}
@@ -213,6 +227,10 @@ def measure():
 
 def table(m):
     o=[]
+    o.append("THE FILE")
+    o.append("  %-46s %d"%("src/nonlingeo.c, lines",m['nonlingeo_lines']))
+    o.append("  %-46s %d"%("files the extension is spread over",m['extension_files']))
+    o.append("")
     o.append("THE FUNCTION")
     o.append("  %-46s %s"%("longest function in src/nonlingeo.c",m['longest_function']+'()'))
     o.append("  %-46s %d"%("its length, lines",m['longest_function_lines']))

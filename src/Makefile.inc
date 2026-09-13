@@ -1039,6 +1039,7 @@ dynboun.c \
 electromagnetics.c \
 elementcpuload.c \
 expand.c \
+damdiag.c \
 erosion.c \
 external.c \
 feasibledirection.c \
@@ -1113,6 +1114,7 @@ pardiso.c \
 pathfollow.c \
 crackcontrol.c \
 topodiag.c \
+trial.c \
 lsladder.c \
 converge.c \
 topology.c \

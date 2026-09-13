@@ -135,36 +135,6 @@ ITG damage_spc_count=0;
    globals above are views onto it once it has been updated. */
 damstate damage_dstate={0,NULL,NULL,NULL,NULL,0,0.,0};
 
-/* Number of active damage integration points for the standard 3-D
-   continuum elements used by calcdamage.  For uncommon/composite
-   formulations fall back to mi[0], i.e. the allocated damage stride. */
-static void damage_aba_cmp(const char *name,const double *a,
-                           const double *b,ITG n,ITG *nbad)
-{
-  ITG k,first=-1,ndiff=0;
-  double mx=0.,d;
-  if((a==NULL)||(b==NULL)||(n<=0)){
-    printf("   %-14s SKIPPED (null or empty)%s",name,"\n");
-    return;
-  }
-  for(k=0;k<n;k++){
-    if(a[k]!=b[k]){
-      ndiff++;
-      if(first<0) first=k;
-      d=fabs(a[k]-b[k]);
-      if(d>mx) mx=d;
-    }
-  }
-  if(ndiff==0){
-    printf("   %-14s BITWISE IDENTICAL  (n=%" ITGFORMAT ")%s",
-           name,n,"\n");
-  }else{
-    (*nbad)++;
-    printf("   %-14s *** DIFFERS *** %" ITGFORMAT " of %" ITGFORMAT
-           " entries, first k=%" ITGFORMAT " (%.17e vs %.17e) maxabs=%.6e%s",
-           name,ndiff,n,first,a[first],b[first],mx,"\n");
-  }
-}
 
 
 /* Project f_hat (equation space) onto a nodal displacement difference.
@@ -192,29 +162,7 @@ static double pf_project(const double *fh,const double *a,const double *c,
   return p;
 }
 
-/* ---- discrete-branch census -------------------------------------------
-   J-14 measured a sharp loss of local linearity between alpha=0.0625 and
-   alpha=0.125 and called it a "discrete switch".  That was a hypothesis, not
-   a measurement: nothing had been counted.  These two helpers count it.
-
-   One bitmask per integration point.  The element type decides which bits are
-   meaningful, and getting that wrong is not hypothetical - xstate slot 1 is
-   the equivalent plastic strain for a bulk C3D4 (calcdamage.f:649) and dmax
-   for a UC6 facet (resultsmech_uc6.f:43).  Reading one as the other yields a
-   plausible, meaningless census.
-
-   Layout: dam(mi(1),*)          -> dam[mi0*i+j]
-           xstate(nstate_,mi(1),*) -> xstate[nstate_*mi0*i + nstate_*j + k] */
 ITG ccx_rescue_active=0,ccx_rescue_arm=0,ccx_rescue_req=0;
-
-#define DAMCAT_PLAST   1   /* bulk: accumulated plastic strain this increment */
-#define DAMCAT_DINIT   2   /* bulk: damage initiated (dam >= 1)               */
-#define DAMCAT_DGROW   4   /* bulk: damage grew from the committed baseline   */
-#define DAMCAT_USOFT   8   /* UC6 : dmax > 0, law has left the elastic branch */
-#define DAMCAT_UVISC  16   /* UC6 : viscous damage active                     */
-#define DAMCAT_UFAIL  32   /* UC6 : fully failed flag set                     */
-#define DAMCAT_UADV   64   /* UC6 : dmax ADVANCED this trial, i.e. deff>dmax0  */
-#define DAMCAT_UCOMP 128   /* UC6 : traction(1)<0, the compression branch     */
 
 /* ==================================================================
    [DAMAGE CT] bounded experimental coupled local continuation (SPEC
@@ -634,354 +582,14 @@ static ITG damage_dl_selftest(void)
   return nbad;
 }
 
-static ITG damage_ray_catof(const double *xstate,const double *xstateini,
-                            const double *dam,const double *dambase,
-                            const double *visc,const double *stx,
-                            const char *lakonel,
-                            ITG i,ITG j,ITG mi0,ITG nstate)
-{
-  ITG c=0,ix,is;
-  double d,db;
-  ix=nstate*mi0*i+nstate*j;
-  is=6*mi0*i+6*j;
-  if(lakonel[0]=='C'){
-    if(nstate>0){
-      if(xstate[ix]-xstateini[ix]>1.e-14) c|=DAMCAT_PLAST;
-    }
-    /* NO real bulk branch flag.  Exporting mattyp into a spare xstate slot
-       was attempted and REVERTED: incplas_lin.f:217 owns slots 2..7 for the
-       plastic strain tensor, so slot 2 is epl(1), and writing there destroys
-       the return map ("no convergence in incplas" at the first increment).
-       With *Depvar 4 there is no spare slot at all.  PLAST above stays as
-       the observable: peeq grows if and only if the return map ran, so it is
-       equivalent by construction, but it IS an inference, not the flag. */
-    d=dam[mi0*i+j];
-    if(d>=1.) c|=DAMCAT_DINIT;
-    if(dambase!=NULL){
-      db=dambase[mi0*i+j];
-      if(d-db>1.e-14) c|=DAMCAT_DGROW;
-    }
-  }else if(lakonel[0]=='U'){
-    if(nstate>0){ if(xstate[ix]>1.e-14)   c|=DAMCAT_USOFT; }
-    if(nstate>1){ if(xstate[ix+1]>1.e-14) c|=DAMCAT_UVISC; }
-    if(nstate>3){ if(xstate[ix+3]>0.5)    c|=DAMCAT_UFAIL; }
-    /* LOADING/UNLOADING.  cohesive_uc6.f stores dmax=max(dmax0,deff) in slot
-       1 and takes the softening tangent only while deff>=dmax0, so
-       xstate>xstateini in that slot IS "this point advanced its maximum on
-       this trial" - the one active-set indicator of the cohesive law that
-       the census did not carry.  A point sitting exactly on the kink has
-       xstate==xstateini and is counted as NOT advancing, which is what makes
-       a branch crossing along a search direction visible as a transition. */
-    if(nstate>0){ if(xstate[ix]>xstateini[ix]) c|=DAMCAT_UADV; }
-    /* tension/compression: resultsmech_uc6.f:55 stores traction(1), and both
-       branches multiply deltal(1) by a positive factor (kn or g*kn), so the
-       sign of the stored traction IS the sign of the normal opening.  This
-       switch changes the facet stiffness by 1/g ~ 1e4 and was entirely absent
-       from the earlier census. */
-    if(stx!=NULL){ if(stx[is]<0.) c|=DAMCAT_UCOMP; }
-  }
-  return c;
-}
 
-static void damage_ray_census(ITG *cat,const double *xstate,
-                              const double *xstateini,const double *dam,
-                              const double *dambase,const double *visc,
-                              const double *stx,
-                              const ITG *ipkon,const char *lakon,
-                              ITG ne0,ITG mi0,ITG nstate)
-{
-  ITG i,j,nip;
-  for(i=0;i<ne0;i++){
-    nip=topo_element_nip(&lakon[8*i],mi0);
-    if(nip<1) nip=1;
-    if(nip>mi0) nip=mi0;
-    for(j=0;j<mi0;j++) cat[mi0*i+j]=0;
-    if(ipkon[i]<0) continue;
-    for(j=0;j<nip;j++)
-      cat[mi0*i+j]=damage_ray_catof(xstate,xstateini,dam,dambase,visc,stx,
-                                    &lakon[8*i],i,j,mi0,nstate);
-  }
-}
 
-/* [DAMAGE RAY] the two branch indicators, counted over the live mesh at
-   whatever state the caller has just built.  Same iteration as the census
-   above, so the two always speak about the same integration points. */
 
-static void damage_ray_tally(const double *xstate,const double *xstateini,
-                             const double *dam,const double *dambase,
-                             const double *visc,const double *stx,
-                             const ITG *ipkon,const char *lakon,
-                             ITG ne0,ITG mi0,ITG nstate,
-                             ITG *nplast,ITG *nucomp)
-{
-  ITG i,j,nip,c;
-  *nplast=0;*nucomp=0;
-  for(i=0;i<ne0;i++){
-    nip=topo_element_nip(&lakon[8*i],mi0);
-    if(nip<1) nip=1;
-    if(nip>mi0) nip=mi0;
-    if(ipkon[i]<0) continue;
-    for(j=0;j<nip;j++){
-      c=damage_ray_catof(xstate,xstateini,dam,dambase,visc,stx,
-                         &lakon[8*i],i,j,mi0,nstate);
-      if(c&DAMCAT_PLAST) (*nplast)++;
-      if(c&DAMCAT_UCOMP) (*nucomp)++;
-    }
-  }
-}
 
-/* [DAMAGE EVT] The UC6 tension/compression set.  traction(1) is kn*deltal(1)
-   in compression and g*kn*deltal(1) in tension, and both kn and g are
-   positive, so sign(stx(1)) IS sign(deltal(1)) and the branch is readable
-   without storing deltal anywhere.  UC6 carries exactly three integration
-   points. */
 
-static void damage_evt_sign(const double *stx,const ITG *ipkon,
-                            const char *lakon,ITG ne0,ITG mi0,ITG *sgn)
-{
-  ITG i,j,np;
-  np=(mi0<3)?mi0:3;
-  for(i=0;i<ne0;i++){
-    for(j=0;j<mi0;j++) sgn[mi0*i+j]=0;
-    if(ipkon[i]<0) continue;
-    /* UC6 is labelled 'U'; 'C' is the C3D4 bulk (damage_ray_catof splits on
-       exactly this).  Getting the letter wrong built the map over the bulk
-       and tracked nothing - measured, s3rad inc=231 reported "no ladder alpha
-       changes the set" while the ray saw the crossing. */
-    if(lakon[8*i]!='U') continue;
-    for(j=0;j<np;j++)
-      sgn[mi0*i+j]=(stx[6*mi0*i+6*j]<0.)?-1:1;
-  }
-}
 
-static ITG damage_evt_flips(const double *stx,const ITG *ipkon,
-                            const char *lakon,ITG ne0,ITG mi0,const ITG *sgn,
-                            ITG *firste,ITG *firstip)
-{
-  ITG i,j,np,n=0,sg;
-  np=(mi0<3)?mi0:3;
-  *firste=0;*firstip=0;
-  for(i=0;i<ne0;i++){
-    if(ipkon[i]<0) continue;
-    if(lakon[8*i]!='U') continue;
-    for(j=0;j<np;j++){
-      if(sgn[mi0*i+j]==0) continue;
-      sg=(stx[6*mi0*i+6*j]<0.)?-1:1;
-      if(sg!=sgn[mi0*i+j]){
-        if(n==0){ *firste=i+1; *firstip=j+1; }
-        n++;
-      }
-    }
-  }
-  return n;
-}
 
-static ITG damage_ray_census_diff(const ITG *cat,const double *xstate,
-                                  const double *xstateini,const double *dam,
-                                  const double *dambase,const double *visc,
-                                  const double *stx,
-                                  const ITG *ipkon,const char *lakon,
-                                  ITG ne0,ITG mi0,ITG nstate,
-                                  ITG *firste,ITG *firstip,
-                                  ITG *firsta,ITG *firstb)
-{
-  ITG i,j,nip,c,n=0;
-  *firste=-1;*firstip=-1;*firsta=0;*firstb=0;
-  for(i=0;i<ne0;i++){
-    if(ipkon[i]<0) continue;
-    nip=topo_element_nip(&lakon[8*i],mi0);
-    if(nip<1) nip=1;
-    if(nip>mi0) nip=mi0;
-    for(j=0;j<nip;j++){
-      c=damage_ray_catof(xstate,xstateini,dam,dambase,visc,stx,
-                         &lakon[8*i],i,j,mi0,nstate);
-      if(c!=cat[mi0*i+j]){
-        n++;
-        if(*firste<0){
-          *firste=i+1;*firstip=j+1;*firsta=cat[mi0*i+j];*firstb=c;
-        }
-      }
-    }
-  }
-  return n;
-}
 
-/* [WALLDIAG] The same census difference, but resolved per category bit and
-   split between the two element families, because "the active set moved" and
-   "8000 cohesive points crossed their loading/unloading kink" are different
-   findings and the aggregate count cannot tell them apart.
-
-   nb[k] counts the integration points whose bit k differs from the reference
-   census cat.  Bits are the DAMCAT_ masks; the caller names them. */
-
-/* [WALLDIAG] WHERE the residual and the Newton correction live.
-
-   A norm says how big they are and nothing about what they touch, and the
-   two competing explanations of the second wall differ precisely in what
-   they touch: a globalisation defect spreads the correction over the mesh,
-   a branch-switching one concentrates it on the fracture front.  So the
-   probe reports the largest entries by NODE, and for each such node the
-   local state of the front - how much of its support is left, how soft its
-   cohesive facets are and how many of them are carrying compression.
-
-   nactdof is the post-SPC numbering (1-based, mt-strided) that b, ad and au
-   share, so inverting it is what turns an equation index back into a node
-   and a direction.  It is inverted here rather than assumed. */
-
-static void damage_wall_where(const char *tag,const double *x,ITG neq1,
-                              const ITG *nactdof,ITG mt,ITG nk,ITG ntop,
-                              const ITG *ipkon,const ITG *kon,
-                              const char *lakon,const double *xstate,
-                              const double *stx,const double *dam,
-                              ITG ne,ITG ne0,ITG mi0,ITG nstate)
-{
-  ITG *inode=NULL,*idir=NULL,i,j,k,t,ip,np,nb,nu,ncomp,ibest,idx;
-  double gmn,gmx,dv,a;
-
-  if((ntop<1)||(neq1<1)) return;
-  NNEW(inode,ITG,neq1);
-  NNEW(idir,ITG,neq1);
-  for(i=0;i<neq1;i++){inode[i]=-1;idir[i]=0;}
-  for(i=0;i<nk;i++){
-    for(j=1;j<mt;j++){
-      k=nactdof[mt*i+j];
-      if((k>0)&&(k<=neq1)){inode[k-1]=i;idir[k-1]=j;}
-    }
-  }
-
-  for(t=0;t<ntop;t++){
-    ibest=-1;a=-1.;
-    for(i=0;i<neq1;i++){
-      if(inode[i]<0) continue;          /* already reported, or unmapped */
-      if(fabs(x[i])>a){a=fabs(x[i]);ibest=i;}
-    }
-    if(ibest<0) break;
-    i=inode[ibest];
-    nb=0;nu=0;ncomp=0;gmn=2.;gmx=-1.;
-    for(j=0;j<ne;j++){
-      if(ipkon[j]<0) continue;
-      if(lakon[8*j]=='U') np=6; else if(lakon[8*j]=='C') np=4; else continue;
-      ip=0;
-      for(k=0;k<np;k++) if(kon[ipkon[j]+k]-1==i) ip=1;
-      if(ip==0) continue;
-      if(lakon[8*j]=='C'){nb++;continue;}
-      nu++;
-      if(j>=ne0) continue;
-      for(k=0;k<3;k++){
-        idx=mi0*j+k;
-        if(nstate>1){
-          dv=1.-xstate[nstate*idx+1];
-          if(dv<gmn) gmn=dv;
-          if(dv>gmx) gmx=dv;
-        }
-        if(stx[6*idx]<0.) ncomp++;
-      }
-    }
-    printf("[WALLDIAG]   %s #%" ITGFORMAT ": node %" ITGFORMAT " dir %"
-           ITGFORMAT " value %.6e   live bulk %" ITGFORMAT " live UC6 %"
-           ITGFORMAT " facet g in [%.3e,%.3e] UC6 ips in compression %"
-           ITGFORMAT "%s",tag,t+1,i+1,idir[ibest],x[ibest],nb,nu,
-           (gmn<=1.)?gmn:0.,(gmx>=0.)?gmx:0.,ncomp,"\n");
-    inode[ibest]=-1;                       /* do not report it twice */
-  }
-  SFREE(inode);SFREE(idir);
-}
-
-/* [WALLDIAG] WHERE a vector lives, split by what its node touches.
-
-   The linear-model defect at small eps IS eps*(J - dR/du)p, so localising it
-   localises the missing term: a defect that sits on nodes with cohesive
-   facets accuses the interface tangent, one that sits on nodes whose
-   elements are softening accuses the damage rank-1 term, and one spread over
-   ordinary plastic bulk accuses the return map.  Shares of |x|_2^2, so they
-   add to 1. */
-
-static void damage_wall_split(const char *tag,const double *x,ITG neq1,
-                              const ITG *nactdof,ITG mt,ITG nk,
-                              const ITG *ipkon,const ITG *kon,
-                              const char *lakon,const double *dam,
-                              const double *xstate,ITG ne,ITG ne0,ITG mi0,
-                              ITG nstate)
-{
-  ITG *touch=NULL,i,j,k,np,idx,nu=0,ns=0,np2=0;
-  double tot=0.,su=0.,ss=0.,sp=0.,v;
-
-  NNEW(touch,ITG,nk);
-  for(i=0;i<nk;i++) touch[i]=0;
-  for(i=0;i<ne;i++){
-    if(ipkon[i]<0) continue;
-    if(lakon[8*i]=='U') np=6;
-    else if(lakon[8*i]=='C') np=4;
-    else continue;
-    if(lakon[8*i]=='U'){
-      for(k=0;k<np;k++){
-        j=kon[ipkon[i]+k]-1;
-        if((j>=0)&&(j<nk)) touch[j]|=1;            /* bit0: a live facet   */
-      }
-    }else{
-      idx=mi0*i;
-      if((i<ne0)&&(dam[idx]>1.+1.e-12)){
-        for(k=0;k<np;k++){
-          j=kon[ipkon[i]+k]-1;
-          if((j>=0)&&(j<nk)) touch[j]|=2;          /* bit1: softening bulk */
-        }
-      }
-      if((i<ne0)&&(nstate>0)&&(xstate[nstate*idx]>1.e-14)){
-        for(k=0;k<np;k++){
-          j=kon[ipkon[i]+k]-1;
-          if((j>=0)&&(j<nk)) touch[j]|=4;          /* bit2: plastified     */
-        }
-      }
-    }
-  }
-  for(i=0;i<nk;i++){
-    if(touch[i]&1) nu++;
-    if(touch[i]&2) ns++;
-    if(touch[i]&4) np2++;
-    for(j=1;j<mt;j++){
-      k=nactdof[mt*i+j];
-      if((k<=0)||(k>neq1)) continue;
-      v=x[k-1]*x[k-1];
-      tot+=v;
-      if(touch[i]&1) su+=v;
-      if(touch[i]&2) ss+=v;
-      if(touch[i]&4) sp+=v;
-    }
-  }
-  if(tot<=0.) tot=1.;
-  printf("[WALLDIAG]   %s lives on: nodes with a live UC6 facet %.6f (%"
-         ITGFORMAT " nodes), nodes on softening bulk %.6f (%" ITGFORMAT
-         "), nodes on plastified bulk %.6f (%" ITGFORMAT
-         "); |x|2=%.6e%s",tag,su/tot,nu,ss/tot,ns,sp/tot,np2,sqrt(tot),"\n");
-  SFREE(touch);
-}
-
-static ITG damage_wall_setdiff(const ITG *cat,const double *xstate,
-                               const double *xstateini,const double *dam,
-                               const double *dambase,const double *visc,
-                               const double *stx,
-                               const ITG *ipkon,const char *lakon,
-                               ITG ne0,ITG mi0,ITG nstate,ITG *nb)
-{
-  ITG i,j,nip,c,d,k,n=0;
-
-  for(k=0;k<8;k++) nb[k]=0;
-  for(i=0;i<ne0;i++){
-    if(ipkon[i]<0) continue;
-    nip=topo_element_nip(&lakon[8*i],mi0);
-    if(nip<1) nip=1;
-    if(nip>mi0) nip=mi0;
-    for(j=0;j<nip;j++){
-      c=damage_ray_catof(xstate,xstateini,dam,dambase,visc,stx,
-                         &lakon[8*i],i,j,mi0,nstate);
-      d=c^cat[mi0*i+j];
-      if(d==0) continue;
-      n++;
-      for(k=0;k<8;k++) if(d&(1<<k)) nb[k]++;
-    }
-  }
-  return n;
-}
 
 
 
@@ -1642,6 +1250,9 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
   ITG damage_wall_maskstep=0;
   ITG damage_spc_force=0;
 
+  /* [TRIAL] the residual evaluator's view of this frame; see trial.c */
+  trialctx nlgt;
+
   /* [TOPOLOGY] the erosion transaction.  Nine locals with no owner became
      one object with one lifetime.  Six copies of "discard the marked set", in three
      different variants, are now one call. */
@@ -1751,6 +1362,11 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
   iamload=*iamloadp;sideload=*sideloadp;
 
   islavsurf=*islavsurfp;pslavsurf=*pslavsurfp;clearini=*clearinip;
+
+  /* [TRIAL] bind the residual evaluator to this frame.  Every field is
+     the ADDRESS of a local, so this is valid from here to the end of
+     the function no matter how often the arrays are reallocated. */
+  TRIAL_BIND(nlgt);
 
   /* determining whether a node belongs to at least one element
      (needed in resultsforc.c) */
@@ -3745,6 +3361,15 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     FORTRAN(stop,());
   }
 
+  if(trial_check(&nlgt)!=0){
+    printf("*ERROR: the trial-evaluation context has unbound fields.\n"
+           "        Every field is the address of a local, so a NULL\n"
+           "        means TRIAL_BIND and the struct have drifted\n"
+           "        apart and results() would be called with one.\n");
+    fflush(stdout);
+    FORTRAN(stop,());
+  }
+
   erosion_batch_init(&damage_ebatch);
   if(erosion_selftest()!=0){
     printf("*ERROR: the erosion rules failed their own self test.  They\n"
@@ -4794,27 +4419,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 
       if(ne1d2d==1)NNEW(inum,ITG,*nk);
       dtime=1.235711130e-20;
-      results(co,nk,kon,ipkon,lakon,ne,v,stn,inum,stx,
-	      elcon,nelcon,rhcon,nrhcon,alcon,nalcon,alzero,ielmat,
-	      ielorien,norien,orab,ntmat_,t0,t1act,ithermal,
-	      prestr,iprestr,filab,eme,emn,een,iperturb,
-	      f,fn,nactdof,&iout,qa,vold,b,nodeboun,
-	      ndirboun,xbounact,nboun,ipompc,
-	      nodempc,coefmpc,labmpc,nmpc,nmethod,cam,&neq[1],veold,accold,
-	      &bet,&gam,&dtime,&time,ttime,plicon,nplicon,plkcon,nplkcon,
-	      xstateini,xstiff,xstate,npmat_,epn,matname,mi,&ielas,
-	      &icmd,ncmat_,nstate_,stiini,vini,ikboun,ilboun,ener,enern,
-	      emeini,xstaten,eei,enerini,cocon,ncocon,set,nset,istartset,
-	      iendset,ialset,nprint,prlab,prset,qfx,qfn,trab,inotr,ntrans,
-	      fmpc,nelemload,nload,ikmpc,ilmpc,istep,&iinc,springarea,
-	      &reltime,&ne0,thicke,shcon,nshcon,
-	      sideload,xloadact,xloadold,&icfd,inomat,pslavsurf,pmastsurf,
-	      mortar,islavact,cdn,islavnode,nslavnode,ntie,clearini,
-	      islavsurf,ielprop,prop,energyini,energy,&kscale,iponoeln,
-	      inoeln,nener,orname,network,ipobody,xbodyact,ibody,typeboun,
-	      itiefac,tieset,smscale,&mscalmethod,nbody,t0g,t1g,
-	      islavquadel,aut,irowt,jqt,&mortartrafoflag,
-	      &intscheme,physcon,dam,damn,iponoel);
+      trial_results(&nlgt);
       if(ne1d2d==1)SFREE(inum);
       dtime=0.;
 
@@ -6799,27 +6404,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 
       if(*mortar!=-1){
 	if(ne1d2d==1)NNEW(inum,ITG,*nk);
-	results(co,nk,kon,ipkon,lakon,ne,v,stn,inum,stx,
-		elcon,nelcon,rhcon,nrhcon,alcon,nalcon,alzero,ielmat,
-		ielorien,norien,orab,ntmat_,t0,t1act,ithermal,
-		prestr,iprestr,filab,eme,emn,een,iperturb,
-		f,fn,nactdof,&iout,qa,vold,b,nodeboun,
-		ndirboun,xbounact,nboun,ipompc,
-		nodempc,coefmpc,labmpc,nmpc,nmethod,cam,&neq[1],veold,accold,
-		&bet,&gam,&dtime,&time,ttime,plicon,nplicon,plkcon,nplkcon,
-		xstateini,xstiff,xstate,npmat_,epn,matname,mi,&ielas,
-		&icmd,ncmat_,nstate_,stiini,vini,ikboun,ilboun,ener,enern,
-		emeini,xstaten,eei,enerini,cocon,ncocon,set,nset,istartset,
-		iendset,ialset,nprint,prlab,prset,qfx,qfn,trab,inotr,ntrans,
-		fmpc,nelemload,nload,ikmpc,ilmpc,istep,&iinc,springarea,
-		&reltime,&ne0,thicke,shcon,nshcon,
-		sideload,xloadact,xloadold,&icfd,inomat,pslavsurf,pmastsurf,
-		mortar,islavact,cdn,islavnode,nslavnode,ntie,clearini,
-		islavsurf,ielprop,prop,energyini,energy,&kscale,iponoeln,
-		inoeln,nener,orname,network,ipobody,xbodyact,ibody,typeboun,
-		itiefac,tieset,smscale,&mscalmethod,nbody,t0g,t1g,
-		islavquadel,aut,irowt,jqt,&mortartrafoflag,
-		&intscheme,physcon,dam,damn,iponoel);
+	trial_results(&nlgt);
 	if(ne1d2d==1)SFREE(inum);
 	  
 	isiz=mt**nk;cpypardou(vold,v,&isiz,&num_cpus);
@@ -7153,27 +6738,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	  iout=-1;
 	      
 	  if(ne1d2d==1)NNEW(inum,ITG,*nk);
-	  results(co,nk,kon,ipkon,lakon,ne,v,stn,inum,stx,
-		  elcon,nelcon,rhcon,nrhcon,alcon,nalcon,alzero,ielmat,
-		  ielorien,norien,orab,ntmat_,t0,t1act,ithermal,
-		  prestr,iprestr,filab,eme,emn,een,iperturb,
-		  f,fn,nactdof,&iout,qa,vold,b,nodeboun,
-		  ndirboun,xbounact,nboun,ipompc,
-		  nodempc,coefmpc,labmpc,nmpc,nmethod,cam,&neq[1],veold,accold,
-		  &bet,&gam,&dtime,&time,ttime,plicon,nplicon,plkcon,nplkcon,
-		  xstateini,xstiff,xstate,npmat_,epn,matname,mi,&ielas,&icmd,
-		  ncmat_,nstate_,stiini,vini,ikboun,ilboun,ener,enern,emeini,
-		  xstaten,eei,enerini,cocon,ncocon,set,nset,istartset,iendset,
-		  ialset,nprint,prlab,prset,qfx,qfn,trab,inotr,ntrans,fmpc,
-		  nelemload,nload,ikmpc,ilmpc,istep,&iinc,springarea,
-		  &reltime,&ne0,thicke,shcon,nshcon,
-		  sideload,xloadact,xloadold,&icfd,inomat,pslavsurf,pmastsurf,
-		  mortar,islavact,cdn,islavnode,nslavnode,ntie,clearini,
-		  islavsurf,ielprop,prop,energyini,energy,&kscale,iponoeln,
-		  inoeln,nener,orname,network,ipobody,xbodyact,ibody,typeboun,
-		  itiefac,tieset,smscale,&mscalmethod,nbody,t0g,t1g,
-		  islavquadel,aut,irowt,jqt,&mortartrafoflag,
-		  &intscheme,physcon,dam,damn,iponoel);
+	  trial_results(&nlgt);
 	  
 	  isiz=mt**nk;cpypardou(vold,v,&isiz,&num_cpus);
 	      
@@ -7671,11 +7236,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
       /* calculating the residual (RHS of equation system) */
 
       if(*mortar!=-1){
-	calcresidual(nmethod,neq,b,fext,f,iexpl,nactdof,aux2,vold,
-		     vini,&dtime,accold,nk,adb,aub,jq,irow,nzl,alpha,fextini,
-		     fini,islavnode,nslavnode,mortar,ntie,mi,
-		     nzs,&nasym,&idamping,veold,adc,auc,cvini,cv,&alpham,
-		     &num_cpus);
+	trial_reduce(&nlgt,b);
       }else{
 	NNEW(volddof,double,neq[0]);
 	if(ncont!=0){NNEW(qb,double,neqtot);}
@@ -8710,31 +8271,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     for(_k=0;_k<neq[1];_k++) b[_k]=0.;                                    \
     iout=-1;                                                              \
     isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);                        \
-    results(co,nk,kon,ipkon,lakon,ne,v,stn,inum,stx,                      \
-            elcon,nelcon,rhcon,nrhcon,alcon,nalcon,alzero,ielmat,         \
-            ielorien,norien,orab,ntmat_,t0,t1act,ithermal,                \
-            prestr,iprestr,filab,eme,emn,een,iperturb,                    \
-            f,fn,nactdof,&iout,qa,vold,b,nodeboun,                        \
-            ndirboun,xbounact,nboun,ipompc,                               \
-            nodempc,coefmpc,labmpc,nmpc,nmethod,cam,&neq[1],veold,        \
-            accold,&bet,&gam,&dtime,&time,ttime,plicon,nplicon,           \
-            plkcon,nplkcon,xstateini,xstiff,xstate,npmat_,epn,matname,    \
-            mi,&ielas,&icmd,ncmat_,nstate_,stiini,vini,ikboun,ilboun,     \
-            ener,enern,emeini,xstaten,eei,enerini,cocon,ncocon,set,       \
-            nset,istartset,iendset,ialset,nprint,prlab,prset,qfx,qfn,     \
-            trab,inotr,ntrans,fmpc,nelemload,nload,ikmpc,ilmpc,istep,     \
-            &iinc,springarea,&reltime,&ne0,thicke,shcon,nshcon,           \
-            sideload,xloadact,xloadold,&icfd,inomat,pslavsurf,            \
-            pmastsurf,mortar,islavact,cdn,islavnode,nslavnode,ntie,       \
-            clearini,islavsurf,ielprop,prop,energyini,energy,&kscale,     \
-            iponoeln,inoeln,nener,orname,network,ipobody,xbodyact,        \
-            ibody,typeboun,itiefac,tieset,smscale,&mscalmethod,nbody,     \
-            t0g,t1g,islavquadel,aut,irowt,jqt,&mortartrafoflag,           \
-            &intscheme,physcon,dam,damn,iponoel);                         \
-    calcresidual(nmethod,neq,b,fext,f,iexpl,nactdof,aux2,vold,vini,       \
-                 &dtime,accold,nk,adb,aub,jq,irow,nzl,alpha,fextini,      \
-                 fini,islavnode,nslavnode,mortar,ntie,mi,nzs,&nasym,      \
-                 &idamping,veold,adc,auc,cvini,cv,&alpham,&num_cpus);     \
+    trial_results(&nlgt);                                             \
+    trial_reduce(&nlgt,b);                                            \
     isiz=neq[1];cpypardou((DST),b,&isiz,&num_cpus);                       \
     iout=_io;                                                             \
   }while(0)
@@ -9389,27 +8927,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 		   network);
       }else{
 	if(ne1d2d==1)NNEW(inum,ITG,*nk);
-	results(co,nk,kon,ipkon,lakon,ne,v,stn,inum,stx,
-		elcon,nelcon,rhcon,nrhcon,alcon,nalcon,alzero,ielmat,
-		ielorien,norien,orab,ntmat_,t0,t1act,ithermal,
-		prestr,iprestr,filab,eme,emn,een,iperturb,
-		f,fn,nactdof,&iout,qa,vold,b,nodeboun,
-		ndirboun,xbounact,nboun,ipompc,
-		nodempc,coefmpc,labmpc,nmpc,nmethod,cam,&neq[1],veold,accold,
-		&bet,&gam,&dtime,&time,ttime,plicon,nplicon,plkcon,nplkcon,
-		xstateini,xstiff,xstate,npmat_,epn,matname,mi,&ielas,
-		&icmd,ncmat_,nstate_,stiini,vini,ikboun,ilboun,ener,enern,
-		emeini,xstaten,eei,enerini,cocon,ncocon,set,nset,istartset,
-		iendset,ialset,nprint,prlab,prset,qfx,qfn,trab,inotr,ntrans,
-		fmpc,nelemload,nload,ikmpc,ilmpc,istep,&iinc,springarea,
-		&reltime,&ne0,thicke,shcon,nshcon,
-		sideload,xloadact,xloadold,&icfd,inomat,pslavsurf,pmastsurf,
-		mortar,islavact,cdn,islavnode,nslavnode,ntie,clearini,
-		islavsurf,ielprop,prop,energyini,energy,&kscale,iponoeln,
-		inoeln,nener,orname,network,ipobody,xbodyact,ibody,typeboun,
-		itiefac,tieset,smscale,&mscalmethod,nbody,t0g,t1g,
-		islavquadel,aut,irowt,jqt,&mortartrafoflag,
-		&intscheme,physcon,dam,damn,iponoel);
+	trial_results(&nlgt);
 	if(ne1d2d==1)SFREE(inum);
       }
 
@@ -9611,28 +9129,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
       	memcpy(v,damage_fd_vsav,sizeof(double)*mt**nk);
       	if(damage_fd_s==0)      v[mt*damage_fd_node+idir]+=damage_fd_h;
       	else if(damage_fd_s==1) v[mt*damage_fd_node+idir]-=damage_fd_h;
-      	results(co,nk,kon,ipkon,lakon,ne,v,stn,inum,stx,
-      		elcon,nelcon,rhcon,nrhcon,alcon,nalcon,alzero,ielmat,
-      		ielorien,norien,orab,ntmat_,t0,t1act,ithermal,
-      		prestr,iprestr,filab,eme,emn,een,iperturb,
-      		f,fn,nactdof,&iout,qa,vold,b,nodeboun,
-      		ndirboun,xbounact,nboun,ipompc,
-      		nodempc,coefmpc,labmpc,nmpc,nmethod,cam,&neq[1],veold,
-      		accold,&bet,&gam,&dtime,&time,ttime,plicon,nplicon,
-      		plkcon,nplkcon,xstateini,xstiff,xstate,npmat_,epn,
-      		matname,mi,&ielas,&icmd,ncmat_,nstate_,stiini,vini,
-      		ikboun,ilboun,ener,enern,emeini,xstaten,eei,enerini,
-      		cocon,ncocon,set,nset,istartset,iendset,ialset,nprint,
-      		prlab,prset,qfx,qfn,trab,inotr,ntrans,fmpc,nelemload,
-      		nload,ikmpc,ilmpc,istep,&iinc,springarea,&reltime,&ne0,
-      		thicke,shcon,nshcon,sideload,xloadact,xloadold,&icfd,
-      		inomat,pslavsurf,pmastsurf,mortar,islavact,cdn,
-      		islavnode,nslavnode,ntie,clearini,islavsurf,ielprop,
-      		prop,energyini,energy,&kscale,iponoeln,inoeln,nener,
-      		orname,network,ipobody,xbodyact,ibody,typeboun,itiefac,
-      		tieset,smscale,&mscalmethod,nbody,t0g,t1g,islavquadel,
-      		aut,irowt,jqt,&mortartrafoflag,&intscheme,physcon,dam,
-      		damn,iponoel);
+      	trial_results(&nlgt);
       	if(damage_fd_s==0)
       	  memcpy(damage_fd_fp,fn,sizeof(double)*mt**nk);
       	else if(damage_fd_s==1)
@@ -9810,10 +9307,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	/* calculating the residual */
       
 	NNEW(res,double,neq[1]);
-	calcresidual(nmethod,neq,res,fext,f,iexpl,nactdof,aux2,vold,vini,
-		     &dtime,accold,nk,adb,aub,jq,irow,nzl,alpha,fextini,fini,
-		     islavnode,nslavnode,mortar,ntie,mi,nzs,&nasym,
-		     &idamping,veold,adc,auc,cvini,cv,&alpham,&num_cpus);
+	trial_reduce(&nlgt,res);
 
 	/* calculating the line search factor */
 
@@ -9848,27 +9342,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	MNEW(fn,double,mt**nk);
 	  
 	if(ne1d2d==1)NNEW(inum,ITG,*nk);
-	results(co,nk,kon,ipkon,lakon,ne,v,stn,inum,stx,
-		elcon,nelcon,rhcon,nrhcon,alcon,nalcon,alzero,ielmat,
-		ielorien,norien,orab,ntmat_,t0,t1act,ithermal,
-		prestr,iprestr,filab,eme,emn,een,iperturb,
-		f,fn,nactdof,&iout,qa,vold,b,nodeboun,
-		ndirboun,xbounact,nboun,ipompc,
-		nodempc,coefmpc,labmpc,nmpc,nmethod,cam,&neq[1],veold,accold,
-		&bet,&gam,&dtime,&time,ttime,plicon,nplicon,plkcon,nplkcon,
-		xstateini,xstiff,xstate,npmat_,epn,matname,mi,&ielas,
-		&icmd,ncmat_,nstate_,stiini,vini,ikboun,ilboun,ener,enern,
-		emeini,xstaten,eei,enerini,cocon,ncocon,set,nset,istartset,
-		iendset,ialset,nprint,prlab,prset,qfx,qfn,trab,inotr,ntrans,
-		fmpc,nelemload,nload,ikmpc,ilmpc,istep,&iinc,springarea,
-		&reltime,&ne0,thicke,shcon,nshcon,
-		sideload,xloadact,xloadold,&icfd,inomat,pslavsurf,pmastsurf,
-		mortar,islavact,cdn,islavnode,nslavnode,ntie,clearini,
-		islavsurf,ielprop,prop,energyini,energy,&kscale,iponoeln,
-		inoeln,nener,orname,network,ipobody,xbodyact,ibody,typeboun,
-		itiefac,tieset,smscale,&mscalmethod,nbody,t0g,t1g,
-		islavquadel,aut,irowt,jqt,&mortartrafoflag,
-		&intscheme,physcon,dam,damn,iponoel);
+	trial_results(&nlgt);
 	if(ne1d2d==1)SFREE(inum);
 
 	/* Structural finite-difference check of the ASSEMBLED Jacobian.
@@ -10149,40 +9623,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
             isiz=lnst*mi[0]**ne;
             cpypardou(xstate,damage_dl_xs,&isiz,&num_cpus);
           }
-          SFREE(v);SFREE(stx);SFREE(fn);
           for(ljj=0;ljj<neq[1];ljj++) b[ljj]=le*lp[ljj];
-          MNEW(v,double,mt**nk);
-          isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);
-          NNEW(stx,double,6*mi[0]**ne);
-          MNEW(fn,double,mt**nk);
-          if(ne1d2d==1)NNEW(inum,ITG,*nk);
-          results(co,nk,kon,ipkon,lakon,ne,v,stn,inum,stx,
-              elcon,nelcon,rhcon,nrhcon,alcon,nalcon,alzero,ielmat,
-              ielorien,norien,orab,ntmat_,t0,t1act,ithermal,
-              prestr,iprestr,filab,eme,emn,een,iperturb,
-              f,fn,nactdof,&iout,qa,vold,b,nodeboun,
-              ndirboun,xbounact,nboun,ipompc,
-              nodempc,coefmpc,labmpc,nmpc,nmethod,cam,&neq[1],veold,accold,
-              &bet,&gam,&dtime,&time,ttime,plicon,nplicon,plkcon,nplkcon,
-              xstateini,xstiff,xstate,npmat_,epn,matname,mi,&ielas,
-              &icmd,ncmat_,nstate_,stiini,vini,ikboun,ilboun,ener,enern,
-              emeini,xstaten,eei,enerini,cocon,ncocon,set,nset,istartset,
-              iendset,ialset,nprint,prlab,prset,qfx,qfn,trab,inotr,ntrans,
-              fmpc,nelemload,nload,ikmpc,ilmpc,istep,&iinc,springarea,
-              &reltime,&ne0,thicke,shcon,nshcon,
-              sideload,xloadact,xloadold,&icfd,inomat,pslavsurf,pmastsurf,
-              mortar,islavact,cdn,islavnode,nslavnode,ntie,clearini,
-              islavsurf,ielprop,prop,energyini,energy,&kscale,iponoeln,
-              inoeln,nener,orname,network,ipobody,xbodyact,ibody,typeboun,
-              itiefac,tieset,smscale,&mscalmethod,nbody,t0g,t1g,
-              islavquadel,aut,irowt,jqt,&mortartrafoflag,
-              &intscheme,physcon,dam,damn,iponoel);
-          if(ne1d2d==1)SFREE(inum);
-          calcresidual(nmethod,neq,damage_dl_res,fext,f,iexpl,nactdof,aux2,
-                       vold,vini,&dtime,accold,nk,adb,aub,jq,irow,nzl,alpha,
-                       fextini,fini,islavnode,nslavnode,mortar,ntie,mi,
-                       nzs,&nasym,&idamping,veold,adc,auc,cvini,cv,&alpham,
-                       &num_cpus);
+          trial_residual(&nlgt,damage_dl_res);
 
             damage_dl_neval++;
             lnum=0.;lnres=0.;linf=0.;linf0=0.;
@@ -10359,40 +9801,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
             isiz=lnst*mi[0]**ne;
             cpypardou(xstate,damage_dl_xs,&isiz,&num_cpus);
           }
-          SFREE(v);SFREE(stx);SFREE(fn);
           for(ljj=0;ljj<neq[1];ljj++) b[ljj]=le*lp[ljj];
-          MNEW(v,double,mt**nk);
-          isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);
-          NNEW(stx,double,6*mi[0]**ne);
-          MNEW(fn,double,mt**nk);
-          if(ne1d2d==1)NNEW(inum,ITG,*nk);
-          results(co,nk,kon,ipkon,lakon,ne,v,stn,inum,stx,
-              elcon,nelcon,rhcon,nrhcon,alcon,nalcon,alzero,ielmat,
-              ielorien,norien,orab,ntmat_,t0,t1act,ithermal,
-              prestr,iprestr,filab,eme,emn,een,iperturb,
-              f,fn,nactdof,&iout,qa,vold,b,nodeboun,
-              ndirboun,xbounact,nboun,ipompc,
-              nodempc,coefmpc,labmpc,nmpc,nmethod,cam,&neq[1],veold,accold,
-              &bet,&gam,&dtime,&time,ttime,plicon,nplicon,plkcon,nplkcon,
-              xstateini,xstiff,xstate,npmat_,epn,matname,mi,&ielas,
-              &icmd,ncmat_,nstate_,stiini,vini,ikboun,ilboun,ener,enern,
-              emeini,xstaten,eei,enerini,cocon,ncocon,set,nset,istartset,
-              iendset,ialset,nprint,prlab,prset,qfx,qfn,trab,inotr,ntrans,
-              fmpc,nelemload,nload,ikmpc,ilmpc,istep,&iinc,springarea,
-              &reltime,&ne0,thicke,shcon,nshcon,
-              sideload,xloadact,xloadold,&icfd,inomat,pslavsurf,pmastsurf,
-              mortar,islavact,cdn,islavnode,nslavnode,ntie,clearini,
-              islavsurf,ielprop,prop,energyini,energy,&kscale,iponoeln,
-              inoeln,nener,orname,network,ipobody,xbodyact,ibody,typeboun,
-              itiefac,tieset,smscale,&mscalmethod,nbody,t0g,t1g,
-              islavquadel,aut,irowt,jqt,&mortartrafoflag,
-              &intscheme,physcon,dam,damn,iponoel);
-          if(ne1d2d==1)SFREE(inum);
-          calcresidual(nmethod,neq,damage_dl_res,fext,f,iexpl,nactdof,aux2,
-                       vold,vini,&dtime,accold,nk,adb,aub,jq,irow,nzl,alpha,
-                       fextini,fini,islavnode,nslavnode,mortar,ntie,mi,
-                       nzs,&nasym,&idamping,veold,adc,auc,cvini,cv,&alpham,
-                       &num_cpus);
+          trial_residual(&nlgt,damage_dl_res);
 
         lnres=0.;
         for(ljj=0;ljj<neq[1];ljj++)
@@ -10469,39 +9879,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           }
           for(ctj=0;ctj<*nboun;ctj++)
             xbounact[ctj]=xbounold[ctj]+(xboun[ctj]-xbounold[ctj])*ctlam;
-          SFREE(v);SFREE(stx);SFREE(fn);
-          MNEW(v,double,mt**nk);
-          isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);
-          NNEW(stx,double,6*mi[0]**ne);
-          MNEW(fn,double,mt**nk);
-          if(ne1d2d==1)NNEW(inum,ITG,*nk);
-          results(co,nk,kon,ipkon,lakon,ne,v,stn,inum,stx,
-              elcon,nelcon,rhcon,nrhcon,alcon,nalcon,alzero,ielmat,
-              ielorien,norien,orab,ntmat_,t0,t1act,ithermal,
-              prestr,iprestr,filab,eme,emn,een,iperturb,
-              f,fn,nactdof,&iout,qa,vold,b,nodeboun,
-              ndirboun,xbounact,nboun,ipompc,
-              nodempc,coefmpc,labmpc,nmpc,nmethod,cam,&neq[1],veold,accold,
-              &bet,&gam,&dtime,&time,ttime,plicon,nplicon,plkcon,nplkcon,
-              xstateini,xstiff,xstate,npmat_,epn,matname,mi,&ielas,
-              &icmd,ncmat_,nstate_,stiini,vini,ikboun,ilboun,ener,enern,
-              emeini,xstaten,eei,enerini,cocon,ncocon,set,nset,istartset,
-              iendset,ialset,nprint,prlab,prset,qfx,qfn,trab,inotr,ntrans,
-              fmpc,nelemload,nload,ikmpc,ilmpc,istep,&iinc,springarea,
-              &reltime,&ne0,thicke,shcon,nshcon,
-              sideload,xloadact,xloadold,&icfd,inomat,pslavsurf,pmastsurf,
-              mortar,islavact,cdn,islavnode,nslavnode,ntie,clearini,
-              islavsurf,ielprop,prop,energyini,energy,&kscale,iponoeln,
-              inoeln,nener,orname,network,ipobody,xbodyact,ibody,typeboun,
-              itiefac,tieset,smscale,&mscalmethod,nbody,t0g,t1g,
-              islavquadel,aut,irowt,jqt,&mortartrafoflag,
-              &intscheme,physcon,dam,damn,iponoel);
-          if(ne1d2d==1)SFREE(inum);
-          calcresidual(nmethod,neq,damage_ct_beps,fext,f,iexpl,nactdof,aux2,
-                       vold,vini,&dtime,accold,nk,adb,aub,jq,irow,nzl,alpha,
-                       fextini,fini,islavnode,nslavnode,mortar,ntie,mi,
-                       nzs,&nasym,&idamping,veold,adc,auc,cvini,cv,&alpham,
-                       &num_cpus);
+          trial_residual(&nlgt,damage_ct_beps);
           damage_ct_neval++;
           damage_evt_sign(stx,ipkon,lakon,ne0,mi[0],damage_ct_sgn);
           ctbase=0.;
@@ -10537,39 +9915,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           }
           for(ctj=0;ctj<*nboun;ctj++)
             xbounact[ctj]=xbounold[ctj]+(xboun[ctj]-xbounold[ctj])*ctlam;
-          SFREE(v);SFREE(stx);SFREE(fn);
-          MNEW(v,double,mt**nk);
-          isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);
-          NNEW(stx,double,6*mi[0]**ne);
-          MNEW(fn,double,mt**nk);
-          if(ne1d2d==1)NNEW(inum,ITG,*nk);
-          results(co,nk,kon,ipkon,lakon,ne,v,stn,inum,stx,
-              elcon,nelcon,rhcon,nrhcon,alcon,nalcon,alzero,ielmat,
-              ielorien,norien,orab,ntmat_,t0,t1act,ithermal,
-              prestr,iprestr,filab,eme,emn,een,iperturb,
-              f,fn,nactdof,&iout,qa,vold,b,nodeboun,
-              ndirboun,xbounact,nboun,ipompc,
-              nodempc,coefmpc,labmpc,nmpc,nmethod,cam,&neq[1],veold,accold,
-              &bet,&gam,&dtime,&time,ttime,plicon,nplicon,plkcon,nplkcon,
-              xstateini,xstiff,xstate,npmat_,epn,matname,mi,&ielas,
-              &icmd,ncmat_,nstate_,stiini,vini,ikboun,ilboun,ener,enern,
-              emeini,xstaten,eei,enerini,cocon,ncocon,set,nset,istartset,
-              iendset,ialset,nprint,prlab,prset,qfx,qfn,trab,inotr,ntrans,
-              fmpc,nelemload,nload,ikmpc,ilmpc,istep,&iinc,springarea,
-              &reltime,&ne0,thicke,shcon,nshcon,
-              sideload,xloadact,xloadold,&icfd,inomat,pslavsurf,pmastsurf,
-              mortar,islavact,cdn,islavnode,nslavnode,ntie,clearini,
-              islavsurf,ielprop,prop,energyini,energy,&kscale,iponoeln,
-              inoeln,nener,orname,network,ipobody,xbodyact,ibody,typeboun,
-              itiefac,tieset,smscale,&mscalmethod,nbody,t0g,t1g,
-              islavquadel,aut,irowt,jqt,&mortartrafoflag,
-              &intscheme,physcon,dam,damn,iponoel);
-          if(ne1d2d==1)SFREE(inum);
-          calcresidual(nmethod,neq,damage_ct_beps,fext,f,iexpl,nactdof,aux2,
-                       vold,vini,&dtime,accold,nk,adb,aub,jq,irow,nzl,alpha,
-                       fextini,fini,islavnode,nslavnode,mortar,ntie,mi,
-                       nzs,&nasym,&idamping,veold,adc,auc,cvini,cv,&alpham,
-                       &num_cpus);
+          trial_residual(&nlgt,damage_ct_beps);
           damage_ct_neval++;
 
             ctnsw=damage_evt_flips(stx,ipkon,lakon,ne0,mi[0],damage_ct_sgn,
@@ -10729,39 +10075,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           }
           for(ctj=0;ctj<*nboun;ctj++)
             xbounact[ctj]=xbounold[ctj]+(xboun[ctj]-xbounold[ctj])*ctlam;
-          SFREE(v);SFREE(stx);SFREE(fn);
-          MNEW(v,double,mt**nk);
-          isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);
-          NNEW(stx,double,6*mi[0]**ne);
-          MNEW(fn,double,mt**nk);
-          if(ne1d2d==1)NNEW(inum,ITG,*nk);
-          results(co,nk,kon,ipkon,lakon,ne,v,stn,inum,stx,
-              elcon,nelcon,rhcon,nrhcon,alcon,nalcon,alzero,ielmat,
-              ielorien,norien,orab,ntmat_,t0,t1act,ithermal,
-              prestr,iprestr,filab,eme,emn,een,iperturb,
-              f,fn,nactdof,&iout,qa,vold,b,nodeboun,
-              ndirboun,xbounact,nboun,ipompc,
-              nodempc,coefmpc,labmpc,nmpc,nmethod,cam,&neq[1],veold,accold,
-              &bet,&gam,&dtime,&time,ttime,plicon,nplicon,plkcon,nplkcon,
-              xstateini,xstiff,xstate,npmat_,epn,matname,mi,&ielas,
-              &icmd,ncmat_,nstate_,stiini,vini,ikboun,ilboun,ener,enern,
-              emeini,xstaten,eei,enerini,cocon,ncocon,set,nset,istartset,
-              iendset,ialset,nprint,prlab,prset,qfx,qfn,trab,inotr,ntrans,
-              fmpc,nelemload,nload,ikmpc,ilmpc,istep,&iinc,springarea,
-              &reltime,&ne0,thicke,shcon,nshcon,
-              sideload,xloadact,xloadold,&icfd,inomat,pslavsurf,pmastsurf,
-              mortar,islavact,cdn,islavnode,nslavnode,ntie,clearini,
-              islavsurf,ielprop,prop,energyini,energy,&kscale,iponoeln,
-              inoeln,nener,orname,network,ipobody,xbodyact,ibody,typeboun,
-              itiefac,tieset,smscale,&mscalmethod,nbody,t0g,t1g,
-              islavquadel,aut,irowt,jqt,&mortartrafoflag,
-              &intscheme,physcon,dam,damn,iponoel);
-          if(ne1d2d==1)SFREE(inum);
-          calcresidual(nmethod,neq,damage_ct_beps,fext,f,iexpl,nactdof,aux2,
-                       vold,vini,&dtime,accold,nk,adb,aub,jq,irow,nzl,alpha,
-                       fextini,fini,islavnode,nslavnode,mortar,ntie,mi,
-                       nzs,&nasym,&idamping,veold,adc,auc,cvini,cv,&alpham,
-                       &num_cpus);
+          trial_residual(&nlgt,damage_ct_beps);
           damage_ct_neval++;
 
         }else{
@@ -10787,39 +10101,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           }
           for(ctj=0;ctj<*nboun;ctj++)
             xbounact[ctj]=xbounold[ctj]+(xboun[ctj]-xbounold[ctj])*ctlam;
-          SFREE(v);SFREE(stx);SFREE(fn);
-          MNEW(v,double,mt**nk);
-          isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);
-          NNEW(stx,double,6*mi[0]**ne);
-          MNEW(fn,double,mt**nk);
-          if(ne1d2d==1)NNEW(inum,ITG,*nk);
-          results(co,nk,kon,ipkon,lakon,ne,v,stn,inum,stx,
-              elcon,nelcon,rhcon,nrhcon,alcon,nalcon,alzero,ielmat,
-              ielorien,norien,orab,ntmat_,t0,t1act,ithermal,
-              prestr,iprestr,filab,eme,emn,een,iperturb,
-              f,fn,nactdof,&iout,qa,vold,b,nodeboun,
-              ndirboun,xbounact,nboun,ipompc,
-              nodempc,coefmpc,labmpc,nmpc,nmethod,cam,&neq[1],veold,accold,
-              &bet,&gam,&dtime,&time,ttime,plicon,nplicon,plkcon,nplkcon,
-              xstateini,xstiff,xstate,npmat_,epn,matname,mi,&ielas,
-              &icmd,ncmat_,nstate_,stiini,vini,ikboun,ilboun,ener,enern,
-              emeini,xstaten,eei,enerini,cocon,ncocon,set,nset,istartset,
-              iendset,ialset,nprint,prlab,prset,qfx,qfn,trab,inotr,ntrans,
-              fmpc,nelemload,nload,ikmpc,ilmpc,istep,&iinc,springarea,
-              &reltime,&ne0,thicke,shcon,nshcon,
-              sideload,xloadact,xloadold,&icfd,inomat,pslavsurf,pmastsurf,
-              mortar,islavact,cdn,islavnode,nslavnode,ntie,clearini,
-              islavsurf,ielprop,prop,energyini,energy,&kscale,iponoeln,
-              inoeln,nener,orname,network,ipobody,xbodyact,ibody,typeboun,
-              itiefac,tieset,smscale,&mscalmethod,nbody,t0g,t1g,
-              islavquadel,aut,irowt,jqt,&mortartrafoflag,
-              &intscheme,physcon,dam,damn,iponoel);
-          if(ne1d2d==1)SFREE(inum);
-          calcresidual(nmethod,neq,damage_ct_beps,fext,f,iexpl,nactdof,aux2,
-                       vold,vini,&dtime,accold,nk,adb,aub,jq,irow,nzl,alpha,
-                       fextini,fini,islavnode,nslavnode,mortar,ntie,mi,
-                       nzs,&nasym,&idamping,veold,adc,auc,cvini,cv,&alpham,
-                       &num_cpus);
+          trial_residual(&nlgt,damage_ct_beps);
           damage_ct_neval++;
 
         }
@@ -10978,41 +10260,9 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
             isiz=tnst*mi[0]**ne;
             cpypardou(xstate,damage_dl_xs,&isiz,&num_cpus);
           }
-          SFREE(v);SFREE(stx);SFREE(fn);
           for(tjj=0;tjj<neq[1];tjj++)
             b[tjj]=tpa*damage_dl_d[tjj]+tpb*damage_dl_pn[tjj];
-          MNEW(v,double,mt**nk);
-          isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);
-          NNEW(stx,double,6*mi[0]**ne);
-          MNEW(fn,double,mt**nk);
-          if(ne1d2d==1)NNEW(inum,ITG,*nk);
-          results(co,nk,kon,ipkon,lakon,ne,v,stn,inum,stx,
-              elcon,nelcon,rhcon,nrhcon,alcon,nalcon,alzero,ielmat,
-              ielorien,norien,orab,ntmat_,t0,t1act,ithermal,
-              prestr,iprestr,filab,eme,emn,een,iperturb,
-              f,fn,nactdof,&iout,qa,vold,b,nodeboun,
-              ndirboun,xbounact,nboun,ipompc,
-              nodempc,coefmpc,labmpc,nmpc,nmethod,cam,&neq[1],veold,accold,
-              &bet,&gam,&dtime,&time,ttime,plicon,nplicon,plkcon,nplkcon,
-              xstateini,xstiff,xstate,npmat_,epn,matname,mi,&ielas,
-              &icmd,ncmat_,nstate_,stiini,vini,ikboun,ilboun,ener,enern,
-              emeini,xstaten,eei,enerini,cocon,ncocon,set,nset,istartset,
-              iendset,ialset,nprint,prlab,prset,qfx,qfn,trab,inotr,ntrans,
-              fmpc,nelemload,nload,ikmpc,ilmpc,istep,&iinc,springarea,
-              &reltime,&ne0,thicke,shcon,nshcon,
-              sideload,xloadact,xloadold,&icfd,inomat,pslavsurf,pmastsurf,
-              mortar,islavact,cdn,islavnode,nslavnode,ntie,clearini,
-              islavsurf,ielprop,prop,energyini,energy,&kscale,iponoeln,
-              inoeln,nener,orname,network,ipobody,xbodyact,ibody,typeboun,
-              itiefac,tieset,smscale,&mscalmethod,nbody,t0g,t1g,
-              islavquadel,aut,irowt,jqt,&mortartrafoflag,
-              &intscheme,physcon,dam,damn,iponoel);
-          if(ne1d2d==1)SFREE(inum);
-          calcresidual(nmethod,neq,damage_dl_res,fext,f,iexpl,nactdof,aux2,
-                       vold,vini,&dtime,accold,nk,adb,aub,jq,irow,nzl,alpha,
-                       fextini,fini,islavnode,nslavnode,mortar,ntie,mi,
-                       nzs,&nasym,&idamping,veold,adc,auc,cvini,cv,&alpham,
-                       &num_cpus);
+          trial_residual(&nlgt,damage_dl_res);
           damage_dl_neval++;
           tphi=0.;tinf=0.;
           for(tjj=0;tjj<neq[1];tjj++){
@@ -11085,41 +10335,9 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
             isiz=tnst*mi[0]**ne;
             cpypardou(xstate,damage_dl_xs,&isiz,&num_cpus);
           }
-          SFREE(v);SFREE(stx);SFREE(fn);
           for(tjj=0;tjj<neq[1];tjj++)
             b[tjj]=tpa*damage_dl_d[tjj]+tpb*damage_dl_pn[tjj];
-          MNEW(v,double,mt**nk);
-          isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);
-          NNEW(stx,double,6*mi[0]**ne);
-          MNEW(fn,double,mt**nk);
-          if(ne1d2d==1)NNEW(inum,ITG,*nk);
-          results(co,nk,kon,ipkon,lakon,ne,v,stn,inum,stx,
-              elcon,nelcon,rhcon,nrhcon,alcon,nalcon,alzero,ielmat,
-              ielorien,norien,orab,ntmat_,t0,t1act,ithermal,
-              prestr,iprestr,filab,eme,emn,een,iperturb,
-              f,fn,nactdof,&iout,qa,vold,b,nodeboun,
-              ndirboun,xbounact,nboun,ipompc,
-              nodempc,coefmpc,labmpc,nmpc,nmethod,cam,&neq[1],veold,accold,
-              &bet,&gam,&dtime,&time,ttime,plicon,nplicon,plkcon,nplkcon,
-              xstateini,xstiff,xstate,npmat_,epn,matname,mi,&ielas,
-              &icmd,ncmat_,nstate_,stiini,vini,ikboun,ilboun,ener,enern,
-              emeini,xstaten,eei,enerini,cocon,ncocon,set,nset,istartset,
-              iendset,ialset,nprint,prlab,prset,qfx,qfn,trab,inotr,ntrans,
-              fmpc,nelemload,nload,ikmpc,ilmpc,istep,&iinc,springarea,
-              &reltime,&ne0,thicke,shcon,nshcon,
-              sideload,xloadact,xloadold,&icfd,inomat,pslavsurf,pmastsurf,
-              mortar,islavact,cdn,islavnode,nslavnode,ntie,clearini,
-              islavsurf,ielprop,prop,energyini,energy,&kscale,iponoeln,
-              inoeln,nener,orname,network,ipobody,xbodyact,ibody,typeboun,
-              itiefac,tieset,smscale,&mscalmethod,nbody,t0g,t1g,
-              islavquadel,aut,irowt,jqt,&mortartrafoflag,
-              &intscheme,physcon,dam,damn,iponoel);
-          if(ne1d2d==1)SFREE(inum);
-          calcresidual(nmethod,neq,damage_dl_res,fext,f,iexpl,nactdof,aux2,
-                       vold,vini,&dtime,accold,nk,adb,aub,jq,irow,nzl,alpha,
-                       fextini,fini,islavnode,nslavnode,mortar,ntie,mi,
-                       nzs,&nasym,&idamping,veold,adc,auc,cvini,cv,&alpham,
-                       &num_cpus);
+          trial_residual(&nlgt,damage_dl_res);
           damage_dl_neval++;
           tphi=0.;tinf=0.;
           for(tjj=0;tjj<neq[1];tjj++){
@@ -11181,10 +10399,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
          (idamagereeq==0)&&(ncont==0)&&(*nmethod!=4)&&(*nmethod!=5)&&
          (*ithermal<2)&&(*idrct==0)){
         NNEW(res,double,neq[1]);
-        calcresidual(nmethod,neq,res,fext,f,iexpl,nactdof,aux2,vold,vini,
-                     &dtime,accold,nk,adb,aub,jq,irow,nzl,alpha,fextini,
-                     fini,islavnode,nslavnode,mortar,ntie,mi,nzs,&nasym,
-                     &idamping,veold,adc,auc,cvini,cv,&alpham,&num_cpus);
+        trial_reduce(&nlgt,res);
 
         damage_linesearch_oldnorm=0.;
         damage_linesearch_fullnorm=0.;
@@ -11264,42 +10479,9 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
             ITG lpi;
             double lpr,lp0=-1.;
             for(lpi=0;lpi<9;lpi++){
-              SFREE(v);SFREE(stx);SFREE(fn);
               for(i=0;i<neq[1];i++)
                 b[i]=lsp[lpi]*damage_linesearch_step[i];
-              MNEW(v,double,mt**nk);
-              isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);
-              NNEW(stx,double,6*mi[0]**ne);
-              MNEW(fn,double,mt**nk);
-              if(ne1d2d==1)NNEW(inum,ITG,*nk);
-              results(co,nk,kon,ipkon,lakon,ne,v,stn,inum,stx,
-                  elcon,nelcon,rhcon,nrhcon,alcon,nalcon,alzero,ielmat,
-                  ielorien,norien,orab,ntmat_,t0,t1act,ithermal,
-                  prestr,iprestr,filab,eme,emn,een,iperturb,
-                  f,fn,nactdof,&iout,qa,vold,b,nodeboun,
-                  ndirboun,xbounact,nboun,ipompc,
-                  nodempc,coefmpc,labmpc,nmpc,nmethod,cam,&neq[1],veold,
-                  accold,&bet,&gam,&dtime,&time,ttime,plicon,nplicon,
-                  plkcon,nplkcon,xstateini,xstiff,xstate,npmat_,epn,
-                  matname,mi,&ielas,&icmd,ncmat_,nstate_,stiini,vini,
-                  ikboun,ilboun,ener,enern,emeini,xstaten,eei,enerini,
-                  cocon,ncocon,set,nset,istartset,iendset,ialset,nprint,
-                  prlab,prset,qfx,qfn,trab,inotr,ntrans,fmpc,nelemload,
-                  nload,ikmpc,ilmpc,istep,&iinc,springarea,&reltime,&ne0,
-                  thicke,shcon,nshcon,sideload,xloadact,xloadold,&icfd,
-                  inomat,pslavsurf,pmastsurf,mortar,islavact,cdn,
-                  islavnode,nslavnode,ntie,clearini,islavsurf,ielprop,
-                  prop,energyini,energy,&kscale,iponoeln,inoeln,nener,
-                  orname,network,ipobody,xbodyact,ibody,typeboun,itiefac,
-                  tieset,smscale,&mscalmethod,nbody,t0g,t1g,islavquadel,
-                  aut,irowt,jqt,&mortartrafoflag,&intscheme,physcon,dam,
-                  damn,iponoel);
-              if(ne1d2d==1)SFREE(inum);
-              calcresidual(nmethod,neq,res,fext,f,iexpl,nactdof,aux2,vold,
-                           vini,&dtime,accold,nk,adb,aub,jq,irow,nzl,alpha,
-                           fextini,fini,islavnode,nslavnode,mortar,ntie,mi,
-                           nzs,&nasym,&idamping,veold,adc,auc,cvini,cv,
-                           &alpham,&num_cpus);
+              trial_residual(&nlgt,res);
               lpr=0.;
               for(i=0;i<neq[0];i++) if(fabs(res[i])>lpr) lpr=fabs(res[i]);
               if(lpi==0) lp0=lpr;
@@ -11320,7 +10502,6 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           for(damage_linesearch_trial=1;
               damage_linesearch_trial<=damage_ls_trials;
               damage_linesearch_trial++){
-            SFREE(v);SFREE(stx);SFREE(fn);
             for(i=0;i<neq[1];i++)
               b[i]=flinesearch*damage_linesearch_step[i];
 
@@ -11337,40 +10518,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                 xbounact[i]=xbounold[i]+(xboun[i]-xbounold[i])*pf_lam;
             }
 
-            MNEW(v,double,mt**nk);
-            isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);
-            NNEW(stx,double,6*mi[0]**ne);
-            MNEW(fn,double,mt**nk);
-
-            if(ne1d2d==1)NNEW(inum,ITG,*nk);
-            results(co,nk,kon,ipkon,lakon,ne,v,stn,inum,stx,
-                elcon,nelcon,rhcon,nrhcon,alcon,nalcon,alzero,ielmat,
-                ielorien,norien,orab,ntmat_,t0,t1act,ithermal,
-                prestr,iprestr,filab,eme,emn,een,iperturb,
-                f,fn,nactdof,&iout,qa,vold,b,nodeboun,
-                ndirboun,xbounact,nboun,ipompc,
-                nodempc,coefmpc,labmpc,nmpc,nmethod,cam,&neq[1],veold,accold,
-                &bet,&gam,&dtime,&time,ttime,plicon,nplicon,plkcon,nplkcon,
-                xstateini,xstiff,xstate,npmat_,epn,matname,mi,&ielas,
-                &icmd,ncmat_,nstate_,stiini,vini,ikboun,ilboun,ener,enern,
-                emeini,xstaten,eei,enerini,cocon,ncocon,set,nset,istartset,
-                iendset,ialset,nprint,prlab,prset,qfx,qfn,trab,inotr,ntrans,
-                fmpc,nelemload,nload,ikmpc,ilmpc,istep,&iinc,springarea,
-                &reltime,&ne0,thicke,shcon,nshcon,
-                sideload,xloadact,xloadold,&icfd,inomat,pslavsurf,pmastsurf,
-                mortar,islavact,cdn,islavnode,nslavnode,ntie,clearini,
-                islavsurf,ielprop,prop,energyini,energy,&kscale,iponoeln,
-                inoeln,nener,orname,network,ipobody,xbodyact,ibody,typeboun,
-                itiefac,tieset,smscale,&mscalmethod,nbody,t0g,t1g,
-                islavquadel,aut,irowt,jqt,&mortartrafoflag,
-                &intscheme,physcon,dam,damn,iponoel);
-            if(ne1d2d==1)SFREE(inum);
-
-            calcresidual(nmethod,neq,res,fext,f,iexpl,nactdof,aux2,vold,
-                         vini,&dtime,accold,nk,adb,aub,jq,irow,nzl,alpha,
-                         fextini,fini,islavnode,nslavnode,mortar,ntie,mi,
-                         nzs,&nasym,&idamping,veold,adc,auc,cvini,cv,
-                         &alpham,&num_cpus);
+            trial_residual(&nlgt,res);
             damage_linesearch_dampednorm=0.;
             for(i=0;i<neq[0];i++){
               if(fabs(res[i])>damage_linesearch_dampednorm)
@@ -11404,41 +10552,9 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           if((damage_linesearch_contracted==0)&&
              (fabs(lsladder_final(&damage_lsl)-flinesearch)>1.e-12)){
             flinesearch=lsladder_final(&damage_lsl);
-            SFREE(v);SFREE(stx);SFREE(fn);
             for(i=0;i<neq[1];i++)
               b[i]=flinesearch*damage_linesearch_step[i];
-            MNEW(v,double,mt**nk);
-            isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);
-            NNEW(stx,double,6*mi[0]**ne);
-            MNEW(fn,double,mt**nk);
-            if(ne1d2d==1)NNEW(inum,ITG,*nk);
-            results(co,nk,kon,ipkon,lakon,ne,v,stn,inum,stx,
-                elcon,nelcon,rhcon,nrhcon,alcon,nalcon,alzero,ielmat,
-                ielorien,norien,orab,ntmat_,t0,t1act,ithermal,
-                prestr,iprestr,filab,eme,emn,een,iperturb,
-                f,fn,nactdof,&iout,qa,vold,b,nodeboun,
-                ndirboun,xbounact,nboun,ipompc,
-                nodempc,coefmpc,labmpc,nmpc,nmethod,cam,&neq[1],veold,accold,
-                &bet,&gam,&dtime,&time,ttime,plicon,nplicon,plkcon,nplkcon,
-                xstateini,xstiff,xstate,npmat_,epn,matname,mi,&ielas,
-                &icmd,ncmat_,nstate_,stiini,vini,ikboun,ilboun,ener,enern,
-                emeini,xstaten,eei,enerini,cocon,ncocon,set,nset,istartset,
-                iendset,ialset,nprint,prlab,prset,qfx,qfn,trab,inotr,ntrans,
-                fmpc,nelemload,nload,ikmpc,ilmpc,istep,&iinc,springarea,
-                &reltime,&ne0,thicke,shcon,nshcon,
-                sideload,xloadact,xloadold,&icfd,inomat,pslavsurf,pmastsurf,
-                mortar,islavact,cdn,islavnode,nslavnode,ntie,clearini,
-                islavsurf,ielprop,prop,energyini,energy,&kscale,iponoeln,
-                inoeln,nener,orname,network,ipobody,xbodyact,ibody,typeboun,
-                itiefac,tieset,smscale,&mscalmethod,nbody,t0g,t1g,
-                islavquadel,aut,irowt,jqt,&mortartrafoflag,
-                &intscheme,physcon,dam,damn,iponoel);
-            if(ne1d2d==1)SFREE(inum);
-            calcresidual(nmethod,neq,res,fext,f,iexpl,nactdof,aux2,vold,
-                         vini,&dtime,accold,nk,adb,aub,jq,irow,nzl,alpha,
-                         fextini,fini,islavnode,nslavnode,mortar,ntie,mi,
-                         nzs,&nasym,&idamping,veold,adc,auc,cvini,cv,
-                         &alpham,&num_cpus);
+            trial_residual(&nlgt,res);
             damage_linesearch_dampednorm=damage_lsl.bestres;
             damage_ls_bestused++;
           }
@@ -11492,40 +10608,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         rnpt=2;                       /* alpha=0 and alpha=1 only, at first */
         for(rii=0;rii<rnpt;rii++){
           ra=rayA[rii];
-          SFREE(v);SFREE(stx);SFREE(fn);
           for(rjj=0;rjj<neq[1];rjj++) b[rjj]=ra*damage_ray_p[rjj];
-          MNEW(v,double,mt**nk);
-          isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);
-          NNEW(stx,double,6*mi[0]**ne);
-          MNEW(fn,double,mt**nk);
-          if(ne1d2d==1)NNEW(inum,ITG,*nk);
-          results(co,nk,kon,ipkon,lakon,ne,v,stn,inum,stx,
-              elcon,nelcon,rhcon,nrhcon,alcon,nalcon,alzero,ielmat,
-              ielorien,norien,orab,ntmat_,t0,t1act,ithermal,
-              prestr,iprestr,filab,eme,emn,een,iperturb,
-              f,fn,nactdof,&iout,qa,vold,b,nodeboun,
-              ndirboun,xbounact,nboun,ipompc,
-              nodempc,coefmpc,labmpc,nmpc,nmethod,cam,&neq[1],veold,accold,
-              &bet,&gam,&dtime,&time,ttime,plicon,nplicon,plkcon,nplkcon,
-              xstateini,xstiff,xstate,npmat_,epn,matname,mi,&ielas,
-              &icmd,ncmat_,nstate_,stiini,vini,ikboun,ilboun,ener,enern,
-              emeini,xstaten,eei,enerini,cocon,ncocon,set,nset,istartset,
-              iendset,ialset,nprint,prlab,prset,qfx,qfn,trab,inotr,ntrans,
-              fmpc,nelemload,nload,ikmpc,ilmpc,istep,&iinc,springarea,
-              &reltime,&ne0,thicke,shcon,nshcon,
-              sideload,xloadact,xloadold,&icfd,inomat,pslavsurf,pmastsurf,
-              mortar,islavact,cdn,islavnode,nslavnode,ntie,clearini,
-              islavsurf,ielprop,prop,energyini,energy,&kscale,iponoeln,
-              inoeln,nener,orname,network,ipobody,xbodyact,ibody,typeboun,
-              itiefac,tieset,smscale,&mscalmethod,nbody,t0g,t1g,
-              islavquadel,aut,irowt,jqt,&mortartrafoflag,
-              &intscheme,physcon,dam,damn,iponoel);
-          if(ne1d2d==1)SFREE(inum);
-          calcresidual(nmethod,neq,damage_ray_res,fext,f,iexpl,nactdof,aux2,
-                       vold,vini,&dtime,accold,nk,adb,aub,jq,irow,nzl,alpha,
-                       fextini,fini,islavnode,nslavnode,mortar,ntie,mi,
-                       nzs,&nasym,&idamping,veold,adc,auc,cvini,cv,
-                       &alpham,&num_cpus);
+          trial_residual(&nlgt,damage_ray_res);
           rinf[rii]=0.; rl2[rii]=0.; rptr[rii]=0.;
           for(rjj=0;rjj<neq[0];rjj++){
             if(fabs(damage_ray_res[rjj])>rinf[rii])
@@ -11609,41 +10693,9 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
             if(r0n2<=0.) r0n2=1.e-300;
             if(r0ni<=0.) r0ni=1.e-300;
             for(dii=2;dii<14;dii++){
-              SFREE(v);SFREE(stx);SFREE(fn);
               for(djj=0;djj<neq[1];djj++)
                 b[djj]=rayA[dii]*damage_ray_p[djj];
-              MNEW(v,double,mt**nk);
-              isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);
-              NNEW(stx,double,6*mi[0]**ne);
-              MNEW(fn,double,mt**nk);
-              if(ne1d2d==1)NNEW(inum,ITG,*nk);
-              results(co,nk,kon,ipkon,lakon,ne,v,stn,inum,stx,
-                  elcon,nelcon,rhcon,nrhcon,alcon,nalcon,alzero,ielmat,
-                  ielorien,norien,orab,ntmat_,t0,t1act,ithermal,
-                  prestr,iprestr,filab,eme,emn,een,iperturb,
-                  f,fn,nactdof,&iout,qa,vold,b,nodeboun,
-                  ndirboun,xbounact,nboun,ipompc,
-                  nodempc,coefmpc,labmpc,nmpc,nmethod,cam,&neq[1],veold,
-                  accold,&bet,&gam,&dtime,&time,ttime,plicon,nplicon,
-                  plkcon,nplkcon,xstateini,xstiff,xstate,npmat_,epn,matname,
-                  mi,&ielas,&icmd,ncmat_,nstate_,stiini,vini,ikboun,ilboun,
-                  ener,enern,emeini,xstaten,eei,enerini,cocon,ncocon,set,
-                  nset,istartset,iendset,ialset,nprint,prlab,prset,qfx,qfn,
-                  trab,inotr,ntrans,fmpc,nelemload,nload,ikmpc,ilmpc,istep,
-                  &iinc,springarea,&reltime,&ne0,thicke,shcon,nshcon,
-                  sideload,xloadact,xloadold,&icfd,inomat,pslavsurf,
-                  pmastsurf,mortar,islavact,cdn,islavnode,nslavnode,ntie,
-                  clearini,islavsurf,ielprop,prop,energyini,energy,&kscale,
-                  iponoeln,inoeln,nener,orname,network,ipobody,xbodyact,
-                  ibody,typeboun,itiefac,tieset,smscale,&mscalmethod,nbody,
-                  t0g,t1g,islavquadel,aut,irowt,jqt,&mortartrafoflag,
-                  &intscheme,physcon,dam,damn,iponoel);
-              if(ne1d2d==1)SFREE(inum);
-              calcresidual(nmethod,neq,damage_ray_res,fext,f,iexpl,nactdof,
-                           aux2,vold,vini,&dtime,accold,nk,adb,aub,jq,irow,
-                           nzl,alpha,fextini,fini,islavnode,nslavnode,mortar,
-                           ntie,mi,nzs,&nasym,&idamping,veold,adc,auc,cvini,
-                           cv,&alpham,&num_cpus);
+              trial_residual(&nlgt,damage_ray_res);
               dn2=0.;di=0.;dworst=-1;dwv=0.;dpred=0.;
               for(djj=0;djj<neq[0];djj++){
                 de=damage_ray_res[djj]-(1.-rayA[dii])*damage_ray_r0[djj];
@@ -11751,40 +10803,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
             isiz=bnst*mi[0]**ne;
             cpypardou(xstate,damage_bt_xs,&isiz,&num_cpus);
           }
-          SFREE(v);SFREE(stx);SFREE(fn);
           for(bjj=0;bjj<neq[1];bjj++) b[bjj]=ba*damage_ray_p[bjj];
-          MNEW(v,double,mt**nk);
-          isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);
-          NNEW(stx,double,6*mi[0]**ne);
-          MNEW(fn,double,mt**nk);
-          if(ne1d2d==1)NNEW(inum,ITG,*nk);
-              results(co,nk,kon,ipkon,lakon,ne,v,stn,inum,stx,
-                  elcon,nelcon,rhcon,nrhcon,alcon,nalcon,alzero,ielmat,
-                  ielorien,norien,orab,ntmat_,t0,t1act,ithermal,
-                  prestr,iprestr,filab,eme,emn,een,iperturb,
-                  f,fn,nactdof,&iout,qa,vold,b,nodeboun,
-                  ndirboun,xbounact,nboun,ipompc,
-                  nodempc,coefmpc,labmpc,nmpc,nmethod,cam,&neq[1],veold,
-                  accold,&bet,&gam,&dtime,&time,ttime,plicon,nplicon,
-                  plkcon,nplkcon,xstateini,xstiff,xstate,npmat_,epn,matname,
-                  mi,&ielas,&icmd,ncmat_,nstate_,stiini,vini,ikboun,ilboun,
-                  ener,enern,emeini,xstaten,eei,enerini,cocon,ncocon,set,
-                  nset,istartset,iendset,ialset,nprint,prlab,prset,qfx,qfn,
-                  trab,inotr,ntrans,fmpc,nelemload,nload,ikmpc,ilmpc,istep,
-                  &iinc,springarea,&reltime,&ne0,thicke,shcon,nshcon,
-                  sideload,xloadact,xloadold,&icfd,inomat,pslavsurf,
-                  pmastsurf,mortar,islavact,cdn,islavnode,nslavnode,ntie,
-                  clearini,islavsurf,ielprop,prop,energyini,energy,&kscale,
-                  iponoeln,inoeln,nener,orname,network,ipobody,xbodyact,
-                  ibody,typeboun,itiefac,tieset,smscale,&mscalmethod,nbody,
-                  t0g,t1g,islavquadel,aut,irowt,jqt,&mortartrafoflag,
-                  &intscheme,physcon,dam,damn,iponoel);
-          if(ne1d2d==1)SFREE(inum);
-          calcresidual(nmethod,neq,damage_ray_res,fext,f,iexpl,nactdof,aux2,
-                       vold,vini,&dtime,accold,nk,adb,aub,jq,irow,nzl,alpha,
-                       fextini,fini,islavnode,nslavnode,mortar,ntie,mi,nzs,
-                       &nasym,&idamping,veold,adc,auc,cvini,cv,&alpham,
-                       &num_cpus);
+          trial_residual(&nlgt,damage_ray_res);
           br=0.;br2=0.;
           for(bjj=0;bjj<neq[0];bjj++){
             if(fabs(damage_ray_res[bjj])>br) br=fabs(damage_ray_res[bjj]);
@@ -11886,27 +10906,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         NNEW(stx,double,6*mi[0]**ne);
         MNEW(fn,double,mt**nk);
         if(ne1d2d==1)NNEW(inum,ITG,*nk);
-              results(co,nk,kon,ipkon,lakon,ne,v,stn,inum,stx,
-                  elcon,nelcon,rhcon,nrhcon,alcon,nalcon,alzero,ielmat,
-                  ielorien,norien,orab,ntmat_,t0,t1act,ithermal,
-                  prestr,iprestr,filab,eme,emn,een,iperturb,
-                  f,fn,nactdof,&iout,qa,vold,b,nodeboun,
-                  ndirboun,xbounact,nboun,ipompc,
-                  nodempc,coefmpc,labmpc,nmpc,nmethod,cam,&neq[1],veold,
-                  accold,&bet,&gam,&dtime,&time,ttime,plicon,nplicon,
-                  plkcon,nplkcon,xstateini,xstiff,xstate,npmat_,epn,matname,
-                  mi,&ielas,&icmd,ncmat_,nstate_,stiini,vini,ikboun,ilboun,
-                  ener,enern,emeini,xstaten,eei,enerini,cocon,ncocon,set,
-                  nset,istartset,iendset,ialset,nprint,prlab,prset,qfx,qfn,
-                  trab,inotr,ntrans,fmpc,nelemload,nload,ikmpc,ilmpc,istep,
-                  &iinc,springarea,&reltime,&ne0,thicke,shcon,nshcon,
-                  sideload,xloadact,xloadold,&icfd,inomat,pslavsurf,
-                  pmastsurf,mortar,islavact,cdn,islavnode,nslavnode,ntie,
-                  clearini,islavsurf,ielprop,prop,energyini,energy,&kscale,
-                  iponoeln,inoeln,nener,orname,network,ipobody,xbodyact,
-                  ibody,typeboun,itiefac,tieset,smscale,&mscalmethod,nbody,
-                  t0g,t1g,islavquadel,aut,irowt,jqt,&mortartrafoflag,
-                  &intscheme,physcon,dam,damn,iponoel);
+              trial_results(&nlgt);
         if(ne1d2d==1)SFREE(inum);
         glob_fired(&damage_glob,GLOB_BACKTRACK);
         printf("[DAMAGE BT] inc=%" ITGFORMAT " iter=%" ITGFORMAT
@@ -11959,40 +10959,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 
         for(apass=0;apass<3;apass++){
           aal=(apass==1)?(1.-damage_aba_a):damage_aba_a;
-          SFREE(v);SFREE(stx);SFREE(fn);
           for(i=0;i<neq[1];i++) b[i]=aal*damage_ray_p[i];
-          MNEW(v,double,mt**nk);
-          isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);
-          NNEW(stx,double,6*mi[0]**ne);
-          MNEW(fn,double,mt**nk);
-          if(ne1d2d==1)NNEW(inum,ITG,*nk);
-          results(co,nk,kon,ipkon,lakon,ne,v,stn,inum,stx,
-              elcon,nelcon,rhcon,nrhcon,alcon,nalcon,alzero,ielmat,
-              ielorien,norien,orab,ntmat_,t0,t1act,ithermal,
-              prestr,iprestr,filab,eme,emn,een,iperturb,
-              f,fn,nactdof,&iout,qa,vold,b,nodeboun,
-              ndirboun,xbounact,nboun,ipompc,
-              nodempc,coefmpc,labmpc,nmpc,nmethod,cam,&neq[1],veold,
-              accold,&bet,&gam,&dtime,&time,ttime,plicon,nplicon,
-              plkcon,nplkcon,xstateini,xstiff,xstate,npmat_,epn,matname,
-              mi,&ielas,&icmd,ncmat_,nstate_,stiini,vini,ikboun,ilboun,
-              ener,enern,emeini,xstaten,eei,enerini,cocon,ncocon,set,
-              nset,istartset,iendset,ialset,nprint,prlab,prset,qfx,qfn,
-              trab,inotr,ntrans,fmpc,nelemload,nload,ikmpc,ilmpc,istep,
-              &iinc,springarea,&reltime,&ne0,thicke,shcon,nshcon,
-              sideload,xloadact,xloadold,&icfd,inomat,pslavsurf,
-              pmastsurf,mortar,islavact,cdn,islavnode,nslavnode,ntie,
-              clearini,islavsurf,ielprop,prop,energyini,energy,&kscale,
-              iponoeln,inoeln,nener,orname,network,ipobody,xbodyact,
-              ibody,typeboun,itiefac,tieset,smscale,&mscalmethod,nbody,
-              t0g,t1g,islavquadel,aut,irowt,jqt,&mortartrafoflag,
-              &intscheme,physcon,dam,damn,iponoel);
-          if(ne1d2d==1)SFREE(inum);
-          calcresidual(nmethod,neq,damage_ray_res,fext,f,iexpl,nactdof,aux2,
-                       vold,vini,&dtime,accold,nk,adb,aub,jq,irow,nzl,alpha,
-                       fextini,fini,islavnode,nslavnode,mortar,ntie,mi,nzs,
-                       &nasym,&idamping,veold,adc,auc,cvini,cv,&alpham,
-                       &num_cpus);
+          trial_residual(&nlgt,damage_ray_res);
           if(apass==0){
             isiz=neq[1];cpypardou(daba_res,damage_ray_res,&isiz,&num_cpus);
             isiz=mt**nk;cpypardou(daba_v,v,&isiz,&num_cpus);
@@ -12051,27 +11019,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         NNEW(stx,double,6*mi[0]**ne);
         MNEW(fn,double,mt**nk);
         if(ne1d2d==1)NNEW(inum,ITG,*nk);
-          results(co,nk,kon,ipkon,lakon,ne,v,stn,inum,stx,
-              elcon,nelcon,rhcon,nrhcon,alcon,nalcon,alzero,ielmat,
-              ielorien,norien,orab,ntmat_,t0,t1act,ithermal,
-              prestr,iprestr,filab,eme,emn,een,iperturb,
-              f,fn,nactdof,&iout,qa,vold,b,nodeboun,
-              ndirboun,xbounact,nboun,ipompc,
-              nodempc,coefmpc,labmpc,nmpc,nmethod,cam,&neq[1],veold,
-              accold,&bet,&gam,&dtime,&time,ttime,plicon,nplicon,
-              plkcon,nplkcon,xstateini,xstiff,xstate,npmat_,epn,matname,
-              mi,&ielas,&icmd,ncmat_,nstate_,stiini,vini,ikboun,ilboun,
-              ener,enern,emeini,xstaten,eei,enerini,cocon,ncocon,set,
-              nset,istartset,iendset,ialset,nprint,prlab,prset,qfx,qfn,
-              trab,inotr,ntrans,fmpc,nelemload,nload,ikmpc,ilmpc,istep,
-              &iinc,springarea,&reltime,&ne0,thicke,shcon,nshcon,
-              sideload,xloadact,xloadold,&icfd,inomat,pslavsurf,
-              pmastsurf,mortar,islavact,cdn,islavnode,nslavnode,ntie,
-              clearini,islavsurf,ielprop,prop,energyini,energy,&kscale,
-              iponoeln,inoeln,nener,orname,network,ipobody,xbodyact,
-              ibody,typeboun,itiefac,tieset,smscale,&mscalmethod,nbody,
-              t0g,t1g,islavquadel,aut,irowt,jqt,&mortartrafoflag,
-              &intscheme,physcon,dam,damn,iponoel);
+          trial_results(&nlgt);
         if(ne1d2d==1)SFREE(inum);
       }
 
@@ -12079,11 +11027,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 
       // next line: change on 19072022
       if((*iexpl<=1)||(*nener==1)){
-	calcresidual(nmethod,neq,b,fext,f,iexpl,nactdof,aux2,vold,vini,&dtime,
-		     accold,nk,adb,aub,jq,irow,nzl,alpha,fextini,fini,
-		     islavnode,nslavnode,mortar,ntie,mi,
-		     nzs,&nasym,&idamping,veold,adc,auc,cvini,cv,&alpham,
-		     &num_cpus);
+	trial_reduce(&nlgt,b);
       }
 
       if(damage_linesearch_applied){
@@ -14977,27 +13921,7 @@ damage_controller_done:
 #ifdef COMPANY
 	FORTRAN(uinit,());
 #endif
-	results(co,nk,kon,ipkon,lakon,ne,v,stn,inum,stx,
-		elcon,nelcon,rhcon,nrhcon,alcon,nalcon,alzero,ielmat,
-		ielorien,norien,orab,ntmat_,t0,t1act,ithermal,
-		prestr,iprestr,filab,eme,emn,een,iperturb,
-		f,fn,nactdof,&iout,qa,vold,b,nodeboun,
-		ndirboun,xbounact,nboun,ipompc,
-		nodempc,coefmpc,labmpc,nmpc,nmethod,cam,&neq[1],veold,accold,
-		&bet,&gam,&dtime,&time,ttime,plicon,nplicon,plkcon,nplkcon,
-		xstateini,xstiff,xstate,npmat_,epn,matname,mi,&ielas,&icmd,
-		ncmat_,nstate_,stiini,vini,ikboun,ilboun,ener,enern,emeini,
-		xstaten,eei,enerini,cocon,ncocon,set,nset,istartset,iendset,
-		ialset,nprint,prlab,prset,qfx,qfn,trab,inotr,ntrans,fmpc,
-		nelemload,nload,ikmpc,ilmpc,istep,&iinc,springarea,
-		&reltime,&ne0,thicke,shcon,nshcon,
-		sideload,xloadact,xloadold,&icfd,inomat,pslavsurf,pmastsurf,
-		mortar,islavact,cdn,islavnode,nslavnode,ntie,clearini,
-		islavsurf,ielprop,prop,energyini,energy,&kscale,iponoeln,
-		inoeln,nener,orname,network,ipobody,xbodyact,ibody,typeboun,
-		itiefac,tieset,smscale,&mscalmethod,nbody,t0g,t1g,
-		islavquadel,aut,irowt,jqt,&mortartrafoflag,
-		&intscheme,physcon,dam,damn,iponoel);
+	trial_results(&nlgt);
       
 	isiz=mt**nk;cpypardou(vold,v,&isiz,&num_cpus);
 
@@ -15126,27 +14050,7 @@ damage_controller_done:
 #ifdef COMPANY
     FORTRAN(uinit,());
 #endif
-    results(co,nk,kon,ipkon,lakon,ne,v,stn,inum,stx,
-	    elcon,nelcon,rhcon,nrhcon,alcon,nalcon,alzero,ielmat,
-	    ielorien,norien,orab,ntmat_,t0,t1act,ithermal,
-	    prestr,iprestr,filab,eme,emn,een,iperturb,
-	    f,fn,nactdof,&iout,qa,vold,b,nodeboun,
-	    ndirboun,xbounact,nboun,ipompc,
-	    nodempc,coefmpc,labmpc,nmpc,nmethod,cam,&neq[1],veold,accold,
-            &bet,&gam,&dtime,&time,ttime,plicon,nplicon,plkcon,nplkcon,
-	    xstateini,xstiff,xstate,npmat_,epn,matname,mi,&ielas,&icmd,
-            ncmat_,nstate_,stiini,vini,ikboun,ilboun,ener,enern,emeini,
-            xstaten,eei,enerini,cocon,ncocon,set,nset,istartset,iendset,
-            ialset,nprint,prlab,prset,qfx,qfn,trab,inotr,ntrans,fmpc,
-	    nelemload,nload,ikmpc,ilmpc,istep,&iinc,springarea,
-            &reltime,&ne0,thicke,shcon,nshcon,
-            sideload,xloadact,xloadold,&icfd,inomat,pslavsurf,pmastsurf,
-            mortar,islavact,cdn,islavnode,nslavnode,ntie,clearini,
-	    islavsurf,ielprop,prop,energyini,energy,&kscale,iponoeln,
-            inoeln,nener,orname,network,ipobody,xbodyact,ibody,typeboun,
-	    itiefac,tieset,smscale,&mscalmethod,nbody,t0g,t1g,
-	    islavquadel,aut,irowt,jqt,&mortartrafoflag,
-	    &intscheme,physcon,dam,damn,iponoel);
+    trial_results(&nlgt);
     
     isiz=mt**nk;cpypardou(vold,v,&isiz,&num_cpus);
 
