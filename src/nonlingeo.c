@@ -1335,7 +1335,7 @@ static ITG damage_de13_mark_deadsole(const double *dam,const double *visc,
  * have SEPARATED, and a separated facet ties nothing - so counting only
  * LIVE facets looks like a correction rather than a loosening.  It was
  * implemented as CCX_DAMAGE_DEADALL_FACET and measured on seven s3rad arms
- * built from one binary (research/14-THE-TRAP.md).  It bought nothing: the
+ * built from one binary.  It bought nothing: the
  * arm carrying it lands where the arm without it lands, to four figures on
  * the terminal grip reaction.  Worse, in one configuration it was the only
  * difference between a run reaching theta 0.5569 and one stopping at
@@ -2071,13 +2071,12 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
   ITG damage_spc_force=0;
 
   /* [TOPOLOGY] the erosion transaction.  Nine locals with no owner became
-     one object with one lifetime; handover/11-TOPOLOGY.md has the count
-     that argued for it.  Six copies of "discard the marked set", in three
+     one object with one lifetime.  Six copies of "discard the marked set", in three
      different variants, are now one call. */
   topo_txn dtxn;
 
   /* [GLOBALIZE] the census of which globalization mechanism ever changes
-     anything; handover/12-GLOBALIZATION.md.  Counts and reports, decides
+     anything.  Counts and reports, decides
      nothing, changes no arithmetic. */
   glob_census damage_glob;
   double damage_nl_ell=0.;
@@ -2841,7 +2840,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
      first real use.
 
      "A responsibility with no home ends up nested inside whatever code
-     happened to be nearby" - 08-OBJECT-MODEL.md section 1, describing a
+     happened to be nearby" - describing a
      different instance of the same thing. */
   if((damage_de13_env=ccxopt_getenv("CCX_STRUCT_FD_INC"))!=NULL)
     damage_fd_inc=atoi(damage_de13_env);
@@ -2918,11 +2917,11 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     if(damage_de12_matcount>0) damage_de12_enabled=1;
     if(damage_de12_enabled){
       /* FD_SYM - mode 1, the symmetric part of the rank-1 term folded
-         into the 21-entry tangent - was DELETED on 2026-09-11.  It had
+         into the 21-entry tangent - was DELETED.  It had
          two convention defects that made it destroy runs; corrected, it
          cost 13% more Newton iterations than applying no correction at
          all on both fast decks and moved the fracture by one element.
-         research/06-TANGENT-VERDICT.md carries the table.  The spelling
+         The measurement carries the table.  The spelling
          is still recognised so that a deck or a script carrying it is
          TOLD, rather than silently running the stock tangent. */
 
@@ -3595,7 +3594,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
          FRACTION of the load path the specimen started with, which is
          dimensionless and needs no knowledge of the section area.
 
-         Measured on s3rad (research/09-SEVERANCE.md): the run ends with
+         Measured on s3rad: the run ends with
          every topological rule saying CONNECTED and the two grips joined
          by ONE triangular face - 0.05% of a section - carrying 2.1% of
          peak load, after spending 18.4% of its wall clock on a specimen
@@ -3891,7 +3890,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
       /* [CENSUS] the same discipline, one level down: the census is a
          MEASUREMENT and not a judgement, but a measurement that is wrong is
          worse than none, because it is the number every reading in
-         02-DIAGNOSTICS.md section 3 is taken against.  Prove it before
+         the census is taken against.  Prove it before
          printing it, on every run that arms it.
 
          Note what is suppressed on failure: the REPORT, and only the report.
@@ -4544,7 +4543,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                "this is the DEFAULT and the measured best on both fast "
                "decks; set CCX_DAMAGE_TANGENT=UNSYM for the consistent "
                "tangent, which buys 0.2%% of iterations for 37%% of "
-               "runtime (research/06-TANGENT-VERDICT.md)\n");
+               "runtime\n");
       }
       if(damage_reeq_scale_mode==1){
         printf("[DAMAGE SOLVER NC2] terminal same-load correction scale "
@@ -7671,7 +7670,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	    nasym=1;
 	    printf("[DAMAGE TANGENT UNSYM] bulk assembly switched to the "
 		   "asymmetric path (nasym=1); PARDISO symbolic reuse is "
-		   "available here since 2026-08-28 (mtype=1, structurally "
+		   "available here (mtype=1, structurally "
 		   "symmetric) - set CCX_PARDISO_REUSE_SYMBOLIC=1\n");
 	    fflush(stdout);
 	  }
@@ -12554,7 +12553,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	/* store the residual forces for the next iteration */
 
 	/* [CONVERGE] the numbers the judgement is made from now have an
-	   owner: converge.c, step A of handover/10-CONVERGENCE.md.  The
+	   owner: converge.c.  The
 	   AUTOSPC-FORCE exclusion used to be a `continue` in the middle of
 	   the loop that computes ram[0]; it is now a named property of the
 	   object that owns the reduction, and what it excluded is read back

@@ -3,8 +3,7 @@
 
 /* Why this module exists
    ----------------------
-   handover/11-TOPOLOGY.md has the argument; the short form is a count.
-   nonlingeo.c held 139 references to nine `damage_tent_*` locals, and with
+   The argument is a count.  nonlingeo.c held 139 references to nine `damage_tent_*` locals, and with
    no object to call, two blocks got written more than once:
 
      - "discard the transaction" - four SFREE, four =NULL and count=0 -
@@ -183,9 +182,9 @@ void topo_txn_collect(topo_txn *t,ITG step,ITG increment,
    two implementations in this repository and no owner for either.
 
    The nine fields written here are parsed by tools/ccxdiff.py
-   (read_damage), which is the comparison tool every bit-identity claim in
-   this project rests on.  If the writer gains a field and the reader does
-   not, ccxdiff keeps comparing and starts comparing the wrong columns -
+   (read_damage), the comparison tool every bit-identity claim rests on.
+   If the writer gains a field and the reader does not, ccxdiff keeps
+   comparing and starts comparing the wrong columns -
    a silent failure in the instrument rather than in the thing measured,
    which is the expensive kind.  The order is therefore stated once, here,
    and the self test writes a batch and reads it back to prove the writer
@@ -275,10 +274,7 @@ ITG topo_selftest(void)
       {"C3D8  LC",27,27},          /* composite layer: also mi0.  lakon is
                                       EXACTLY eight characters and the L/C
                                       marker sits at 6 and 7, so a nine-
-                                      character label is not a composite -
-                                      which is what this expectation said
-                                      on the first attempt, and the test
-                                      caught its own author. */
+                                      character label is not a composite. */
       {"UNKNOWN ",13,13}};         /* fallback is mi0, not a guess */
     ITG k,allok=1;
     for(k=0;k<12;k++){

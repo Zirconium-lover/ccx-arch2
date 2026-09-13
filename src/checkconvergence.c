@@ -126,8 +126,8 @@ void checkconvergence(double *co,ITG *nk,ITG *kon,ITG *ipkon,char *lakon,
 
   if(qa[2]>0.){idivergence=1;}
 
-  /* [CONVERGE] what counts as converged now has an owner: converge.c,
-     step B of handover/10-CONVERGENCE.md.  Eighty lines of && and || -
+  /* [CONVERGE] what counts as converged now has an owner: converge.c.
+     Eighty lines of && and || -
      the tolerance selection, the ram2 ratchet and the same eight-clause
      expression written out three times with the names thrown away - are
      one call whose leaves have names, values, thresholds and a status.

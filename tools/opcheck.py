@@ -7,8 +7,7 @@
 
 Why this exists rather than another shell loop: the probe is run dozens of
 times while a tangent is being chased, every run is an A/B, and this project
-has already paid once for an A/B whose two arms were configured identically
-(handover/04-REFUTED.md).  So this script
+has already paid once for an A/B whose two arms were configured identically.  So this script
 
   - passes overrides POSITIONALLY, because test/fast/run_fast.sh delegates to
     run_s3rad.sh, which exports twelve CCX_* names unconditionally and would

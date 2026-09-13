@@ -40,8 +40,7 @@ ITG *icolpardiso=NULL,*pointers=NULL,iparm[64];
    column (isortid), and an interleave into neq+2*nzs slots.
 
    Measured on s3rad: 73 ms a call, 5344 calls, 9.4% of a 69-minute run -
-   6.5 minutes spent rewriting the same numbers into the same places
-   (research/01-PROFILING.md).
+   6.5 minutes spent rewriting the same numbers into the same places.
 
    But the permutation that sort produces depends ONLY on (icol,irow,jq),
    the sparsity pattern - the values are pure payload.  The mechanism that
@@ -68,13 +67,12 @@ static ITG pardiso_repack_on(void)
 {
   static ITG init=0,on=0;
   if(!init){
-    /* ON by default since 2026-09-12.  It only ever engages where
+    /* ON by default.  It only ever engages where
        symbolic reuse is already eligible, so it rides an existing opt-in
        and changes nothing where that is off.  The evidence for the flip:
        bit-identical on both fast decks and on the target deck - the
        deletion record byte-for-byte, all 3741, same ending increment -
-       for 11.7x less repacking and 14% less wall clock at scale
-       (research/01-PROFILING.md).  Set it to 0 to turn it off. */
+       for 11.7x less repacking and 14% less wall clock at scale.  Set it to 0 to turn it off. */
 
     const char *e=ccxopt_getenv("CCX_PARDISO_REPACK");
     init=1;
@@ -162,8 +160,7 @@ static ITG pardiso_cgs_nrhs=1,pardiso_cgs_done=0;
 
    iparm(7) - iparm[6] here - is the number of refinement steps PARDISO
    ACTUALLY performed for a solve, as opposed to iparm(8) which only bounds
-   them.  Nothing in this tree read it, and the complete s3rad profile
-   (research/01-PROFILING.md) turned that into a question with no answer: the
+   them.  Nothing in this tree read it, and the complete s3rad profile turned that into a question with no answer: the
    triangular solve steps from 28 ms a call to 87 ms across two 120-second
    windows while the numeric factorisation that produced those factors stays
    flat at 377 ms, the system size moves 0.3%, solves per factorisation stay
@@ -247,7 +244,7 @@ static ITG pardiso_reuse_eligible(ITG symmetryflag,ITG inputformat)
      numerically asymmetric type (mtype=1).  mtype=1 is what the damage
      rank-1 tangent produces: mafilldamas writes into the pattern mafillsm
      has already built and the upper half mirrors it, so losing symmetry
-     does not change the sparsity.  Until 2026-08-28 the gate here was
+     does not change the sparsity.  The gate here was formerly
      (symmetryflag==0), so every run of the fracture branch - which is
      always CCX_DAMAGE_TANGENT=UNSYM, symmetryflag=2 - recomputed the
      ordering for every factorisation.
@@ -730,7 +727,7 @@ void pardiso_factor(double *ad, double *au, double *adb, double *aub,
      analyse+factorise, 22 is factorise against a retained analysis, 23 is
      the combined factorise-and-solve the CGS path uses.  The difference
      between the means of 12 and 22 IS the analysis, and that is the number
-     the fixed-sparsity candidate in 08-OBJECT-MODEL.md section 4 turns on. */
+     the fixed-sparsity candidate turns on. */
   {
     const char *ph=(phase==12)?"pardiso phase 12 (analyse+numeric)":
                    ((phase==22)?"pardiso phase 22 (numeric only)":

@@ -3,7 +3,7 @@
  *
  *     The diagnostics in this tree are printf calls interleaved with the
  *     solve, in ad-hoc formats, gated by environment variables.
- *     02-DIAGNOSTICS.md is eleven readings a human performs by eye, and it
+ *     The census is eleven readings a human performs by eye, and it
  *     cannot be anything else while the output is prose.
  *
  *     PETSc's separation is the model: a monitor PRODUCES nothing and a
@@ -24,7 +24,7 @@
  *
  *      grep '^\[MON\] ' run.log | jq -s '...'
  *
- *  This is what turns 02-DIAGNOSTICS.md from a document into a program.
+ *  This is what turns those readings from a procedure into a program.
  */
 void monitor_stiffness(const stiffcensus *c,ITG iinc,double time){
   /* the line as it has always been - the gate parses it */

@@ -4,7 +4,7 @@
 /* Why this module exists
    ----------------------
    Ask this tree "what counts as converged here" and you arrive at five
-   places (handover/10-CONVERGENCE.md section 1).  This file is the first of
+   places.  This file is the first of
    them to get an owner: the REDUCTION - what ram, ram1, ram2, uam and qam
    are, and which degrees of freedom are allowed to contribute to them.
 
@@ -14,7 +14,7 @@
    object whose answer that is, so it lives where the loop happened to be -
    and the thing it modifies has no name, which is why it could be measured
    for two days before anyone established that on the target deck it changes
-   nothing at all (research/14-THE-TRAP.md).
+   nothing at all.
 
    Contract
    --------
@@ -33,8 +33,7 @@
    ----------------
    Not the verdict (checkconvergence.c still owns the boolean), not the
    increment control, not the printing.  Those are steps B and C and the
-   Increment and Monitor objects; 10-CONVERGENCE.md sections 3 and 4 say
-   why they are held back rather than done here.
+   Increment and Monitor objects, held back rather than done here.
 
    Provenance
    ----------
@@ -280,21 +279,20 @@ void converge_report(const converge *c,const ITG *nactdofinv,ITG mt,
 
 /* ------------------------------------------------- what counts as converged
 
-   Step B of handover/10-CONVERGENCE.md.  Transcribed from
-   checkconvergence.c lines 128-205, clause for clause, in the same order.
+   Transcribed from checkconvergence.c, clause for clause, in the same
+   order.
 
-   ONE DELIBERATE DEVIATION from the sketch in the design note, and it is
-   the reason this is worth doing: the sketch short-circuited like the
-   original, so a leaf past the first failure was never evaluated and could
-   not be reported.  Every leaf here is a comparison of two doubles with no
+   ONE DELIBERATE DEVIATION from the original, and it is the reason this
+   is worth doing: the original short-circuited, so a leaf past the first
+   failure was never evaluated and could not be reported.  Every leaf here is a comparison of two doubles with no
    side effect, so evaluating all of them cannot change the combination -
    and then the table is complete even for the iteration that failed on the
    first clause.  "Which clause is holding this increment back" is the
    question this object exists to answer; a table with holes in it does not
    answer it.
 
-   The boolean is unchanged.  That is the standard for this step and it is
-   checked on the gate, on stdout and on the target deck, not asserted. */
+   The boolean is unchanged.  That is the standard here and it is checked
+   on the gate, on stdout and on the target deck, not asserted. */
 
 static ITG leaf(cvg_verdict *v,const char *name,ITG ok,
                 double value,double thresh)
@@ -410,7 +408,7 @@ ITG converge_verdict(cvg_verdict *v,const cvg_tol *t,ITG ithermal,ITG iit,
             ram[1]*cam[1],c2[1]*uam[1]*ram2[1]);
     /* change 25.11.2017 in the stock source: this leaf alone carries an
        extra iit>1, which the mechanical and thermomechanical forms of the
-       same leaf do not.  Transcribed as found; see handover/05-DEBT.md. */
+       same leaf do not.  Transcribed as found. */
     b3=leaf(v,"TempResidualWellBelow",(ram[1]<=t->ral*qam[1])&&(iit>1),
             ram[1],t->ral*qam[1]);
     b4=leaf(v,"TempLoadIncrementSmall",qa[1]<=t->ea*qam[1],qa[1],
@@ -432,7 +430,7 @@ ITG converge_verdict(cvg_verdict *v,const cvg_tol *t,ITG ithermal,ITG iit,
     a1=leaf(v,"IterationsAtLeast2",iit>1,(double)iit,1.);
     a2=leaf(v,"ForceResidual",ram[0]<=c1[0]*qam[0],ram[0],c1[0]*qam[0]);
     /* no ContactSetStable leaf here: the stock thermomechanical form omits
-       iflagact, which the mechanical form requires.  See 05-DEBT.md. */
+       iflagact, which the mechanical form requires. */
     a4=leaf(v,"CreepTolerance",(nmethod!=-1)||(qa[3]<=t->cetol),
             qa[3],t->cetol);
     b1=leaf(v,"SolutionChange",cam[0]<=c2[0]*uam[0],cam[0],c2[0]*uam[0]);
@@ -825,8 +823,7 @@ ITG converge_selftest(void)
 
     /* THE TWO ASYMMETRIES, pinned so that a later tidy-up has to be a
        decision rather than an accident.  Both are in the stock source and
-       both are invisible until the leaves have names; 05-DEBT.md carries
-       them.
+       both are invisible until the leaves have names.
 
        1. iflagact gates the mechanical form but NOT the thermomechanical
           one: the same changing contact set that blocks ithermal<2

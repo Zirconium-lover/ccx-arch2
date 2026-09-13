@@ -9,7 +9,7 @@ a strong check and a terrible foundation for refactoring: it can prove a
 change is a no-op and it cannot express "the answer is the same to 1e-10", so
 the first decomposition that reorders a summation fails it for the wrong
 reason.  That constraint is part of what produced the code this project
-exists to take apart - see NEXT_TASK.md item 2.
+exists to take apart.
 
 So: byte identity stays available and stays the strictest setting (--exact),
 and below it there is a real comparison.
@@ -104,7 +104,7 @@ def read_dat(path):
     row - "total force (fx,fy,fz) for set ... and time ..." - has no label
     at all, only the components, and the first of them is the grip reaction,
     which is the single most interesting number the fast decks print.  Until
-    2026-09-11 both shapes went through the nodal branch, so the reaction
+    Formerly both shapes went through the nodal branch, so the reaction
     became part of the KEY: a run whose grip force changed was reported as
     one record vanishing and another appearing, never as a value differing,
     and no tolerance was ever applied to it.  Headless rows are therefore
@@ -277,7 +277,7 @@ def _strip_clock(data):
     differing, and the difference was 11.september against 12.september.  Two runs of the same binary on the same deck therefore
     never compare byte-identical, which quietly made --exact useless on
     the file that carries the nodal results - the extraction of
-    damrank1.f on 2026-09-11 was reported as changing m.frd in all nine
+    damrank1.f was reported as changing m.frd in all nine
     cases, and the change was the clock.
 
     Only that record is blanked, only in its exact fixed-width form, and

@@ -15,7 +15,7 @@
  *     to its OWN first positive value - so it is dimensionless, needs no
  *     mesh-wide median, and means the same thing on any deck.  Counts below
  *     1e-3, 1e-2 and 1e-1, the number of non-positive diagonals, and the
- *     extreme.  02-DIAGNOSTICS.md section 3 reads it: 3.7e-07 is a node that
+ *     extreme.  Reading it: 3.7e-07 is a node that
  *     has lost ALL its bulk and hangs on failed facets; 0.04 has lost its
  *     bulk but its facets are intact; 0.1 to 0.3 still has live elements.
  *     The number tells you the topology.

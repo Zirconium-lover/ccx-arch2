@@ -13,7 +13,7 @@
  *
  *     RANGES record what the code does, including where it does it silently.
  *     CCX_DAMAGE_AUTOSPC is clamped at 1.e-1 inside nonlingeo.c with no
- *     message (05-DEBT.md item 7): a deck whose worst node sits at 1.04e-01
+ *     message: a deck whose worst node sits at 1.04e-01
  *     masks nobody and gives no indication why.  Declaring the range does
  *     not fix that; it makes it visible in one place instead of none.
  *
@@ -53,7 +53,7 @@ static const ccxopt_decl ccxopt_decl_table[]={
  "extend the same judgement to the FORCE residual.  Set to anything.  Prints "
  "the excluded residual next to the criterion: if that number stops "
  "returning to zero the mechanism has become a fiction and is hiding a real "
- "imbalance (02-DIAGNOSTICS.md section 4)",NULL},
+ "imbalance",NULL},
 
 {"CCX_DAMAGE_DEADALL",CCXOPT_REAL,"unset (off)",0.,0.5,NULL,
  "a node whose entire live support is dead below this fraction is treated as "
@@ -70,7 +70,7 @@ static const ccxopt_decl ccxopt_decl_table[]={
  "Outside [0.5,0.9999] the value is refused with a warning and 0.999 kept.  "
  "READ WITH CCX_DAMAGE_DELETE_VISC: by default the trigger is the VISCOUS "
  "damage, not the instantaneous one, so an element at D=1.0000 whose Dvis is "
- "0.998 stays.  MEASURED 2026-09-13 on the wrapped fast deck: the outcome is "
+ "0.998 stays.  MEASURED on the wrapped fast deck: the outcome is "
  "not monotone in this number.  0.9990-0.9950 wall at theta 0.158; "
  "0.9920-0.9850 run to theta 1.0; 0.9800-0.9600 wall again.  The band that "
  "runs to the end is a PHANTOM - the exact minimum cut reaches 2.9e-04 of "
@@ -99,7 +99,7 @@ static const ccxopt_decl ccxopt_decl_table[]={
  "it moved the run from lambda=0.3793 to 0.4651.  The cost is a lag that "
  "GROWS as the step shrinks, beta=dt/(eta+dt): the s3rad trap strands "
  "element 19535 at D=1.0000 with Dvis short of the threshold "
- "(research/16-TRAP-ANATOMY.md).  Turning it off does not clear that wall "
+ ".  Turning it off does not clear that wall "
  "either - measured, the wrapped deck still stops at theta 0.1575.  With the "
  "viscosity off damvisc is never allocated and the trigger falls back to D, "
  "so this is a no-op there",NULL},
@@ -113,7 +113,7 @@ static const ccxopt_decl ccxopt_decl_table[]={
  CCXOPT_UNBOUNDED,NULL,
  "SETA:SETB - stop the run when no load path remains between these two node "
  "sets.  This is the only thing standing between a run and the phantom "
- "regime of 05-DEBT.md item 1",NULL},
+ "regime it exists to prevent",NULL},
 
 {"CCX_FRACTURE_CUT",CCXOPT_REAL,"unset (off)",0.,1.,NULL,
  "stop when the load path between the CCX_FRACTURE_TERMINATION sets has "
@@ -124,7 +124,7 @@ static const ccxopt_decl ccxopt_decl_table[]={
  "switches ask a yes/no.  Measured on s3rad: every topological rule says "
  "CONNECTED at the end of a run whose two grips are joined by ONE "
  "triangular face, 0.05 percent of a section, carrying 2.1 percent of "
- "peak load (research/09-SEVERANCE.md).  Off by default and bit-identical "
+ "peak load.  Off by default and bit-identical "
  "when off; the measure has a self test and refuses to arm if it fails",
  NULL},
 
@@ -155,7 +155,7 @@ static const ccxopt_decl ccxopt_decl_table[]={
  "ADAPTIVE|adaptive|1",
  "arm the adaptive damage line-search ladder (lsladder.c).  Measured cost: "
  "the ladder and the rescues together consume 4.6% of the run "
- "(research/01-PROFILING.md)",NULL},
+ "",NULL},
 
 {"CCX_DAMAGE_REEQ_RESCUE2",CCXOPT_BOOL,"unset (off)",CCXOPT_UNBOUNDED,NULL,
  "arm Rescue level 2 with an event step.  Set to anything, INCLUDING 0",NULL},
@@ -204,7 +204,7 @@ static const ccxopt_decl ccxopt_decl_table[]={
  "-sigma_eff (x) dD/d(eps) through the asymmetric assembly; on fast-plain "
  "it produces a byte-identical fracture for 0.2 percent fewer Newton "
  "iterations and 37 percent MORE wall time, so it is off by default "
- "(research/06-TANGENT-VERDICT.md).  FD_SYM (1) was DELETED on 2026-09-11 "
+ ".  FD_SYM (1) was DELETED "
  "and now stops the run with a message rather than being ignored.  The "
  "rank-1 projection itself is verified by damrank1test in src/damrank1.f",
  NULL},
@@ -216,13 +216,13 @@ static const ccxopt_decl ccxopt_decl_table[]={
  "mafilldamas.f, so the range here is the real one.  COST, measured: the "
  "conditioning it produces forces PARDISO into 8062 iterative-refinement "
  "steps over 5344 solves on s3rad, about 5.6 percent of the run "
- "(research/01-PROFILING.md).  BENEFIT, measured: on fast-wrapped raising "
+ ".  BENEFIT, measured: on fast-wrapped raising "
  "it from 1e-04 to 1e-02 REMOVES the wall entirely - the run completes the "
  "load history with the identical 64-element deletion set and half the "
  "Newton iterations per increment - while 1e-06 through 1e-03 are "
  "indistinguishable and 1e-01 is worse than the default.  The useful band "
  "is narrow and the default sits four decades below it "
- "(research/12-GMIN.md, gate case fast-wrapped-gmin)",NULL},
+ "",NULL},
 
 {"CCX_DAMAGE_VISCOSITY",CCXOPT_REAL,"0 (off)",CCXOPT_UNBOUNDED,NULL,
  "viscous regularisation eta for the damage evolution; negative values are "
@@ -252,15 +252,15 @@ static const ccxopt_decl ccxopt_decl_table[]={
  "keep PARDISO's symbolic factorisation across numerical factorisations, "
  "keyed on a hash of the sparsity pattern.  MEASURED: it retains the "
  "analysis for 603 of 606 factorisations on fast-wrapped and buys nothing "
- "outside run-to-run noise (handover/04-REFUTED.md)",NULL},
+ "outside run-to-run noise",NULL},
 
 /* ---- operator verification ----------------------------------------
    Found, not built: the directional-derivative check that
-   07-RESEARCH-AGENDA.md rank 3 calls "the named hole in the diagnostics"
+   what is called "the named hole in the diagnostics"
    was already here, under three undocumented names that no test set.  It is
    PETSc's -snes_test_jacobian in all but the name.  Declared rather than
    retired, because a tool nobody could find is not the same thing as a tool
-   that does not exist.  What it says: research/03-OPERATOR.md. */
+   that does not exist. */
 {"CCX_STRUCT_FD_INC",CCXOPT_INT,"0 (off)",CCXOPT_UNBOUNDED,NULL,
  "arm the operator check at this increment: compare the ASSEMBLED tangent, "
  "column by column, against a central difference of the internal force.  The "
@@ -295,14 +295,14 @@ static const ccxopt_decl ccxopt_decl_table[]={
  "converged plateau",NULL},
 
 /* ---- diagnostics that were in the retirement queue only because nobody
-   had written them down.  Each answers a question 02-DIAGNOSTICS.md asks a
+   had written them down.  Each answers a question the census asks a
    human to answer by eye. */
 {"CCX_DAMAGE_TANGENT_CENSUS",CCXOPT_BOOL,"unset (off)",CCXOPT_UNBOUNDED,NULL,
  "per-iteration census of the damage tangent: how many elements got the "
  "rank-1 term -sigma_eff (x) dD/d(eps), how many with ADVANCING damage did "
  "not, and how many were skipped.  This is the report that names WHY the "
  "assembled tangent is not the differential of the residual "
- "(research/03-OPERATOR.md); it was in the retirement queue",NULL},
+ "; it was in the retirement queue",NULL},
 
 {"CCX_DAMAGE_NODE_DUMP",CCXOPT_INT,"0 (off)",CCXOPT_UNBOUNDED,NULL,
  "dump one named node every increment: every element that touches it, its "
@@ -316,7 +316,7 @@ static const ccxopt_decl ccxopt_decl_table[]={
 
 {"CCX_DAMAGE_STIFF_PROBE",CCXOPT_BOOL,"unset (off)",CCXOPT_UNBOUNDED,NULL,
  "print the stiffness census - how many nodes have lost what fraction of "
- "their OWN intact assembled diagonal (02-DIAGNOSTICS.md section 3).  Armed "
+ "their OWN intact assembled diagonal.  Armed "
  "automatically whenever CCX_DAMAGE_AUTOSPC is",NULL},
 
 {"CCX_DAMAGE_STIFF_MIN",CCXOPT_REAL,"0 (off)",0.,0.1,NULL,
@@ -362,7 +362,7 @@ static const ccxopt_decl ccxopt_decl_table[]={
  CCXOPT_UNBOUNDED,NULL,
  "how often [PARDISO REFINE] prints the running count of iterative "
  "refinement steps PARDISO actually performed - iparm(7), which nothing read "
- "until 2026-09-11. A cumulative line every N solves so that consecutive "
+ "until it was added. A cumulative line every N solves so that consecutive "
  "lines can be differenced the way the LOGVIEW interim tables are. A "
  "non-positive value reports only at exit",NULL},
 

@@ -3,17 +3,16 @@
 
 /* Why this module exists
    ----------------------
-   handover/12-GLOBALIZATION.md has the argument.  The short form:
    nonlingeo.c stacks six globalization mechanisms in a fixed order - path
    following, transactional backtracking, two rescue levels, a dogleg trust
-   region and the adaptive line-search ladder - and 05-DEBT.md section 3
-   records that at one wall THREE CONSECUTIVE ATTEMPTS produced
+   region and the adaptive line-search ladder.  At one wall it was
+   recorded that THREE CONSECUTIVE ATTEMPTS produced
    bit-identical residual sequences.  Two rescue levels ran and changed
    nothing.
 
    That is an anecdote.  This module turns it into a counter.
 
-   The brief's test for keeping a mechanism is to name the failure it
+   The test for keeping a mechanism is to name the failure it
    addresses and the gate case that would go red without it.  Nobody can do
    that for these six because nobody has the data, so the first step here is
    an instrument and not an extraction.  A mechanism that never changes an
@@ -30,7 +29,7 @@
 
    The hash is topodiag's, which is already in the tree and already has a
    self test - measuring with an instrument that has never been checked is
-   the failure this project keeps finding in other people's code.
+   measuring with an instrument that has never been checked.
 
    Reason codes follow PETSc SNESLineSearchReason (petscsnes.h:918-924):
    SUCCEEDED, and the failures named separately rather than collapsed into

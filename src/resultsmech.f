@@ -1199,7 +1199,7 @@ c          write(*,*) 'resultsmech4 ',i,jj,(stre(m1),m1=1,6)
 !           than applying NO correction at all, on both fast decks, and
 !           moved the fracture by one element.  The symmetric part of a
 !           nonsymmetric operator is a third operator, not a tangent.  It
-!           was deleted on 2026-09-11; research/06-TANGENT-VERDICT.md has
+!           was deleted; the measurement has
 !           the table.
 !
             damvbeta=1.d0
@@ -1377,7 +1377,7 @@ c          write(*,*) 'resultsmech4 ',i,jj,(stre(m1),m1=1,6)
 !               Only the deviatoric normals and the shears are degraded
 !               here, so only they carry a d(g)/d(eps) term.  Using the
 !               full effective stress in the rank-1 correction - which
-!               both paths did until 2026-09-11 - adds a hydrostatic
+!               both paths formerly did - adds a hydrostatic
 !               column that the stress update never produced.  The
 !               correction is written against damsdev, and damjac is
 !               corrected in place for the asymmetric pass.

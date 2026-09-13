@@ -27,8 +27,7 @@
        modelling decision rather than a topological fact."
 
   That is correct, and it is why the question can never be answered there.
-  Measured on the target deck at the end of a complete run
-  (research/09-SEVERANCE.md): every one of the six topological rules the
+  Measured on the target deck at the end of a complete run: every one of the six topological rules the
   tree implements says CONNECTED, and the two grips are in fact joined by
   ONE triangular element face of area 0.0109 against a nominal section of
   5.7 - five ten-thousandths of a cross-section, carrying 2.1% of peak
@@ -324,7 +323,7 @@ double loadcut_width(double *co,ITG *ipkon,ITG *kon,char *lakon,ITG ne,
        different clothes: a separated interface treated as a rigid link.
        It was caught the only way it could be - two independent
        implementations of the same measure, this one and the offline
-       analysis in research/09-SEVERANCE.md, disagreeing by a factor of
+       earlier analysis, disagreeing by a factor of
        380 on the same final state (cut 1.184 against 0.0031) because the
        offline one excluded facets entirely and this one let 5316 of them
        conduct at full strength.

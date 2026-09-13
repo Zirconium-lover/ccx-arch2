@@ -23,7 +23,7 @@
 !         damjac(12) at an integration point  ->  the element block
 !         K_rank1(a,b) = -weight * avec(a) * bvec(b)
 !
-!     Extracted verbatim from mafilldamas.f on 2026-09-11.  It was in the
+!     Extracted verbatim from mafilldamas.f.  It was in the
 !     middle of an assembly loop, which is why nobody could test it: the
 !     only way to see its output was to read a matrix coefficient out of a
 !     CSR array in a running solve, and the structural FD probe that did

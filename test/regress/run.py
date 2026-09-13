@@ -60,7 +60,7 @@ def census(log):
 def check_switches(log,want):
     """Did the switches the case asked for actually reach the binary?
 
-    Reads the run's own [SWITCHES] banner - 02-DIAGNOSTICS.md section 9 says
+    Reads the run's own [SWITCHES] banner -
     to check it before believing any comparison, and a check a human has to
     remember is a check that does not happen."""
     bad=[]
@@ -181,7 +181,7 @@ def provenance(exe):
 
     A baseline that does not state its binary and its thread count is not a
     baseline: runs are NOT reproducible across thread counts (measured -
-    handover/05-DEBT.md item 5), so a scalar without that context cannot be
+    thread count), so a scalar without that context cannot be
     compared against anything."""
     import hashlib,platform
     def cmd(c):

@@ -2,7 +2,7 @@
  *
  *     The precondition nobody had met: this code has never been profiled.
  *     The target deck takes 2.3 hours and the candidate optimisations in
- *     handover/08-OBJECT-MODEL.md section 4 - a sparsity pattern held fixed
+ *     the fixed-sparsity candidate - a sparsity pattern held fixed
  *     under erosion, an interpolating line search instead of a fixed ladder
  *     of full residual evaluations, a tangent reuse policy - are each a
  *     hypothesis about where that time goes.  A hypothesis about a number

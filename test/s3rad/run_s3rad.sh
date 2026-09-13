@@ -56,7 +56,7 @@ export MKL_CBWR=${MKL_CBWR:-COMPATIBLE}
 # assignment, because a bare one SILENTLY OVERWRITES a value the caller
 # set in the environment, and that has now cost two measurements: the
 # CCX_DAMAGE_AUTOSPC case that made a gate case run with the mask on for
-# its whole life, and a CCX_DAMAGE_DEADALL arm on 2026-09-12 that spent
+# its whole life, and a CCX_DAMAGE_DEADALL arm that spent
 # nineteen minutes reproducing the baseline.  Positional NAME=VALUE
 # overrides below still win over both, and the provenance line says which
 # values came from where, so nothing is decided silently.
@@ -74,7 +74,7 @@ export CCX_FRACTURE_TERMINATION=${CCX_FRACTURE_TERMINATION:-FACE_X0_NSET:FACE_XL
 # Stop when the load path between the termination sets has narrowed to this
 # fraction of its width at the first committed deletion batch.  The five
 # topological rules all say CONNECTED at the end of a run whose grips are
-# joined by one triangular face (research/09-SEVERANCE.md), so without a
+# joined by one triangular face, so without a
 # WIDTH the deck has no ending of its own and reports rc=201 - the solver
 # giving up - as its result.
 #
@@ -85,7 +85,7 @@ export CCX_FRACTURE_TERMINATION=${CCX_FRACTURE_TERMINATION:-FACE_X0_NSET:FACE_XL
 # that also fires too early.  1e-4 is an order of magnitude tighter than
 # "one face at the residual-stiffness floor" and fires at ratio 4.7e-05,
 # theta 0.2588, with the grip reaction at 1.46 percent of peak:
-# [FRACTURE COMPLETE] instead of rc=201 (research/14, 15, 17).
+# [FRACTURE COMPLETE] instead of rc=201.
 #
 # CONFIRMED on this recipe with no overrides at all: the run ends
 # [FRACTURE COMPLETE] inc=667 step_time=2.587500e-01, cut=1.962064e-04

@@ -66,7 +66,7 @@ def switches(log):
     run as "stock against the switch" had the switch on in BOTH arms.  The
     5% difference measured was noise; the real effect is 29%.
 
-    handover/02-DIAGNOSTICS.md section 9 says to check this block before
+    Check this block before
     believing any comparison.  A human who has to remember will not.  So the
     tool reads it and refuses to be quiet when two arms are the same arm."""
     txt=open(log,errors='replace').read()

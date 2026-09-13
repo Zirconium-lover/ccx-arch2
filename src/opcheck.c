@@ -1,7 +1,7 @@
 /*     Operator: does the assembled tangent differ the residual?
  *
- *     07-RESEARCH-AGENDA.md rank 3 calls this "the named hole in the
- *     diagnostics", and 08-OBJECT-MODEL.md gives the Operator row the note
+ *     This is the named hole in the diagnostics, and the Operator row
+ *     carries the note
  *     "nothing verifies it".  Both were wrong about the tooling and right
  *     about the state of knowledge: a column-by-column finite-difference
  *     check has been sitting in nonlingeo.c the whole time, behind three

@@ -4930,7 +4930,7 @@ ITG  logview_selftest(void);
 
 /* ---- does the assembled tangent differ the residual? (opcheck.c) ----
 
-   The check 07-RESEARCH-AGENDA.md rank 3 calls the named hole, which turned
+   The check for the named hole in the diagnostics, which turned
    out to be already in the tree behind three undeclared switches.  What is
    new here is the DISCRIMINATOR: a central difference converges to the mean
    of the one-sided derivatives at a kink, so its h-plateau cannot tell a
@@ -4973,7 +4973,7 @@ void monitor_opcheck_total(const opcheck *o,ITG iinc,ITG iit,ITG elem,
    node's OWN first positive value.  This loop was written out THREE TIMES,
    character for character, in nonlingeo.c, because it had no owner.  It
    measures; it decides nothing - damstate.c owns the judgement it is read
-   against.  02-DIAGNOSTICS.md section 3 says how to read it. */
+   against. */
 
 typedef struct{
   ITG below1;        /* nodes below 1e-3 of their own intact diagonal  */
@@ -5030,7 +5030,7 @@ ITG  damstate_selftest(void);
 
 /* ---- the numbers the convergence judgement is made from (converge.c) --
 
-   Step A of handover/10-CONVERGENCE.md.  Owns the reduction of the solution
+   Owns the reduction of the solution
    vector into ram/ram1/ram2, the uam high-water mark, the qam running
    average and its floor, and which dofs are allowed to contribute.  It
    decides nothing and prints nothing: checkconvergence.c still owns the
@@ -5064,8 +5064,8 @@ void converge_report(const converge *c,const ITG *nactdofinv,ITG mt,
                      const double *cam,const double *uam);
 /* ---- which globalization mechanism did anything (globalize.c) ---------
 
-   handover/12-GLOBALIZATION.md.  Six mechanisms stacked in a fixed order
-   with no interface; 05-DEBT.md section 3 records three consecutive
+   Six mechanisms stacked in a fixed order
+   with no interface; it was recorded that three consecutive
    attempts producing bit-identical residual sequences, two rescue levels
    having run and changed nothing.  This turns that anecdote into a
    counter, so that "name the failure it addresses" can be answered with
@@ -5106,7 +5106,7 @@ ITG  glob_selftest(void);
 
 /* ---- the transaction that commits an erosion (topology.c) -------------
 
-   handover/11-TOPOLOGY.md.  The marked set is one object with one
+   The marked set is one object with one
    lifetime, on the DMLabel pattern (PETSc include/petscdmlabel.h) rather
    than nine locals whose freeing was copy-pasted to four places.  It
    records a deletion the damage model has already decided; it decides
@@ -5143,7 +5143,7 @@ ITG  topo_selftest(void);
 ITG damage_progressive_material(ITG imat,const ITG *ndmcon,
                                 const double *dmcon,ITG ndmat,ITG ntmat);
 
-/* ---- what counts as converged (converge.c, step B of 10-CONVERGENCE) --
+/* ---- what counts as converged (converge.c) ---------------------------
 
    The mechanical criterion is eight clauses joined by && and ||, written
    out three times in checkconvergence.c (mechanical, thermal, thermo-
@@ -5192,7 +5192,7 @@ ITG  converge_verdict(cvg_verdict *v,const cvg_tol *t,ITG ithermal,ITG iit,
                       double *c1,double *c2);
 void converge_verdict_print(const cvg_verdict *v);
 
-/* ---- why the run stopped (converge.c, step C of 10-CONVERGENCE) -------
+/* ---- why the run stopped (converge.c) --------------------------------
 
    PETSc's SNESConvergedReason exists because "it did not converge" is not
    an answer.  This tree ends with rc=201 and one message - "increment size

@@ -3,12 +3,12 @@
 
     tools/readmon.py <rundir-or-run.log>
 
-handover/02-DIAGNOSTICS.md is eleven readings a human performs by eye on
+The census is eleven readings a human performs by eye on
 prose output.  It cannot be anything else while the diagnostics are printf.
 Now that src/monitor.c emits one JSON object per record, section 3 - the
 stiffness census - can be a program instead, and this is it.
 
-What it reads (per 02-DIAGNOSTICS.md section 3):
+What it reads:
 
   worst ~ 3.7e-07 = gmin * (Kn*A / K_bulk)   the node has lost ALL its bulk
                                              and hangs on FAILED facets
@@ -30,7 +30,7 @@ def records(path):
             try: yield json.loads(line[6:])
             except ValueError: pass
 
-# The bands 02-DIAGNOSTICS.md section 3 names, and NOTHING BETWEEN THEM.
+# The named bands, and NOTHING BETWEEN THEM.
 # The document's 3.7e-07 is gmin*(Kn*A/K_bulk) computed for s3rad, so it is
 # a deck constant and not a universal one; a reader that hard-coded it as a
 # universal threshold would be inventing precision.  Where a value falls

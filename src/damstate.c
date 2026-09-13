@@ -132,7 +132,7 @@ ITG damstate_facet_dead(const double *xstate,ITG nstate,ITG mi0,
  * skipping them is easy to make: a separated facet ties nothing.  It was
  * implemented as CCX_DAMAGE_DEADALL_FACET, with a self test that could be
  * shown failing, bit-identical when off.  Seven s3rad arms on one binary
- * (research/14-THE-TRAP.md) then said:
+ * then said:
  *
  *   - it buys nothing.  The arm carrying it lands where the arm without it
  *     lands, to four figures on the terminal grip reaction;
@@ -141,7 +141,7 @@ ITG damstate_facet_dead(const double *xstate,ITG nstate,ITG mi0,
  *     extra elements it deletes are enough to put the trajectory into a
  *     trap that a one-element perturbation decides.
  *
- * By CLAUDE.md's test - name the failure it addresses and the gate case that
+ * By the test - name the failure it addresses and the gate case that
  * would go red without it - it had neither, so it is gone.  This comment is
  * here so the next reader does not re-derive it: the idea is plausible, it
  * was measured, and the measurement did not support it.
