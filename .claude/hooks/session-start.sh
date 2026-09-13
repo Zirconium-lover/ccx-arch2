@@ -5,7 +5,9 @@
 # the Fortran/C toolchain and the solver libraries are present, the
 # generated switch registry is not stale, and the tree actually builds.
 # The third is what turns the first two from a claim into a check.
-set -euo pipefail
+set -uo pipefail
+# No -e: apt is allowed to warn about repositories that do not matter here;
+# each step below decides for itself what counts as a failure.
 
 # Local machines are left alone; this is only for the remote container.
 if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
@@ -23,16 +25,32 @@ for p in $PKGS; do
 done
 
 if [ -n "$missing" ]; then
-  echo "installing:$missing"
+  # The image carries third-party PPAs (deadsnakes, ondrej/php) the proxy
+  # refuses with 403, and that fails apt-get update outright rather than
+  # warning.  They have nothing to do with this build, so they are moved
+  # aside.  universe and multiverse are already enabled in ubuntu.sources,
+  # which is where intel-mkl lives, so add-apt-repository is not needed -
+  # and it was the fragile part, because it talks to launchpad too.
+  for f in /etc/apt/sources.list.d/*.sources /etc/apt/sources.list.d/*.list; do
+    [ -f "$f" ] || continue
+    grep -qs "ppa.launchpadcontent.net" "$f" && mv "$f" "$f.disabled"
+  done
+
   export DEBIAN_FRONTEND=noninteractive
-  # intel-mkl lives in universe/multiverse; enable them before asking for it.
-  apt-get update -qq || true
-  apt-get install -y -qq software-properties-common >/dev/null 2>&1 || true
-  add-apt-repository -y universe    >/dev/null 2>&1 || true
-  add-apt-repository -y multiverse  >/dev/null 2>&1 || true
-  apt-get update -qq
+  apt-get update -qq || echo "apt-get update reported problems; continuing"
+
+  echo "installing:$missing"
+  log=$(mktemp)
   # shellcheck disable=SC2086
-  apt-get install -y -qq $missing
+  if apt-get install -y -qq $missing >"$log" 2>&1; then
+    echo "installed:$missing"
+    rm -f "$log"
+  else
+    echo "INSTALL FAILED for:$missing"
+    cat "$log"
+    rm -f "$log"
+    exit 1
+  fi
 else
   echo "toolchain already present"
 fi
@@ -41,8 +59,12 @@ fi
 # The regression gate's preflight fails when they are stale, and the file
 # is not kept in the repository, so it has to be made here.
 if [ -f tools/mkswitches.py ]; then
-  python3 tools/mkswitches.py >/dev/null
-  echo "switch registry regenerated"
+  if python3 tools/mkswitches.py >/dev/null; then
+    echo "switch registry regenerated"
+  else
+    echo "FAILED to regenerate the switch registry"
+    exit 1
+  fi
 fi
 
 # Build once, so the container is cached with a working binary and the
