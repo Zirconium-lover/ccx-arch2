@@ -1,14 +1,14 @@
 {
  "comment": [
-  "Expected behaviour of every case that runs in minutes.  A change that",
+  "Expected behaviour of every case that runs in minutes. A change that",
   "moves any of these numbers is a change in the answer and has to be",
   "justified by a measurement, not by the fact that the next wall passed.",
   "Numbers were recorded at commit 2e3bef3 on 1 thread; they are trajectory",
   "quantities, so an A/B must fix OMP_NUM_THREADS and MKL_NUM_THREADS on",
   "both arms (runs are NOT reproducible across thread counts).",
   "required_lines: every run's log must contain these, so a report that silently stopped being emitted is caught.",
-  "equal_to: the same relation as identical_sta_as but stated as a tolerance over named files rather than as byte identity, so an extraction that reorders a summation can be asserted correct instead of failing for the wrong reason.  rtol=atol=0 means every printed digit must agree.  tools/ccxdiff.py --selftest proves the comparison can go red.",
-  "A case's env is passed to run_fast.sh as POSITIONAL NAME=VALUE overrides, not as environment: run_s3rad.sh exports twelve CCX_* names unconditionally and would clobber it.  check_switches() verifies against the run's own [SWITCHES] banner that what the case asked for is what the binary got."
+  "equal_to: the same relation as identical_sta_as but stated as a tolerance over named files rather than as byte identity, so an extraction that reorders a summation can be asserted correct instead of failing for the wrong reason. rtol=atol=0 means every printed digit must agree. tools/ccxdiff.py --selftest proves the comparison can go red.",
+  "A case's env is passed to run_fast.sh as POSITIONAL NAME=VALUE overrides, not as environment: run_s3rad.sh exports twelve CCX_* names unconditionally and would clobber it. check_switches() verifies against the run's own [SWITCHES] banner that what the case asked for is what the binary got."
  ],
  "cases": [
   {
@@ -55,7 +55,7 @@
   },
   {
    "name": "fast-plain-notangent",
-   "what": "the same deck with the damage-consistent tangent switched OFF entirely. MEASURED 2026-09-11 against fast-plain: the fracture is IDENTICAL - m.damage byte-for-byte, the same 90 deletions in the same order at the same times - and the terminal grip reaction prints the same seven digits, 3.999343E+00. What moves is the per-node split of that reaction, by at most 2.18e-04 relative, and the transverse displacements, by at most 7.1e-09 absolute on a field whose axial component is 1.0. The run takes 0.2 percent FEWER Newton iterations and 33 percent LESS wall time (26.55 s against 35.33 s). This case exists because until it was added the gate had never once run without CCX_DAMAGE_TANGENT: run_s3rad.sh exports UNSYM unconditionally, so the switch had no test and its cost had never been paid attention to. The m.dat tolerance is 5e-04 relative with a 1e-07 absolute floor: the floor is what keeps a 7e-09 wobble on a near-zero transverse component from being read as a 3e-04 relative difference, and 5e-04 is a little above the 2.18e-04 actually measured. DISCLOSURE: what was fixed before the run, per 09-STEERING, was the PHYSICAL criterion - the same deletion set, the same severance theta, the same converged answer - and that criterion passed on its own terms. The numeric m.dat tolerance was first guessed at 1e-04, the case went red, and 5e-04 was chosen after seeing the data. That is a tolerance fitted to the measurement, and it is only admissible because the criterion it replaced is the one that decides, and that one was not moved.",
+   "what": "the same deck with the damage-consistent tangent switched OFF entirely. MEASURED against fast-plain: the fracture is IDENTICAL - m.damage byte-for-byte, the same 90 deletions in the same order at the same times - and the terminal grip reaction prints the same seven digits, 3.999343E+00. What moves is the per-node split of that reaction, by at most 2.18e-04 relative, and the transverse displacements, by at most 7.1e-09 absolute on a field whose axial component is 1.0. The run takes 0.2 percent FEWER Newton iterations and 33 percent LESS wall time (26.55 s against 35.33 s). This case exists because until it was added the gate had never once run without CCX_DAMAGE_TANGENT: run_s3rad.sh exports UNSYM unconditionally, so the switch had no test and its cost had never been paid attention to. The m.dat tolerance is 5e-04 relative with a 1e-07 absolute floor: the floor is what keeps a 7e-09 wobble on a near-zero transverse component from being read as a 3e-04 relative difference, and 5e-04 is a little above the 2.18e-04 actually measured. DISCLOSURE: what was fixed before the run, per 09-STEERING, was the PHYSICAL criterion - the same deletion set, the same severance theta, the same converged answer - and that criterion passed on its own terms. The numeric m.dat tolerance was first guessed at 1e-04, the case went red, and 5e-04 was chosen after seeing the data. That is a tolerance fitted to the measurement, and it is only admissible because the criterion it replaced is the one that decides, and that one was not moved.",
    "kind": "fast",
    "variant": "plain",
    "env": [
@@ -89,7 +89,7 @@
   },
   {
    "name": "fast-plain-noglob",
-   "what": "the same deck with ALL FOUR armed globalization mechanisms off - the adaptive line-search ladder, Rescue 2, the dogleg trust region and the physical re-equilibration scale. MEASURED 2026-09-11: identical fracture, the same 90 elements in the same order, for 1295 Newton iterations against 1283. Taken one at a time on this deck, Rescue 2 and the dogleg change NOTHING AT ALL (542 attempts and 1283 iterations, the shipped numbers to the digit - they never fire), dropping the ladder alone is 1.9 percent BETTER, and dropping the physical scale alone is 2.8 percent worse. This case exists so that the claim 'the globalization apparatus is inert on this deck' is a gate result rather than a memory. 09-STEERING asks for the case that goes red without each mechanism; on this deck there is none.",
+   "what": "the same deck with ALL FOUR armed globalization mechanisms off - the adaptive line-search ladder, Rescue 2, the dogleg trust region and the physical re-equilibration scale. MEASURED: identical fracture, the same 90 elements in the same order, for 1295 Newton iterations against 1283. Taken one at a time on this deck, Rescue 2 and the dogleg change NOTHING AT ALL (542 attempts and 1283 iterations, the shipped numbers to the digit - they never fire), dropping the ladder alone is 1.9 percent BETTER, and dropping the physical scale alone is 2.8 percent worse. This case exists so that the claim 'the globalization apparatus is inert on this deck' is a gate result rather than a memory. 09-STEERING asks for the case that goes red without each mechanism; on this deck there is none.",
    "kind": "fast",
    "variant": "plain",
    "env": [
@@ -108,7 +108,7 @@
   },
   {
    "name": "fast-plain-repack",
-   "what": "the same deck with the CSR permutation cached. The structurally-symmetric asymmetric branch - which is what CCX_DAMAGE_TANGENT=UNSYM makes every run of this branch take - otherwise rebuilds its whole CSR on every factorisation: four allocations, a full sort of the lower triangle by row, a sort of every row by column, and an interleave. The permutation depends only on the sparsity pattern, and on this deck the pattern changes ONCE: measured 1 rebuild against 1282 refills. Acceptance is BIT IDENTITY, because the same values land in the same slots, and that is what this case pins - all five files byte-for-byte. MEASURED 2026-09-12: 25.62 s against 27.92 s here and 13.43 s against 15.10 s on fast-wrapped. CCX_PARDISO_REPACK_VERIFY rebuilds the whole CSR anyway and compares it slot by slot, and CCX_PARDISO_REPACK_BREAK corrupts one cache entry so that check can be seen to go red - it catches 1 slot in 58408 every time.",
+   "what": "the same deck with the CSR permutation cached. The structurally-symmetric asymmetric branch - which is what CCX_DAMAGE_TANGENT=UNSYM makes every run of this branch take - otherwise rebuilds its whole CSR on every factorisation: four allocations, a full sort of the lower triangle by row, a sort of every row by column, and an interleave. The permutation depends only on the sparsity pattern, and on this deck the pattern changes ONCE: measured 1 rebuild against 1282 refills. Acceptance is BIT IDENTITY, because the same values land in the same slots, and that is what this case pins - all five files byte-for-byte. MEASURED: 25.62 s against 27.92 s here and 13.43 s against 15.10 s on fast-wrapped. CCX_PARDISO_REPACK_VERIFY rebuilds the whole CSR anyway and compares it slot by slot, and CCX_PARDISO_REPACK_BREAK corrupts one cache entry so that check can be seen to go red - it catches 1 slot in 58408 every time.",
    "kind": "fast",
    "variant": "plain",
    "env": [
@@ -169,7 +169,7 @@
   },
   {
    "name": "fast-wrapped-gmin",
-   "what": "the same wall with the residual-stiffness floor raised from 1e-04 to 1e-02. MEASURED 2026-09-12: THE WALL IS GONE - rc=0, theta reaches 1.0 at increment 520, with the IDENTICAL 64-element deletion set, and the cost per increment halves, 2.60 Newton iterations against 6.12. The floor's own comment in resultsmech.f claims exactly this trade - 'raising the floor trades a small unreleased load for conditioning' - and until now nobody had measured it. Swept over six decades the deck is INSENSITIVE from 1e-06 to 1e-03 (identical wall, identical 606 iterations) and worse at 1e-01 (walls earlier, at increment 61, with two fewer elements gone), so the useful band is narrow and 1e-02 is inside it. Note this is the SECOND independent cure for this wall: fast-wrapped-smooth removes it with the crack-face regulariser and arrives at the same place, theta 1.0 with the same 64 elements, at increment 515. Two mechanisms, one wall, one fracture - which says the wall is a conditioning phenomenon and not a unique defect.",
+   "what": "the same wall with the residual-stiffness floor raised from 1e-04 to 1e-02. MEASURED: THE WALL IS GONE - rc=0, theta reaches 1.0 at increment 520, with the IDENTICAL 64-element deletion set, and the cost per increment halves, 2.60 Newton iterations against 6.12. The floor's own comment in resultsmech.f claims exactly this trade - 'raising the floor trades a small unreleased load for conditioning' - and until now nobody had measured it. Swept over six decades the deck is INSENSITIVE from 1e-06 to 1e-03 (identical wall, identical 606 iterations) and worse at 1e-01 (walls earlier, at increment 61, with two fewer elements gone), so the useful band is narrow and 1e-02 is inside it. Note this is the SECOND independent cure for this wall: fast-wrapped-smooth removes it with the crack-face regulariser and arrives at the same place, theta 1.0 with the same 64 elements, at increment 515. Two mechanisms, one wall, one fracture - which says the wall is a conditioning phenomenon and not a unique defect.",
    "kind": "fast",
    "variant": "wrapped",
    "env": [
@@ -185,7 +185,7 @@
   },
   {
    "name": "fast-wrapped-nospc",
-   "what": "the same wall without the load-path mask, which must not change it. MEASURED 2026-09-11, once the override actually reached the binary: m.sta and m.damage are byte-identical to fast-wrapped - same wall at increment 99, same 64 deletions in the same order - and m.cvg differs at exactly one place, increment 93 attempt 2 iteration 3, CORR.DISP 0.1018 against 0.1438. That single difference IS the mask: it excludes a node from the displacement norm and changes nothing else.",
+   "what": "the same wall without the load-path mask, which must not change it. MEASURED, once the override actually reached the binary: m.sta and m.damage are byte-identical to fast-wrapped - same wall at increment 99, same 64 deletions in the same order - and m.cvg differs at exactly one place, increment 93 attempt 2 iteration 3, CORR.DISP 0.1018 against 0.1438. That single difference IS the mask: it excludes a node from the displacement norm and changes nothing else.",
    "kind": "fast",
    "variant": "wrapped",
    "env": [
@@ -209,7 +209,7 @@
   },
   {
    "name": "fast-wrapped-noglob",
-   "what": "the walling deck with the same four mechanisms off. MEASURED 2026-09-11: it still walls - and it walls 0.5 percent LATER in load factor, 0.159572 against 0.158766, with 568 Newton iterations against 606 and one FEWER element deleted (63 against 64). The apparatus built one mechanism per wall does not move this wall in the direction it was built for. Pinned at the wall, which is the physically meaningful event here, not at whichever increment the solver gave up on.",
+   "what": "the walling deck with the same four mechanisms off. MEASURED: it still walls - and it walls 0.5 percent LATER in load factor, 0.159572 against 0.158766, with 568 Newton iterations against 606 and one FEWER element deleted (63 against 64). The apparatus built one mechanism per wall does not move this wall in the direction it was built for. Pinned at the wall, which is the physically meaningful event here, not at whichever increment the solver gave up on.",
    "kind": "fast",
    "variant": "wrapped",
    "env": [
@@ -257,7 +257,7 @@
   },
   {
    "name": "fast-wrapped-severed",
-   "what": "the same deck, stopped when the load path has narrowed to a thousandth of its original width. MEASURED 2026-09-12: the reference cut at the first committed batch is 0.8701933; at increment 36 it is 2.800000e-04, a ratio of 3.2e-04, and that number is what a SINGLE face of area 2.8 at the residual-stiffness floor g=1e-04 is worth. The specimen is held together by one floored face and nothing else, while the topological sweep - correctly - still calls the grips CONNECTED. Without the criterion this deck grinds on to increment 99 and stops with rc=201, 63 increments and two thirds of its wall clock later, having deleted 18 more elements from a specimen that was already in two pieces. WITH it the run ends rc=0 at the separation, which is the difference between a solver that gave up and a specimen that broke. This is the s3rad story reproduced in six seconds instead of sixty-nine minutes.",
+   "what": "the same deck, stopped when the load path has narrowed to a thousandth of its original width. MEASURED: the reference cut at the first committed batch is 0.8701933; at increment 36 it is 2.800000e-04, a ratio of 3.2e-04, and that number is what a SINGLE face of area 2.8 at the residual-stiffness floor g=1e-04 is worth. The specimen is held together by one floored face and nothing else, while the topological sweep - correctly - still calls the grips CONNECTED. Without the criterion this deck grinds on to increment 99 and stops with rc=201, 63 increments and two thirds of its wall clock later, having deleted 18 more elements from a specimen that was already in two pieces. WITH it the run ends rc=0 at the separation, which is the difference between a solver that gave up and a specimen that broke. This is the s3rad story reproduced in six seconds instead of sixty-nine minutes.",
    "kind": "fast",
    "variant": "wrapped",
    "env": [

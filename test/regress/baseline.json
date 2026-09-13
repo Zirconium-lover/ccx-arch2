@@ -45,12 +45,12 @@
         "theta": "0.100000E+01"
       },
       "fails": [
-        "not equal to fast-plain: m.dat        DIFFERS  (rtol=0.0001 atol=1e-10, 3254 numbers compared)",
+        "not equal to fast-plain: m.dat DIFFERS (rtol=0.0001 atol=1e-10, 3254 numbers compared)",
         "   1 record(s) only in the reference, first [('total force (fx,fy,fz) for set FACE_XL_NSET and time 0.9150000E-01', '6.122186E+01')]",
         "   1 record(s) only in the new run, first [('total force (fx,fy,fz) for set FACE_XL_NSET and time 0.9150000E-01', '6.122265E+01')]",
-        "   (section,node) ('displacements (vx,vy,vz) for set FACE_XL_NSET and time 0.1000000E+01', '547'): c1 -6.6428870000000002e-05 vs -6.6435670000000003e-05  (abs 6.8e-09, rel 0.000102)",
-        "   (section,node) ('displacements (vx,vy,vz) for set FACE_XL_NSET and time 0.1000000E+01', '554'): c1 -2.5707210000000001e-05 vs -2.5714299999999999e-05  (abs 7.09e-09, rel 0.000276)",
-        "   (section,node) ('displacements (vx,vy,vz) for set FACE_XL_NSET and time 0.1000000E+01', '561'): c1 -2.0594e-05 vs -2.060006e-05  (abs 6.06e-09, rel 0.000294)",
+        " (section,node) ('displacements (vx,vy,vz) for set FACE_XL_NSET and time 0.1000000E+01', '547'): c1 -6.6428870000000002e-05 vs -6.6435670000000003e-05 (abs 6.8e-09, rel 0.000102)",
+        " (section,node) ('displacements (vx,vy,vz) for set FACE_XL_NSET and time 0.1000000E+01', '554'): c1 -2.5707210000000001e-05 vs -2.5714299999999999e-05 (abs 7.09e-09, rel 0.000276)",
+        " (section,node) ('displacements (vx,vy,vz) for set FACE_XL_NSET and time 0.1000000E+01', '561'): c1 -2.0594e-05 vs -2.060006e-05 (abs 6.06e-09, rel 0.000294)",
         "   ... and 15 more differing value(s)"
       ],
       "got": {
@@ -62,7 +62,7 @@
       },
       "name": "fast-plain-notangent",
       "seconds": 25.9,
-      "what": "the same deck with the damage-consistent tangent switched OFF entirely. MEASURED 2026-09-11: the fracture is byte-identical - same 90 deletions in the same order at the same times - the converged displacements agree to 2.3e-05 relative, and the run takes 0.2 percent FEWER Newton iterations and 33 percent LESS wall time (26.55 s against 35.33 s). This case exists because until it was added the gate had never once run without CCX_DAMAGE_TANGENT: run_s3rad.sh exports UNSYM unconditionally, so the switch had no test and its cost had never been paid attention to."
+      "what": "the same deck with the damage-consistent tangent switched OFF entirely. MEASURED: the fracture is byte-identical - same 90 deletions in the same order at the same times - the converged displacements agree to 2.3e-05 relative, and the run takes 0.2 percent FEWER Newton iterations and 33 percent LESS wall time (26.55 s against 35.33 s). This case exists because until it was added the gate had never once run without CCX_DAMAGE_TANGENT: run_s3rad.sh exports UNSYM unconditionally, so the switch had no test and its cost had never been paid attention to."
     },
     {
       "expect": {
@@ -121,7 +121,7 @@
       },
       "name": "fast-wrapped-nospc",
       "seconds": 17.6,
-      "what": "the same wall without the load-path mask, which must not change it. MEASURED 2026-09-11, once the override actually reached the binary: m.sta and m.damage are byte-identical to fast-wrapped - same wall at increment 99, same 64 deletions in the same order - and m.cvg differs at exactly one place, increment 93 attempt 2 iteration 3, CORR.DISP 0.1018 against 0.1438. That single difference IS the mask: it excludes a node from the displacement norm and changes nothing else."
+      "what": "the same wall without the load-path mask, which must not change it. MEASURED, once the override actually reached the binary: m.sta and m.damage are byte-identical to fast-wrapped - same wall at increment 99, same 64 deletions in the same order - and m.cvg differs at exactly one place, increment 93 attempt 2 iteration 3, CORR.DISP 0.1018 against 0.1438. That single difference IS the mask: it excludes a node from the displacement norm and changes nothing else."
     },
     {
       "expect": {
