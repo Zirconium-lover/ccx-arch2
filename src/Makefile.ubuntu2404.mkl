@@ -1,0 +1,89 @@
+# Reproducible PARDISO/MKL build of CalculiX 2.23 + damage/fracture module
+# Target platform: Ubuntu 24.04 LTS (x86_64).
+#
+# The historical s3rad wall was measured with PARDISO.  Comparing a SPOOLES
+# run against that baseline changes two things at once, so this makefile
+# exists to keep the solver constant while the continuation method changes.
+#
+# Dependencies (apt):
+#   gfortran libblas-dev liblapack-dev libarpack2-dev libspooles-dev make gcc
+#   intel-mkl            (universe/multiverse, 2020.4.304-4)
+#
+# Linear solvers: PARDISO (isolver=7, *SOLVER=PARDISO) AND SPOOLES
+# (isolver=0), so one binary can run both and the difference is an
+# explicit deck/environment choice rather than a different executable.
+#
+# Build OUT OF TREE so that the SPOOLES-only objects are never mixed with
+# the -DPARDISO ones:
+#
+#   ./src/build_mkl.sh            # -> build-mkl/ccx_2.23_pardiso
+#
+# MKL_INTERFACE:
+#   MKL is LP64 here (32-bit integers), which matches CalculiX built
+#   without -DLONGLONG.  libmkl_gf_lp64 is the gfortran-compatible
+#   interface layer; libmkl_intel_lp64 assumes ifort conventions.
+
+CCXVERSION = 2.23
+EXE        = ccx_$(CCXVERSION)_pardiso
+
+OPTLEVEL  ?= -O2
+EXTRA_CFLAGS ?=
+EXTRA_FFLAGS ?=
+EXTRA_LDFLAGS ?=
+
+SPOOLES_INC = /usr/include/spooles
+MKL_INC     = /usr/include/mkl
+MKL_LIBDIR  = /usr/lib/x86_64-linux-gnu
+
+# -MMD -MP makes gcc emit a .d file per object listing the headers it read,
+# and the -include at the bottom feeds those back to make.  Without it a
+# change to CalculiX.h or ccxopt_decl.h rebuilds NOTHING, and the build
+# quietly links a stale object.  That is not a tidiness issue here: it can
+# invalidate a bit-identity claim, because the binary under test is then not
+# the binary the sources describe.  Measured the hard way - a declaration
+# table edited three times and compiled none of them.
+CFLAGS = -Wall $(OPTLEVEL) -DARCH="Linux" -DSPOOLES -DARPACK -DPARDISO \
+         -DMATRIXSTORAGE -DNETWORKOUT -MMD -MP -fopenmp -I$(SPOOLES_INC) \
+         -I$(MKL_INC) $(EXTRA_CFLAGS)
+FFLAGS = -Wall $(OPTLEVEL) -fopenmp -fallow-argument-mismatch -cpp $(EXTRA_FFLAGS)
+
+CC = gcc
+FC = gfortran
+
+# MKL supplies BLAS and LAPACK as well; reference blas/lapack must NOT be
+# on the link line as well or the two implementations fight over symbols.
+LIBS = -lspooles -larpack \
+       -Wl,--start-group \
+         $(MKL_LIBDIR)/libmkl_gf_lp64.a \
+         $(MKL_LIBDIR)/libmkl_gnu_thread.a \
+         $(MKL_LIBDIR)/libmkl_core.a \
+       -Wl,--end-group \
+       -fopenmp -lpthread -lm -ldl
+
+.c.o:
+	$(CC) $(CFLAGS) -c $< -o $@
+.f.o:
+	$(FC) $(FFLAGS) -c $< -o $@
+
+include Makefile.inc
+
+SCCXMAIN = ccx_$(CCXVERSION).c
+OCCXF = $(SCCXF:.f=.o)
+OCCXC = $(SCCXC:.c=.o)
+
+all: $(EXE)
+
+ccx_$(CCXVERSION).a: $(OCCXF) $(OCCXC)
+	ar rs $@ $?
+
+$(EXE): ccx_$(CCXVERSION).a ccx_$(CCXVERSION).c
+	$(CC) $(CFLAGS) -c ccx_$(CCXVERSION).c -o ccx_$(CCXVERSION).o
+	$(FC) $(FFLAGS) $(EXTRA_LDFLAGS) -o $@ ccx_$(CCXVERSION).o \
+	      ccx_$(CCXVERSION).a $(LIBS)
+
+clean:
+	rm -f *.o *.d *.mod *.a $(EXE)
+
+.PHONY: all clean
+
+-include $(OCCXC:.o=.d) ccx_$(CCXVERSION).d

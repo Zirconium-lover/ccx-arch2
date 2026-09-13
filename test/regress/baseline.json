@@ -1,0 +1,243 @@
+{
+  "cases": [
+    {
+      "expect": {
+        "deletions": 90,
+        "last_inc": 507,
+        "rc": 0,
+        "theta": "0.100000E+01"
+      },
+      "fails": [],
+      "got": {
+        "deletions": 90,
+        "last_inc": 507,
+        "rc": 0,
+        "theta": "0.100000E+01"
+      },
+      "name": "fast-plain",
+      "seconds": 33.6,
+      "what": "the bar with a partial cohesive plane: bulk damage, deletion, cutbacks"
+    },
+    {
+      "expect": {
+        "deletions": 90,
+        "last_inc": 507,
+        "rc": 0,
+        "theta": "0.100000E+01"
+      },
+      "fails": [],
+      "got": {
+        "deletions": 90,
+        "equal_to": "fast-plain at rtol=0 atol=0",
+        "last_inc": 507,
+        "rc": 0,
+        "theta": "0.100000E+01"
+      },
+      "name": "fast-plain-smooth",
+      "seconds": 33.6,
+      "what": "the regulariser on a deck with real bulk damage and 90 deletions where no DAMAGED facet ever closes: it must be a byte-for-byte no-op, because the blend differs from the sharp law only when g<1 AND the facet is in compression"
+    },
+    {
+      "expect": {
+        "deletions": 90,
+        "last_inc": 507,
+        "rc": 0,
+        "theta": "0.100000E+01"
+      },
+      "fails": [
+        "not equal to fast-plain: m.dat        DIFFERS  (rtol=0.0001 atol=1e-10, 3254 numbers compared)",
+        "   1 record(s) only in the reference, first [('total force (fx,fy,fz) for set FACE_XL_NSET and time 0.9150000E-01', '6.122186E+01')]",
+        "   1 record(s) only in the new run, first [('total force (fx,fy,fz) for set FACE_XL_NSET and time 0.9150000E-01', '6.122265E+01')]",
+        "   (section,node) ('displacements (vx,vy,vz) for set FACE_XL_NSET and time 0.1000000E+01', '547'): c1 -6.6428870000000002e-05 vs -6.6435670000000003e-05  (abs 6.8e-09, rel 0.000102)",
+        "   (section,node) ('displacements (vx,vy,vz) for set FACE_XL_NSET and time 0.1000000E+01', '554'): c1 -2.5707210000000001e-05 vs -2.5714299999999999e-05  (abs 7.09e-09, rel 0.000276)",
+        "   (section,node) ('displacements (vx,vy,vz) for set FACE_XL_NSET and time 0.1000000E+01', '561'): c1 -2.0594e-05 vs -2.060006e-05  (abs 6.06e-09, rel 0.000294)",
+        "   ... and 15 more differing value(s)"
+      ],
+      "got": {
+        "deletions": 90,
+        "equal_to": "fast-plain at rtol=0.0001 atol=1e-10",
+        "last_inc": 507,
+        "rc": 0,
+        "theta": "0.100000E+01"
+      },
+      "name": "fast-plain-notangent",
+      "seconds": 25.9,
+      "what": "the same deck with the damage-consistent tangent switched OFF entirely. MEASURED 2026-09-11: the fracture is byte-identical - same 90 deletions in the same order at the same times - the converged displacements agree to 2.3e-05 relative, and the run takes 0.2 percent FEWER Newton iterations and 33 percent LESS wall time (26.55 s against 35.33 s). This case exists because until it was added the gate had never once run without CCX_DAMAGE_TANGENT: run_s3rad.sh exports UNSYM unconditionally, so the switch had no test and its cost had never been paid attention to."
+    },
+    {
+      "expect": {
+        "deletions": 64,
+        "last_inc": 99,
+        "masked_max": 1,
+        "rc": 201,
+        "theta": "0.158766E+00",
+        "worst_ratio": 0.00044641
+      },
+      "fails": [],
+      "got": {
+        "deletions": 64,
+        "last_inc": 99,
+        "masked_max": 1,
+        "rc": 201,
+        "theta": "0.158766E+00",
+        "worst_ratio": 0.00044641
+      },
+      "name": "fast-wrapped",
+      "seconds": 17.5,
+      "what": "the eroding phase wrapped in facets: reaches a node with no bulk support, and walls on the crack-face kink"
+    },
+    {
+      "expect": {
+        "deletions": 64,
+        "last_inc": 515,
+        "rc": 0,
+        "theta": "0.100000E+01"
+      },
+      "fails": [],
+      "got": {
+        "deletions": 64,
+        "last_inc": 515,
+        "rc": 0,
+        "theta": "0.100000E+01"
+      },
+      "name": "fast-wrapped-smooth",
+      "seconds": 39.1,
+      "what": "the same deck with the crack-face kink regularised: the wall is gone and the fracture is not"
+    },
+    {
+      "expect": {
+        "deletions": 64,
+        "last_inc": 99,
+        "rc": 201,
+        "theta": "0.158766E+00"
+      },
+      "fails": [],
+      "got": {
+        "deletions": 64,
+        "equal_to": "fast-wrapped at rtol=0 atol=0",
+        "last_inc": 99,
+        "rc": 201,
+        "theta": "0.158766E+00"
+      },
+      "name": "fast-wrapped-nospc",
+      "seconds": 17.6,
+      "what": "the same wall without the load-path mask, which must not change it. MEASURED 2026-09-11, once the override actually reached the binary: m.sta and m.damage are byte-identical to fast-wrapped - same wall at increment 99, same 64 deletions in the same order - and m.cvg differs at exactly one place, increment 93 attempt 2 iteration 3, CORR.DISP 0.1018 against 0.1438. That single difference IS the mask: it excludes a node from the displacement norm and changes nothing else."
+    },
+    {
+      "expect": {
+        "accepted": 4999,
+        "check_mixed": "PASSED",
+        "postpeak": 2400,
+        "rc": 0
+      },
+      "fails": [],
+      "got": {
+        "accepted": 4999,
+        "check_mixed": "PASSED",
+        "last_inc": 5000,
+        "postpeak": 2400,
+        "rc": 0,
+        "theta": "0.100000E+01"
+      },
+      "name": "mixed-analytic",
+      "seconds": 19.1,
+      "what": "inclined cohesive plane against the closed-form post-peak branch, 36 percent shear"
+    },
+    {
+      "expect": {
+        "check_mixed": "PASSED",
+        "rc": 0
+      },
+      "fails": [],
+      "got": {
+        "accepted": 4999,
+        "check_mixed": "PASSED",
+        "equal_to": "mixed-analytic at rtol=0 atol=0",
+        "last_inc": 5000,
+        "postpeak": 2400,
+        "rc": 0,
+        "theta": "0.100000E+01"
+      },
+      "name": "mixed-analytic-smooth",
+      "seconds": 19.2,
+      "what": "the same, with the kink regulariser armed: that facet never closes, so it must be bit-identical"
+    },
+    {
+      "expect": {
+        "check_close": "PASSED",
+        "law_error": 2e-05,
+        "rc": 0,
+        "tangent_ratio": 1000000.0
+      },
+      "fails": [],
+      "got": {
+        "check_close": "PASSED",
+        "last_inc": 200,
+        "law_error": 8.749e-06,
+        "rc": 0,
+        "tangent_ratio": 1000000.0,
+        "theta": "0.200000E+01"
+      },
+      "name": "close-sharp",
+      "seconds": 0.6,
+      "what": "the UC6 normal law itself, verified point by point on a facet damaged to gmin and then closed: this is where the five-orders tangent jump is measured rather than argued"
+    },
+    {
+      "expect": {
+        "check_close": "PASSED",
+        "in_band": 6,
+        "law_error": 2e-05,
+        "rc": 0,
+        "tangent_ratio": 1000000.0
+      },
+      "fails": [],
+      "got": {
+        "check_close": "PASSED",
+        "in_band": 6,
+        "last_inc": 200,
+        "law_error": 8.749e-06,
+        "rc": 0,
+        "tangent_ratio": 1000000.0,
+        "theta": "0.200000E+01"
+      },
+      "name": "close-blend",
+      "seconds": 0.6,
+      "what": "the same facet under the regulariser: identical far-field slopes, so nothing physical moved, and the blend band actually exercised"
+    }
+  ],
+  "failed": 1,
+  "preflight_failed": 0,
+  "provenance": {
+    "binary": "/home/user/ccx-arch/build-mkl/ccx_2.23_pardiso",
+    "binary_sha256": "86f5d614e98a88f2bf0e534e8be92a76f773108b212fe53fdc4e26283dadeb67",
+    "cc": "gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+    "fc": "GNU Fortran (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+    "git_commit": "a3bcffb5f3081658d0d7c9a7febc71a1937ad297",
+    "git_dirty": true,
+    "machine": "x86_64",
+    "mkl_cbwr": null,
+    "mkl_num_threads": "1",
+    "omp_num_threads": "1",
+    "python": "3.11.15"
+  },
+  "switches_exercised": [
+    "CCX_CRACK_CONTROL",
+    "CCX_CRACK_CONTROL_ENGAGE",
+    "CCX_DAMAGE_AUTOSPC",
+    "CCX_DAMAGE_DEADALL",
+    "CCX_DAMAGE_DELETE_MAT",
+    "CCX_DAMAGE_LINESEARCH",
+    "CCX_DAMAGE_REEQ_RESCUE2",
+    "CCX_DAMAGE_REEQ_SCALE",
+    "CCX_DAMAGE_TANGENT",
+    "CCX_DAMAGE_TOPOLOGY",
+    "CCX_DAMAGE_TR_DOGLEG",
+    "CCX_DAMAGE_VISCOSITY",
+    "CCX_FRACTURE_TERMINATION",
+    "CCX_PARDISO_REUSE_SYMBOLIC",
+    "CCX_PATHFOLLOW",
+    "CCX_PATHFOLLOW_DTHETA",
+    "CCX_UC6_CONTACT_SMOOTH"
+  ],
+  "when": "2026-09-11T17:32:54Z"
+}

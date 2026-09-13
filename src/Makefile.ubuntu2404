@@ -1,0 +1,61 @@
+# Reproducible build of CalculiX 2.23 + damage/fracture module
+# Target platform: Ubuntu 24.04 LTS (x86_64), fully open toolchain.
+#
+# Dependencies (apt):
+#   gfortran libblas-dev liblapack-dev libarpack2-dev libspooles-dev make gcc
+#
+# Linear solver: SPOOLES (isolver=0, *SOLVER=SPOOLES) and the iterative
+# built-ins.  PARDISO/MKL is NOT linked here on purpose: the open path must
+# build and run without a proprietary component.  See Makefile.ubuntu2404.mkl
+# for the PARDISO variant.
+#
+# -fallow-argument-mismatch is required from gfortran 10 onwards: CalculiX
+# passes scalars where arrays are declared in a number of legacy interfaces.
+# -march=native is deliberately NOT used so that binaries are reproducible
+# across machines.
+
+CCXVERSION = 2.23
+
+OPTLEVEL  ?= -O2
+EXTRA_CFLAGS ?=
+EXTRA_FFLAGS ?=
+EXTRA_LDFLAGS ?=
+
+SPOOLES_INC = /usr/include/spooles
+
+CFLAGS = -Wall $(OPTLEVEL) -DARCH="Linux" -DSPOOLES -DARPACK \
+         -DMATRIXSTORAGE -DNETWORKOUT -fopenmp -I$(SPOOLES_INC) $(EXTRA_CFLAGS)
+# -cpp is required by move.f, the only fixed-form source carrying #if
+# directives (it selects the RENAME compiler extension).
+FFLAGS = -Wall $(OPTLEVEL) -fopenmp -fallow-argument-mismatch -cpp $(EXTRA_FFLAGS)
+
+CC = gcc
+FC = gfortran
+
+LIBS = -lspooles -larpack -llapack -lblas -fopenmp -lpthread -lm -ldl
+
+.c.o:
+	$(CC) $(CFLAGS) -c $< -o $@
+.f.o:
+	$(FC) $(FFLAGS) -c $< -o $@
+
+include Makefile.inc
+
+SCCXMAIN = ccx_$(CCXVERSION).c
+OCCXF = $(SCCXF:.f=.o)
+OCCXC = $(SCCXC:.c=.o)
+
+all: ccx_$(CCXVERSION)
+
+ccx_$(CCXVERSION).a: $(OCCXF) $(OCCXC)
+	ar rs $@ $?
+
+ccx_$(CCXVERSION): ccx_$(CCXVERSION).a ccx_$(CCXVERSION).c
+	$(CC) $(CFLAGS) -c ccx_$(CCXVERSION).c -o ccx_$(CCXVERSION).o
+	$(FC) $(FFLAGS) $(EXTRA_LDFLAGS) -o $@ ccx_$(CCXVERSION).o \
+	      ccx_$(CCXVERSION).a $(LIBS)
+
+clean:
+	rm -f *.o *.mod *.a ccx_$(CCXVERSION)
+
+.PHONY: all clean

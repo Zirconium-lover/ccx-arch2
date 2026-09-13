@@ -1,0 +1,65 @@
+*.o
+*.obj
+*.a
+*.lib
+*.exe
+*.dll
+*.so
+*.mod
+*.out
+*.frd
+*.dat
+*.vtk
+*.vtu
+*.cvg
+*.sta
+*.msg
+*.prt
+*.inp~
+*.log
+ccx_2.23
+ccx_2.23step
+ccx_2.23_pardiso
+build-mkl/
+build-mkl*/
+test/pathfollow/mixed_*.inp
+*.vtu
+*.damage
+*.png
+*.svg
+test/**/run_*.log
+test/**/*.probe
+*.12d
+ccx_dbg
+test/pathfollow/coh_mu*.inp
+test/pathfollow/plascheck.inp
+test/pathfollow/probe.inp
+test/pathfollow/snapback_pf.inp
+test/pathfollow/off_ref/
+test/pathfollow/off_new/
+test/pathfollow/on_run/
+test/pathfollow/*.dat
+__pycache__/
+*.pyc
+*.de1stats
+test/s3rad/_runs/
+
+# packaged binaries and bundles must not enter git
+*.gz
+*.xz
+*.bundle
+test/regress/_runs/
+
+# gcc -MMD dependency files
+*.d
+ccx_stepB
+ccx_step*
+
+# Variant binaries built with `make EXE=...` while another run holds the
+# default one.  The pattern is deliberately broad: this session committed
+# a 131MB executable twice, once as ccx_stepB and once as ccx_glob, and
+# both times the remote's pre-receive hook caught what .gitignore and I
+# did not.  Sources here are .c/.f/.h/.inc, so an extensionless ccx_* is
+# always a binary.
+ccx_step*
+ccx_glob
