@@ -84,7 +84,15 @@ def functions(path):
                         elif ch=='}': depth-=1
                     if started and depth<=0: break
                     k+=1
-                if k<n and k>j:
+                # k>=j, not k>j: a definition written entirely on ONE line -
+                # `void damstats_init(damstats *d){ memset(d,0,sizeof(*d)); }'
+                # - opens and closes on the same line, so k==j.  Requiring
+                # k>j dropped every one of them, which mattered far beyond
+                # the length table: module_symbols() is built from this, so
+                # the layering check and the public-API count were blind to
+                # them too.  Found by a partitioner that could not work out
+                # who owned damstats_init().
+                if k<n and k>=j:
                     out.append((m.group(1),i+1,j+1,k+1))
                     i=k
         i+=1
