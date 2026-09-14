@@ -37,6 +37,9 @@
    exactly the kind of accidental coupling this work is removing. */
 typedef struct trialctx trialctx;
 typedef struct nlstate nlstate;
+typedef struct erosion_batch erosion_batch;
+typedef struct erosion_policy erosion_policy;
+typedef struct topo_txn topo_txn;
 
 /* dissipation-based path following; see pathfollow.c for the derivation
    and for the numerical verification of both rows of the bordered system.
@@ -236,6 +239,31 @@ void converge_norms(converge *c,const double *b,const ITG *neq,
    trialctx's and mt is mi[1]+1. */
 void converge_report(const converge *c,const trialctx *mdl,const nlstate *n,
                      const ITG *nactdofinv,double ran);
+/* ---- what did deleting those elements release (release.c) -------------
+
+   Five sites in nonlingeo() and twelve locals owned by none of them, two of
+   the sites being ninety-one-line arm blocks that were character-identical
+   and sat 1,120 lines apart.  It reads and prints; it changes no equation
+   and nothing downstream branches on it. */
+typedef struct{
+  ITG    probe;                /* 0 off, 1 measure, 2 per-element lines   */
+  ITG    armed,pass;
+  ITG    rebuild,iforbou;      /* what the topology event did             */
+  ITG    nterm,nother,nisl,ncoh;   /* how the batch was made up           */
+  double qa,qam,dt;            /* the reference force when it was armed   */
+  double *frel;                /* f_int(u*) in NODE space, pre-remastruct */
+  ITG    *ract;                /* which of those dofs were active then    */
+}release;
+
+void release_init(release *r);
+ITG  release_configure(release *r);
+void release_free(release *r);
+void release_arm(release *r,const trialctx *mdl,const nlstate *n,
+                 const erosion_batch *b,const topo_txn *txn,
+                 const erosion_policy *pol,const double *damvisc,
+                 ITG rebuild,ITG iforbou,ITG nisl,ITG ncoh);
+void release_report(release *r,const trialctx *mdl,double steptime);
+
 /* ---- where the Newton solve IS (nlstate.c) ----------------------------
 
    The iteration counter and the convergence quantities, in one object,
@@ -321,13 +349,13 @@ ITG  glob_selftest(void);
    records a deletion the damage model has already decided; it decides
    nothing and it is not a rollback.                                    */
 
-typedef struct{
+struct topo_txn{
   ITG *elem,*mat,*ip;      /* one entry per element eroded in this batch */
   double *value;
   ITG count;
   ITG step,increment;      /* when this batch happened                  */
   double step_time,total_time;
-}topo_txn;
+};
 
 void topo_txn_init(topo_txn *t);
 void topo_txn_discard(topo_txn *t);
@@ -1261,18 +1289,18 @@ void rescue_backtrack(rescue *r,const trialctx *mdl,glob_census *g,
    the .damage record and the rollback belong to topology.c and to
    nonlingeo, and erosion.c contains no code that touches them.          */
 
-typedef struct{
+struct erosion_policy{
   double delete_d;      /* CCX_DAMAGE_DELETE_D: the terminal threshold    */
   ITG    delete_visc;   /* CCX_DAMAGE_DELETE_VISC: read Dvis, not D       */
   const char *filter;   /* CCX_DAMAGE_DELETE_MAT; NULL means every one    */
   double deadall_g;     /* CCX_DAMAGE_DEADALL, 0 = the rule is off        */
   double deadsole_g;    /* CCX_DAMAGE_DEADSOLE, 0 = the rule is off       */
   ITG    batchmax;      /* how many may leave in one transaction          */
-}erosion_policy;
+};
 
 /* What one call took, and what the run has taken so far.  Seven locals of
    nonlingeo() with no owner, read from five other places; one object. */
-typedef struct{
+struct erosion_batch{
   ITG marked;           /* elements marked by this call                   */
   ITG terminal;         /* ...of them by the damage threshold alone       */
   ITG deadall,deadsole; /* ...by each load-path rule                      */
@@ -1280,7 +1308,7 @@ typedef struct{
   double batch_dmax;    /* worst D in the batch                           */
   double batch_vmin;    /* smallest Dvis in it - how much stress it held  */
   ITG total_deadall,total_deadsole;   /* running, over the whole run      */
-}erosion_batch;
+};
 
 void erosion_batch_init(erosion_batch *b);
 ITG  erosion_mark(const erosion_policy *p,erosion_batch *b,

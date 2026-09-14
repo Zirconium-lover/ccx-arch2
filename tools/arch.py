@@ -47,6 +47,18 @@ TAGS=['DAMAGE CT','PATHFOLLOW','WALLDIAG','CRACKCTL','OPCHECK','LOADCUT',
       'DAMAGE RELEASE','DAMAGE DE1.3','SWITCHES','DISSIPATION','CENSUS',
       'BATCHTRACE','LSLADDER','DAMAGE REG','FRACTURE']
 
+# A struct is written two ways in these headers: the anonymous
+# `typedef struct{...}name;' and, for the contexts that have to be
+# forward-declared, the tagged `struct name{...};'.  EVERY scan for type
+# names has to know both.  Knowing only the first is a bug that has now
+# appeared TWICE - once in struct_fields(), where it made the field set
+# empty, and once in duplicated_params(), where tagging erosion_batch
+# dropped it out of the known-type set and its parameter began counting as
+# duplication.  Written once so there is one place left to be wrong.
+def typedefs_in(text):
+    return (set(re.findall(r'^\}\s*([A-Za-z_]\w*)\s*;',text,re.M))
+           |set(re.findall(r'^struct\s+([A-Za-z_]\w*)\s*\{',text,re.M)))
+
 def strip(line):
     """Enough comment/string removal to count braces without being fooled."""
     s=re.sub(r'/\*.*?\*/','',line)
@@ -99,14 +111,20 @@ def functions(path):
     return out
 
 def typedef_names():
-    """Every struct typedef CalculiX.h declares.
+    """Every struct typedef the tree declares, from EVERY header.
 
-    Read rather than listed: a hand-kept list silently stops recognising the
-    next module's type, the declaration scan then stops at its first use,
-    and the locals count drops by ninety for no reason at all.  Measured the
-    hard way."""
-    h=(SRC/'CalculiX.h').read_text(errors='replace')
-    return sorted(set(re.findall(r'^\}\s*([A-Za-z_]\w*)\s*;',h,re.M)))
+    It read CalculiX.h alone, which was right until the extension's
+    declarations moved into ccxfork.h.  After that it returned two names,
+    DECLTYPES stopped recognising `trialctx nlgt;' as a declaration, and the
+    prologue scan in locals_of() - which stops at the first statement that
+    does not begin with a type - would stop early at whichever module handle
+    came first.  A hand-kept list was rejected here for the same reason; a
+    hand-kept FILE is no better."""
+    out=set()
+    for h in sorted(SRC.glob('*.h')):
+        out|=typedefs_in(h.read_text(errors='replace'))
+    return sorted(out)
+
 
 DECLTYPES=(r'char|double|ITG|FILE|int|float|long|unsigned|size_t|'
            +"|".join(typedef_names()))
@@ -170,7 +188,7 @@ def ext_modules():
            'lsladder.c','crackcontrol.c','pathfollow.c','ccxopt.c','logview.c',
            'damstate.c','stiffcensus.c','loadcut.c','opcheck.c',
            'damdiag.c','erosion.c','dogleg.c','damcont.c','damstats.c',
-           'slownewton.c','rescue.c','trial.c','loadctl.c','dammat.c',
+           'slownewton.c','rescue.c','trial.c','loadctl.c','dammat.c','release.c',
            'census.c','monitor.c']
     return [SRC/n for n in names if (SRC/n).exists()]
 
@@ -239,7 +257,7 @@ def ext_modules():
 LAYERS={'ccxopt':0,
         'census':1,'dammat':1,'logview':1,'monitor':1,
         'damstate':2,'nlstate':2,'topology':2,'trial':2,
-        'damdiag':3,'damstats':3,'loadctl':3,'opcheck':3,'topodiag':3,
+        'damdiag':3,'damstats':3,'loadctl':3,'opcheck':3,'release':3,'topodiag':3,
         'converge':4,'crackcontrol':4,'damcont':4,'erosion':4,'globalize':4,
         'loadcut':4,'lsladder':4,
         'dogleg':5,'pathfollow':5,'rescue':5,'slownewton':5}
@@ -429,7 +447,7 @@ def duplicated_params(own):
     keep=selftest_reachable(own)
     types=set()
     for h in [SRC/'CalculiX.h']+fork_headers():
-        types|=set(re.findall(r'^\}\s*(\w+)\s*;',h.read_text(errors='replace'),re.M))
+        types|=typedefs_in(h.read_text(errors='replace'))
     n=0; worst=[]
     for h in [SRC/'CalculiX.h']+fork_headers():
         txt=re.sub(r'/\*.*?\*/','',h.read_text(errors='replace'),flags=re.S)
@@ -729,6 +747,33 @@ void trial_check(const trialctx *mdl);
         _chk("struct_fields: a different struct does not leak in",
              'x' in struct_fields('trialctx'),False,bad)
 
+        # ---- typedef_names and locals_of --------------------------------
+        # This case exists because the bug happened.  typedef_names() read
+        # CalculiX.h alone; when the extension's declarations moved to
+        # ccxfork.h it returned two names, DECLTYPES stopped recognising
+        # `trialctx nlgt;' as a declaration, and locals_of() - which ends the
+        # prologue at the first statement that is not a declaration - stopped
+        # at whichever module handle came first.  nonlingeo()'s locals read
+        # 579 when they were 618, for four commits, and nothing said so.
+        _chk("typedef_names: a type declared outside CalculiX.h is found",
+             'trialctx' in typedef_names(),True,bad)
+        (d/'nonlingeo.c').write_text(
+          "void nonlingeo(void){\n"
+          "  double aa=0.,bb=0.;\n"
+          "  trialctx handle;\n"          # only found if the typedef is known
+          "  ITG cc=0,dd=0;\n"
+          "  aa=1.;\n"
+          "}\n")
+        import importlib
+        global DECLTYPES
+        DECLTYPES=(r'char|double|ITG|FILE|int|float|long|unsigned|size_t|'
+                   +"|".join(typedef_names()))
+        fns=functions(d/'nonlingeo.c')
+        big=[f for f in fns if f[0]=='nonlingeo'][0]
+        _chk("locals_of: the prologue does not stop at a module handle",
+             sorted(locals_of(d/'nonlingeo.c',big[2],big[3])),
+             ['aa','bb','cc','dd','handle'],bad)
+
         # ---- layering: one edge upward, and only one ---------------------
         (d/'erosion.c').write_text(
           '#include "topology.h"\nvoid erosion_mark(void){ topo_selftest(); }\n')
@@ -746,12 +791,14 @@ void trial_check(const trialctx *mdl);
 void damdiag_a(const double *co,ITG nk,double z);
 void damdiag_b(const trialctx *co,double z);
 void damdiag_c(const double *co,ITG nk);
+void damdiag_d(const nlstate *co,double z);
 ITG  damdiag_selftest(void);
 """)
         (d/'damdiag.c').write_text(
           "void damdiag_a(const double *co,ITG nk,double z){}\n"
           "void damdiag_b(const trialctx *co,double z){}\n"
           "void damdiag_c(const double *co,ITG nk){}\n"
+          "void damdiag_d(const nlstate *co,double z){}\n"
           "ITG damdiag_selftest(void){ damdiag_c(0,0); return 0; }\n")
         own=module_symbols()
         n,worst,nkeep=duplicated_params(own)
@@ -763,6 +810,13 @@ ITG  damdiag_selftest(void);
         # case could not fail and would be a test in appearance only.
         _chk("duplicated_params: an object-typed parameter does not",
              'damdiag_b' in [w for _,w in worst],False,bad)
+        # ...and the same when the type uses the TAGGED spelling.  Added
+        # because it was MISSING and the ratchet, not this test, is what
+        # caught the consequence: tagging erosion_batch dropped it out of
+        # the known-type set, and release_arm's `b' - an erosion_batch, not
+        # trialctx's right-hand side - began counting as duplication.
+        _chk("duplicated_params: a TAGGED object type is recognised too",
+             'damdiag_d' in [w for _,w in worst],False,bad)
         _chk("duplicated_params: a self test's callee is exempt",
              'damdiag_c' in [w for _,w in worst],False,bad)
 

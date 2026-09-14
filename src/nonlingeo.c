@@ -277,11 +277,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     intpointvart,*jqbi=NULL,*irowbi=NULL,*jqib=NULL,*irowib=NULL,
     idispfrdonly,*inumcp=NULL,nmethodold=*nmethod,
     idamage=0,iitsav=0,idamagereeq=0,ilocalsubstep=0,*ipkondamageini=NULL,
-    *damage_de13_trigger_ip=NULL,*damage_ract=NULL,damage_dth_n=0,damage_dth_i=0,
-    damage_release_probe=0,damage_release_armed=0,damage_release_pass=0,
-    damage_release_rebuild=0,
-    damage_release_nterm=0,damage_release_nother=0,
-    damage_release_nisl=0,damage_release_ncoh=0,damage_release_iforbou=0,
+    *damage_de13_trigger_ip=NULL,damage_dth_n=0,damage_dth_i=0,
     damage_batch=0,damage_scan_count=0,damage_nip_local=0,
     damage_mode=0,damage_predict_count=0,damage_event_cut=0,
     damage_active_pass=0,damage_soft_reeq=0,damage_fast_retry=0,damage_fast_used=0,
@@ -357,15 +353,12 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     *damage_de13_trigger_value=NULL,*damagebase=NULL,
     *damage_damjac=NULL,damage_snap_ratio=0.,
     *damage_damvisc=NULL,*damage_damviscini=NULL,damage_visc_eta=0.,
-    *damage_frel=NULL,
-    damage_dtheta_healthy=0.,
+        damage_dtheta_healthy=0.,
     damage_dth_ring[20]={0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,
                          0.,0.,0.,0.,0.,0.,0.,0.,0.,0.},
     *daba_res=NULL,*daba_v=NULL,*daba_stx=NULL,*daba_fn=NULL,
     *daba_f=NULL,*daba_dam=NULL,*daba_visc=NULL,*daba_xs=NULL,
     *daba_eme=NULL,*daba_stiff=NULL,*daba_qa=NULL,*daba_cam=NULL,
-    damage_release_qa=0.,damage_release_qam=0.,
-    damage_release_dt=0.,
     *damage_addiag=NULL,*damage_addiag0=NULL,
     damage_stiff_min=0.,
     *damage_free_g=NULL,damage_free_gm=0.,damage_free_dv=0.,
@@ -407,6 +400,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
   /* [TRIAL] the residual evaluator's view of this frame; see trial.c */
   trialctx nlgt;
   nlstate nls;
+  release rel;
 
   /* [TOPOLOGY] the erosion transaction.  Nine locals with no owner became
      one object with one lifetime.  Six copies of "discard the marked set", in three
@@ -517,6 +511,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
   loadctl_init(&lc);
   slownewton_init(&slow);
   damstats_init(&de1);
+  release_init(&rel);
 
   /* determining whether a node belongs to at least one element
      (needed in resultsforc.c) */
@@ -1334,15 +1329,13 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
       }
 
       if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_RELEASE_PROBE"))!=NULL){
-        damage_release_probe=atoi(damage_de13_env);
-        if(damage_release_probe<0) damage_release_probe=0;
-        if(damage_release_probe>2) damage_release_probe=2;
-        if(damage_release_probe>0){
+        release_configure(&rel);
+        if(rel.probe>0){
           printf("[DAMAGE RELEASE] DIAGNOSTIC level %" ITGFORMAT
                  ": the internal force released by each topology event is "
                  "measured at frozen displacement and reported split into "
                  "surviving and removed degrees of freedom.  Reads only; "
-                 "changes no bit of the answer.%s", damage_release_probe,
+                 "changes no bit of the answer.%s", rel.probe,
                  "\n");
           fflush(stdout);
         }
@@ -4784,71 +4777,10 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     ielas=0;
     iout=0;
 
-    /* ---- [DAMAGE RELEASE] report ------------------------------------
-       f now holds f_int on the NEW topology, at a displacement state that is
-       bit-identical to the converged u*: the topology site set idiscon=1
-       before looping back, and prediction() with idiscon!=0 copies vold into
-       v with no extrapolation (prediction.c:99).  The difference below is
-       therefore the released internal force and nothing else.
-
-       Self-checks printed with the numbers, because a probe that is trusted
-       without them is worse than none:
-         - action=reuse-sparse-graph means nactdof did not change, so
-           removed MUST be exactly zero;
-         - anom counts DOF active AFTER but not BEFORE, which a deletion
-           cannot produce - nonzero means the mapping is wrong;
-         - iforbou=1 would mean f had a boundary term added to it
-           (f[k]+=b[k] on the other branch above) and the reading is void. */
-    if((damage_release_probe)&&(damage_release_armed)&&
-       (damage_frel!=NULL)&&(damage_ract!=NULL)){
-      ITG ri,rj,rk,rns=0,rds=0,rnr=0,rdr=0,ranom=0;
-      double dfv,dfa,smax=0.,sl1=0.,sl2=0.,rmax=0.,rl1=0.,rl2=0.;
-      for(ri=0;ri<*nk;ri++){
-        for(rj=0;rj<mt;rj++){
-          rk=nactdof[mt*ri+rj];
-          dfa=(rk>0)?f[rk-1]:0.;
-          if(damage_ract[mt*ri+rj]){
-            dfv=damage_frel[mt*ri+rj]-dfa;
-            if(rk>0){
-              sl1+=fabs(dfv); sl2+=dfv*dfv;
-              if(fabs(dfv)>smax){smax=fabs(dfv);rns=ri+1;rds=rj;}
-            }else{
-              rl1+=fabs(dfv); rl2+=dfv*dfv;
-              if(fabs(dfv)>rmax){rmax=fabs(dfv);rnr=ri+1;rdr=rj;}
-            }
-          }else if(rk>0){
-            ranom++;
-          }
-        }
-      }
-      sl2=sqrt(sl2); rl2=sqrt(rl2);
-      printf("[DAMAGE RELEASE] inc=%" ITGFORMAT " pass=%" ITGFORMAT
-             " time=%.12e action=%s dt=%.6e%s"
-             "   surv:    dF_max=%.6e node=%" ITGFORMAT " dof=%" ITGFORMAT
-             " dF_l1=%.6e dF_l2=%.6e%s"
-             "   removed: dF_max=%.6e node=%" ITGFORMAT " dof=%" ITGFORMAT
-             " dF_l1=%.6e dF_l2=%.6e%s"
-             "   qa=%.6e qam=%.6e  dF_surv_max/qam=%.6e  dF_max/qam=%.6e%s"
-             "   deleted: terminal=%" ITGFORMAT " deadall+deadsole=%" ITGFORMAT
-             " islands=%" ITGFORMAT " cohfacets=%" ITGFORMAT "%s"
-             "   selfcheck: anom=%" ITGFORMAT " iforbou=%" ITGFORMAT
-             " removed_must_be_zero=%s%s",
-             iinc,damage_release_pass,theta**tper,
-             damage_release_rebuild?"remastruct":"reuse-sparse-graph",
-             damage_release_dt,"\n",
-             smax,rns,rds,sl1,sl2,"\n",
-             rmax,rnr,rdr,rl1,rl2,"\n",
-             damage_release_qa,damage_release_qam,
-             (damage_release_qam>0.)?smax/damage_release_qam:-1.,
-             (damage_release_qam>0.)?
-               ((smax>rmax?smax:rmax)/damage_release_qam):-1.,"\n",
-             damage_release_nterm,damage_release_nother,
-             damage_release_nisl,damage_release_ncoh,"\n",
-             ranom,damage_release_iforbou,
-             damage_release_rebuild?"no":"YES","\n");
-      fflush(stdout);
-      damage_release_armed=0;
-    }
+    /* [DAMAGE RELEASE] the released internal force, measured.  Everything
+       this used to do inline lives in release.c now, including the two
+       ninety-one-line arm blocks that were character-identical. */
+    release_report(&rel,&nlgt,theta**tper);
 
       
     SFREE(fn);SFREE(v);
@@ -9026,97 +8958,9 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
            state - the elements were marked above but no results() has run
            since - and nactdof is still the pre-remastruct numbering.  Both
            are mapped into node space here so they survive remastruct. */
-        if(damage_release_probe){
-          ITG ai,aj,ak;
-          if(damage_frel==NULL){
-            NNEW(damage_frel,double,mt**nk);
-            NNEW(damage_ract,ITG,mt**nk);
-          }
-          for(ai=0;ai<*nk;ai++){
-            for(aj=0;aj<mt;aj++){
-              ak=nactdof[mt*ai+aj];
-              damage_frel[mt*ai+aj]=(ak>0)?f[ak-1]:0.;
-              damage_ract[mt*ai+aj]=(ak>0)?1:0;
-            }
-          }
-          damage_release_armed=1;
-          damage_release_pass++;
-          damage_release_qa=qa[0];
-          damage_release_qam=qam[0];
-          damage_release_dt=dtime;
-          damage_release_rebuild=damage_topology_rebuild;
-          damage_release_iforbou=iforbou;
-          damage_release_nterm=damage_ebatch.terminal;
-          damage_release_nother=damage_ebatch.marked-damage_ebatch.terminal;
-          damage_release_nisl=damage_float_isl;
-          damage_release_ncoh=damage_float_coh;
-
-          /* level 2: one line per element in this batch.  The degradation it
-             carried when it left is printed as a REFERENCE CHARACTERISTIC -
-             it is a dimensionless multiplier, not a force, and it is NOT
-             summed into any estimate of the released force.  The measured
-             force is the surv/removed split above.
-
-             It does classify the source for free, though: the terminal
-             trigger cannot fire below its own threshold, so an element that
-             left at Dvis < delete_d did NOT come from it - it came from
-             damfloat, which reads no damage variable at all and therefore
-             removes at whatever the element was carrying. */
-          if(damage_release_probe>=2){
-            ITG pe,pj,pnip,pel;
-            double pd,pdv,pdmax,pdvmax,ptrig;
-            for(pe=0;pe<dtxn.count;pe++){
-              pel=dtxn.elem[pe]-1;
-              if((pel<0)||(pel>=ne0)) continue;
-              pnip=topo_element_nip(&lakon[8*pel],mi[0]);
-              if(pnip<1) pnip=1;
-              if(pnip>mi[0]) pnip=mi[0];
-              pdmax=0.; pdvmax=0.;
-              for(pj=0;pj<pnip;pj++){
-                pd=dam[mi[0]*pel+pj]-1.;
-                if(pd<0.) pd=0.;
-                if(pd>1.) pd=1.;
-                if(pd>pdmax) pdmax=pd;
-                if(damage_damvisc!=NULL){
-                  pdv=damage_damvisc[mi[0]*pel+pj];
-                  if(pdv<0.) pdv=0.;
-                  if(pdv>1.) pdv=1.;
-                  if(pdv>pdvmax) pdvmax=pdv;
-                }
-              }
-              ptrig=((damage_epol.delete_visc==1)&&(damage_damvisc!=NULL))
-                    ?pdvmax:pdmax;
-              /* The bulk damage variable exists ONLY for bulk elements.
-                 calcdamage.f:135 skips every lakon(1:1) != 'C', so dam is
-                 identically zero for a UC6 facet - printing it would read
-                 as "left fully intact" when in truth the facet was
-                 conducting gmin*Kn and its state lives in xstate, not here.
-                 Both decks in play carry UC6, so this is not hypothetical:
-                 damfloatcoh removals land in the same tentative batch. */
-              if(lakon[8*pel]!='C'){
-                printf("[DAMAGE RELEASE ELEM] inc=%" ITGFORMAT
-                       " pass=%" ITGFORMAT " el=%" ITGFORMAT
-                       " mat=%" ITGFORMAT " type=%.8s"
-                       " D=n/a Dvis=n/a g_ref=n/a"
-                       " note=non-bulk-element-damage-lives-in-xstate%s",
-                       iinc,damage_release_pass,dtxn.elem[pe],
-                       dtxn.mat[pe],&lakon[8*pel],
-                       "\n");
-                continue;
-              }
-              printf("[DAMAGE RELEASE ELEM] inc=%" ITGFORMAT
-                     " pass=%" ITGFORMAT " el=%" ITGFORMAT
-                     " mat=%" ITGFORMAT " type=%.8s"
-                     " D=%.6f Dvis=%.6f g_ref=%.4e"
-                     " below_delete_d=%s%s",
-                     iinc,damage_release_pass,dtxn.elem[pe],
-                     dtxn.mat[pe],&lakon[8*pel],pdmax,pdvmax,1.-ptrig,
-                     (ptrig<damage_epol.delete_d)?"YES-not-terminal":"no",
-                     "\n");
-            }
-            fflush(stdout);
-          }
-        }
+        release_arm(&rel,&nlgt,&nls,&damage_ebatch,&dtxn,&damage_epol,
+                    damage_damvisc,damage_topology_rebuild,iforbou,
+                    damage_float_isl,damage_float_coh);
 
         if(damage_topology_rebuild){
           iitsav=iit;
@@ -10146,97 +9990,9 @@ damage_controller_done:
            state - the elements were marked above but no results() has run
            since - and nactdof is still the pre-remastruct numbering.  Both
            are mapped into node space here so they survive remastruct. */
-        if(damage_release_probe){
-          ITG ai,aj,ak;
-          if(damage_frel==NULL){
-            NNEW(damage_frel,double,mt**nk);
-            NNEW(damage_ract,ITG,mt**nk);
-          }
-          for(ai=0;ai<*nk;ai++){
-            for(aj=0;aj<mt;aj++){
-              ak=nactdof[mt*ai+aj];
-              damage_frel[mt*ai+aj]=(ak>0)?f[ak-1]:0.;
-              damage_ract[mt*ai+aj]=(ak>0)?1:0;
-            }
-          }
-          damage_release_armed=1;
-          damage_release_pass++;
-          damage_release_qa=qa[0];
-          damage_release_qam=qam[0];
-          damage_release_dt=dtime;
-          damage_release_rebuild=damage_topology_rebuild;
-          damage_release_iforbou=iforbou;
-          damage_release_nterm=damage_ebatch.terminal;
-          damage_release_nother=damage_ebatch.marked-damage_ebatch.terminal;
-          damage_release_nisl=damage_float_isl;
-          damage_release_ncoh=damage_float_coh;
-
-          /* level 2: one line per element in this batch.  The degradation it
-             carried when it left is printed as a REFERENCE CHARACTERISTIC -
-             it is a dimensionless multiplier, not a force, and it is NOT
-             summed into any estimate of the released force.  The measured
-             force is the surv/removed split above.
-
-             It does classify the source for free, though: the terminal
-             trigger cannot fire below its own threshold, so an element that
-             left at Dvis < delete_d did NOT come from it - it came from
-             damfloat, which reads no damage variable at all and therefore
-             removes at whatever the element was carrying. */
-          if(damage_release_probe>=2){
-            ITG pe,pj,pnip,pel;
-            double pd,pdv,pdmax,pdvmax,ptrig;
-            for(pe=0;pe<dtxn.count;pe++){
-              pel=dtxn.elem[pe]-1;
-              if((pel<0)||(pel>=ne0)) continue;
-              pnip=topo_element_nip(&lakon[8*pel],mi[0]);
-              if(pnip<1) pnip=1;
-              if(pnip>mi[0]) pnip=mi[0];
-              pdmax=0.; pdvmax=0.;
-              for(pj=0;pj<pnip;pj++){
-                pd=dam[mi[0]*pel+pj]-1.;
-                if(pd<0.) pd=0.;
-                if(pd>1.) pd=1.;
-                if(pd>pdmax) pdmax=pd;
-                if(damage_damvisc!=NULL){
-                  pdv=damage_damvisc[mi[0]*pel+pj];
-                  if(pdv<0.) pdv=0.;
-                  if(pdv>1.) pdv=1.;
-                  if(pdv>pdvmax) pdvmax=pdv;
-                }
-              }
-              ptrig=((damage_epol.delete_visc==1)&&(damage_damvisc!=NULL))
-                    ?pdvmax:pdmax;
-              /* The bulk damage variable exists ONLY for bulk elements.
-                 calcdamage.f:135 skips every lakon(1:1) != 'C', so dam is
-                 identically zero for a UC6 facet - printing it would read
-                 as "left fully intact" when in truth the facet was
-                 conducting gmin*Kn and its state lives in xstate, not here.
-                 Both decks in play carry UC6, so this is not hypothetical:
-                 damfloatcoh removals land in the same tentative batch. */
-              if(lakon[8*pel]!='C'){
-                printf("[DAMAGE RELEASE ELEM] inc=%" ITGFORMAT
-                       " pass=%" ITGFORMAT " el=%" ITGFORMAT
-                       " mat=%" ITGFORMAT " type=%.8s"
-                       " D=n/a Dvis=n/a g_ref=n/a"
-                       " note=non-bulk-element-damage-lives-in-xstate%s",
-                       iinc,damage_release_pass,dtxn.elem[pe],
-                       dtxn.mat[pe],&lakon[8*pel],
-                       "\n");
-                continue;
-              }
-              printf("[DAMAGE RELEASE ELEM] inc=%" ITGFORMAT
-                     " pass=%" ITGFORMAT " el=%" ITGFORMAT
-                     " mat=%" ITGFORMAT " type=%.8s"
-                     " D=%.6f Dvis=%.6f g_ref=%.4e"
-                     " below_delete_d=%s%s",
-                     iinc,damage_release_pass,dtxn.elem[pe],
-                     dtxn.mat[pe],&lakon[8*pel],pdmax,pdvmax,1.-ptrig,
-                     (ptrig<damage_epol.delete_d)?"YES-not-terminal":"no",
-                     "\n");
-            }
-            fflush(stdout);
-          }
-        }
+        release_arm(&rel,&nlgt,&nls,&damage_ebatch,&dtxn,&damage_epol,
+                    damage_damvisc,damage_topology_rebuild,iforbou,
+                    damage_float_isl,damage_float_coh);
 
         if(damage_topology_rebuild){
           iitsav=iit;
@@ -11241,8 +10997,7 @@ damage_controller_done:
              dog.nfact,dog.ident,dog.asym);
       fflush(stdout);
     }
-    if(damage_frel!=NULL) SFREE(damage_frel);
-    if(damage_ract!=NULL) SFREE(damage_ract);
+    release_free(&rel);
     if(damage_de13_trigger_value!=NULL) SFREE(damage_de13_trigger_value);
     if(damage_de13_trigger_ip!=NULL) SFREE(damage_de13_trigger_ip);
     if(*nmethod!=4) SFREE(veolddamageini);

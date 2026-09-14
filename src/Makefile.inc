@@ -1042,6 +1042,7 @@ expand.c \
 damcont.c \
 dammat.c \
 nlstate.c \
+release.c \
 selftest.c \
 loadctl.c \
 damstats.c \

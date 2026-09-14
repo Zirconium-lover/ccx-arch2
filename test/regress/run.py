@@ -57,6 +57,28 @@ def census(log):
         if worst is None or v<worst: worst=v
     return mx,worst
 
+def release(log):
+    """What the release probe measured, as three integers.
+
+    The probe answers "where did the internal force of the deleted elements
+    go".  It arms at the converged state, maps f_int into NODE space because
+    nactdof is about to be renumbered, and reports the difference after the
+    rebuild.
+
+    `anom' is the number to watch and the reason this case exists.  It counts
+    degrees of freedom active AFTER the topology event but not before, which
+    a deletion cannot produce - so a nonzero anom means the node-space
+    mapping is wrong.  That mapping is exactly what moving these 245 lines
+    into release.c could have broken, and no other case in this gate arms
+    CCX_DAMAGE_RELEASE_PROBE at all: byte identity over the other seventeen
+    says nothing about code none of them executes."""
+    try: txt=open(log,errors='replace').read()
+    except OSError: return None,None,None
+    npass=len(re.findall(r'^\[DAMAGE RELEASE\] inc=',txt,re.M))
+    nelem=len(re.findall(r'^\[DAMAGE RELEASE ELEM\]',txt,re.M))
+    anom=sum(int(x) for x in re.findall(r'selfcheck: anom=(\d+)',txt))
+    return npass,nelem,anom
+
 def opcheck(log):
     """What the operator check measured, as three integers.
 
@@ -171,6 +193,8 @@ def one(case,outroot,exe,required,lines):
         got['masked_max'],got['worst_ratio']=census(log)
     if 'opcheck_cols' in exp or 'opcheck_wrong' in exp:
         got['opcheck_cols'],got['opcheck_wrong'],got['opcheck_kink']=opcheck(log)
+    if 'release_passes' in exp:
+        got['release_passes'],got['release_elem'],got['release_anom']=release(log)
     if 'check_close' in exp:
         r=sh('python3 %s/test/pathfollow/check_close.py %s --zeta %s'
              %(ROOT,rundir,case.get('zeta','0')),base_env([]))

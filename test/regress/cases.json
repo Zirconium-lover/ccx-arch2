@@ -345,6 +345,24 @@
    }
   },
   {
+   "name": "fast-plain-release",
+   "what": "the release probe, which no case in this gate had ever armed.  It answers where the internal force of the deleted elements went: it captures f_int at the converged state in NODE space - because nactdof is about to be renumbered - and reports the difference after the rebuild.  MEASURED under the gate's own switch configuration at level 2: 32 reported passes and 90 per-element lines, with anom=0 throughout.  `anom' is the number this case exists for: it counts degrees of freedom active AFTER the topology event but not before, which a deletion cannot produce, so a nonzero anom means the node-space mapping is wrong - and that mapping is precisely what moving these 245 lines out of nonlingeo() into release.c could have broken.  The two arm blocks it replaced were 91 lines each and character-identical, 1,120 lines apart.",
+   "kind": "fast",
+   "variant": "plain",
+   "env": [
+    "CCX_DAMAGE_RELEASE_PROBE=2"
+   ],
+   "expect": {
+    "rc": 0,
+    "last_inc": 507,
+    "theta": "0.100000E+01",
+    "deletions": 90,
+    "release_passes": 32,
+    "release_elem": 90,
+    "release_anom": 0
+   }
+  },
+  {
    "name": "fast-plain-opcheck",
    "what": "the operator check itself, which no case in this gate had ever run: CCX_STRUCT_FD_* is one of the switch families nothing sets, so the probe had the coverage of a switch that does not exist.  It arms at increment 3 iteration 2, compares the ASSEMBLED tangent column by column against a central difference of the internal force, and stops the run - so last_inc is 2, the last increment that completed.  MEASURED on the plain fast deck: 27 columns, 43200 coefficients, 0 wrong and 0 kink.  `wrong' is the only one of the four classes that accuses the operator; `kink' accuses the model of not being differentiable there, which on a deck whose cohesive plane has not yet opened it is not.  This case exists because the probe was moved out of nonlingeo() into opcheck.c and byte identity over the other sixteen cases says nothing about code none of them executes.",
    "kind": "fast",
