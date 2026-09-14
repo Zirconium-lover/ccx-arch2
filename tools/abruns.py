@@ -53,12 +53,9 @@ def canon(path):
                         if not CLOCK.match(l))
     return b
 
-def main():
-    ap=argparse.ArgumentParser()
-    ap.add_argument('a'); ap.add_argument('b')
-    ap.add_argument('-v',action='store_true',help='list every file compared')
-    o=ap.parse_args()
-    A=pathlib.Path(o.a).resolve(); B=pathlib.Path(o.b).resolve()
+def compare(A,B,verbose=False):
+    """Number of differing files.  Printing included, because the message is
+    the product: a count with no name attached is not actionable."""
     cases=sorted({d.name for d in A.iterdir() if d.is_dir()} &
                  {d.name for d in B.iterdir() if d.is_dir()})
     onlyA=sorted({d.name for d in A.iterdir() if d.is_dir()}-set(cases))
@@ -81,7 +78,7 @@ def main():
                 if x is not None and y is not None:
                     extra=" (%d vs %d bytes)"%(len(x),len(y))
                 print("DIFFERS  %-24s %s%s"%(c,name,extra))
-            elif o.v:
+            elif verbose:
                 print("same     %-24s %s"%(c,name))
     # A case present on one side only is not symmetric.  Gone from B is a
     # case that STOPPED RUNNING, which is a regression the scalars cannot
@@ -96,6 +93,95 @@ def main():
     if nbad==0:
         print("[ABRUNS] the two binaries produce identical output")
     return nbad
+
+# ---------------------------------------------------------------------------
+# THE SELF TEST.
+#
+# This program decides whether an extraction changed the answer.  Every
+# commit on this branch cites it.  A comparison that has not been shown able
+# to fail is not a comparison, and this one has already been wrong once in a
+# way that only showed up by luck: UTIME was stripped and UDATE was not, so
+# a run either side of midnight reported sixteen differing .frd files, all
+# of them identical in length.
+#
+# Synthetic run trees, where the right answer is known because it was
+# written down first.
+
+def _mk(root,case,files):
+    d=root/case; d.mkdir(parents=True,exist_ok=True)
+    for n,t in files.items(): (d/n).write_bytes(t)
+    return d
+
+def selftest():
+    import tempfile,shutil,io,contextlib
+    bad=[]
+    def chk(what,got,want):
+        ok=(got==want)
+        if not ok: bad.append(what)
+        print("[ABRUNS]   %-54s %-14s %s"
+              %(what,"%s (want %s)"%(got,want),"PASS" if ok else "FAIL"))
+    def run(A,B):
+        with contextlib.redirect_stdout(io.StringIO()) as f:
+            n=compare(A,B)
+        return n,f.getvalue()
+    d=pathlib.Path(tempfile.mkdtemp(prefix='abruns'))
+    try:
+        FRD=b"    1UTIME  12.5\n    1UDATE  01.01.2026\n -1  1  0.5000\n"
+        A,B=d/'A',d/'B'
+        _mk(A,'c1',{'m.frd':FRD,'m.sta':b"inc 1\n",'m.log':b"took 3s\n",
+                    'provenance.txt':b"sha=aaa\n"})
+        _mk(B,'c1',{'m.frd':FRD,'m.sta':b"inc 1\n",'m.log':b"took 9s\n",
+                    'provenance.txt':b"sha=bbb\n"})
+        n,_=run(A,B)
+        chk("identical trees compare equal",n,0)
+        chk(".log and provenance.txt are skipped, not compared",n,0)
+
+        # only the clock records differ -> still equal
+        (B/'c1'/'m.frd').write_bytes(
+            b"    1UTIME  99.9\n    1UDATE  31.12.2027\n -1  1  0.5000\n")
+        n,_=run(A,B)
+        chk("a .frd differing ONLY in 1UTIME/1UDATE is equal",n,0)
+
+        # a real number differs -> reported
+        (B/'c1'/'m.frd').write_bytes(
+            b"    1UTIME  12.5\n    1UDATE  01.01.2026\n -1  1  0.6000\n")
+        n,out=run(A,B)
+        chk("a .frd differing in a data line is reported",n,1)
+        chk("  and it says which file",'m.frd' in out,True)
+        (B/'c1'/'m.frd').write_bytes(FRD)
+
+        # a file present on one side only
+        (A/'c1'/'m.dat').write_bytes(b"x\n")
+        n,out=run(A,B)
+        chk("a report that stopped being written is a failure",n,1)
+        chk("  and it is called MISSING",'MISSING' in out,True)
+        (A/'c1'/'m.dat').unlink()
+
+        # a case only in A stopped running; a case only in B is new
+        _mk(A,'gone',{'m.sta':b"inc 1\n"})
+        n,out=run(A,B)
+        chk("a case that stopped running is a failure",n,1)
+        shutil.rmtree(A/'gone')
+        _mk(B,'added',{'m.sta':b"inc 1\n"})
+        n,out=run(A,B)
+        chk("a case added since the reference run is NOT a failure",n,0)
+        chk("  and it is reported as a note",'note' in out,True)
+    finally:
+        shutil.rmtree(d,ignore_errors=True)
+    print("\n[ABRUNS] self test: %d failure(s) -- %s"
+          %(len(bad),"FAILED" if bad else "PASSED"))
+    return len(bad)
+
+def main():
+    ap=argparse.ArgumentParser()
+    ap.add_argument('a',nargs='?'); ap.add_argument('b',nargs='?')
+    ap.add_argument('-v',action='store_true',help='list every file compared')
+    ap.add_argument('--selftest',action='store_true',
+                    help='check the comparison against synthetic run trees')
+    o=ap.parse_args()
+    if o.selftest: return selftest()
+    if not o.a or not o.b: ap.error("two run directories, or --selftest")
+    return compare(pathlib.Path(o.a).resolve(),pathlib.Path(o.b).resolve(),o.v)
 
 if __name__=='__main__':
     sys.exit(min(main(),255))

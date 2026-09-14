@@ -293,6 +293,24 @@ def main():
         print("preflight  solver self tests: MISSING (%s); build it with "
               "`make -f Makefile.ubuntu2404.mkl ccx_selftest'"%st)
         preflight_bad+=1
+    # The two tools that DECIDE whether a commit is acceptable - the
+    # architecture ratchet and the byte-for-byte A/B - are checked here with
+    # the rest.  They had no self tests until arch.py broke silently twice in
+    # one session: a tagged struct made its field scan return the empty set
+    # and the headline count fell from 263 to 73 with no solver change at
+    # all.  A tool that gates commits and cannot be shown to fail is the
+    # weakest link in the whole apparatus.
+    for name,cmd in (("architecture measurement",'%s/tools/arch.py --selftest'%ROOT),
+                     ("A/B comparison",'%s/tools/abruns.py --selftest'%ROOT)):
+        r=sh('python3 %s'%cmd,base_env([]))
+        last=[l for l in r.stdout.splitlines() if 'self test:' in l]
+        print("preflight  %s: %s"%(name,last[-1].split('--')[-1].strip()
+                                   if last else "no output"))
+        if r.returncode!=0:
+            preflight_bad+=1
+            for l in r.stdout.splitlines():
+                if 'FAIL' in l: print("           %s"%l)
+
     spec=json.load(open(HERE/'cases.json'))
     cases=[c for c in spec['cases'] if not a.k or a.k in c['name']]
     outroot=pathlib.Path(a.o or (HERE/'_runs'/time.strftime('%Y%m%d-%H%M%S'))).resolve()

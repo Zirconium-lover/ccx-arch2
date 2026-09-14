@@ -658,13 +658,164 @@ def table(m):
         o.append("  violations: 0")
     return "\n".join(o)
 
+# ---------------------------------------------------------------------------
+# THE SELF TEST, and why this file of all files needed one.
+#
+# arch.py decides whether a commit is acceptable: --check is the ratchet.  It
+# had no self test, and in one session it broke SILENTLY twice.
+#
+#   * struct_fields() knew only the anonymous `typedef struct{...}name;'
+#     spelling.  Giving trialctx a tag made it return the empty set, the
+#     context-field set collapsed to the derived scalars, and the headline
+#     count fell from 263 to 73 WITHOUT A LINE OF SOLVER CODE CHANGING.  A
+#     metric that improves when you rename a struct is measuring nothing;
+#
+#   * it counted one name per STATEMENT, so `double *ram,*ram1,*ram2;' read
+#     as one field and nlstate came out as 7 of its 9.  trialctx happens to
+#     put one field per line, so the bug was invisible there and would have
+#     stayed invisible.
+#
+# Both were caught by disbelieving a number, which is not a method.  This is
+# the method: synthetic sources in a temporary directory, where the right
+# answer is known because it was written down first.
+#
+# The fixtures use REAL module names (trial.c, erosion.c, ...) because
+# ext_modules() is an explicit list - a synthetic `foo.c' would be invisible
+# to the very code under test.
+
+def _chk(what,got,want,bad):
+    ok=(got==want)
+    if not ok: bad.append(what)
+    print("[ARCH]   %-56s %-18s %s"
+          %(what,"%s (want %s)"%(got,want),"PASS" if ok else "FAIL"))
+    return ok
+
+def selftest():
+    """Every measurement, against sources whose answer is known."""
+    import tempfile,shutil
+    global SRC
+    real=SRC
+    bad=[]
+    d=pathlib.Path(tempfile.mkdtemp(prefix='archtest'))
+    try:
+        SRC=d
+        # ---- struct_fields: both spellings, multi-declarator, nesting ----
+        (d/'CalculiX.h').write_text("#define ITG int\n")
+        (d/'trial.h').write_text("""
+typedef struct{
+  double **co;
+  ITG    **nk,**ne;
+  double *a,*b,*c;
+}trialctx;
+struct nlstate{
+  ITG    *iit;
+  double *ram,*ram1,*ram2;
+};
+typedef struct{ ITG x; }other;
+void trial_results(const trialctx *mdl);
+void trial_check(const trialctx *mdl);
+""")
+        (d/'trial.c').write_text(
+          "void trial_results(const trialctx *mdl){}\n"
+          "void trial_check(const trialctx *mdl){}\n")
+        f=struct_fields('trialctx')
+        _chk("struct_fields: anonymous typedef spelling",
+             sorted(f),['a','b','c','co','ne','nk'],bad)
+        _chk("struct_fields: multi-declarator counts each name",
+             len(struct_fields('trialctx')&{'a','b','c'}),3,bad)
+        _chk("struct_fields: tagged `struct name{...};' spelling",
+             sorted(struct_fields('nlstate')),
+             ['iit','ram','ram1','ram2'],bad)
+        _chk("struct_fields: a different struct does not leak in",
+             'x' in struct_fields('trialctx'),False,bad)
+
+        # ---- layering: one edge upward, and only one ---------------------
+        (d/'erosion.c').write_text(
+          '#include "topology.h"\nvoid erosion_mark(void){ topo_selftest(); }\n')
+        (d/'topology.h').write_text("ITG topo_selftest(void);\nvoid topo_up(void);\n")
+        (d/'topology.c').write_text(
+          'ITG topo_selftest(void){ return 0; }\n'
+          'void topo_up(void){ erosion_mark(); }\n')     # L2 -> L4, upward
+        own=module_symbols()
+        v=layer_violations(module_deps(own))
+        _chk("layer_violations: an upward edge is reported",
+             [(a,c) for a,_,c,_ in v],[('topology','erosion')],bad)
+
+        # ---- duplicated params: field yes, object no, selftest exempt ----
+        (d/'damdiag.h').write_text("""
+void damdiag_a(const double *co,ITG nk,double z);
+void damdiag_b(const trialctx *co,double z);
+void damdiag_c(const double *co,ITG nk);
+ITG  damdiag_selftest(void);
+""")
+        (d/'damdiag.c').write_text(
+          "void damdiag_a(const double *co,ITG nk,double z){}\n"
+          "void damdiag_b(const trialctx *co,double z){}\n"
+          "void damdiag_c(const double *co,ITG nk){}\n"
+          "ITG damdiag_selftest(void){ damdiag_c(0,0); return 0; }\n")
+        own=module_symbols()
+        n,worst,nkeep=duplicated_params(own)
+        _chk("duplicated_params: a context field counts",
+             dict(( (w,k) for k,w in worst )).get('damdiag_a'),2,bad)
+        # damdiag_b's parameter is deliberately NAMED `co', which IS a
+        # trialctx field.  Only its TYPE distinguishes it, so a version that
+        # forgot the type check would count it - with any other name the
+        # case could not fail and would be a test in appearance only.
+        _chk("duplicated_params: an object-typed parameter does not",
+             'damdiag_b' in [w for _,w in worst],False,bad)
+        _chk("duplicated_params: a self test's callee is exempt",
+             'damdiag_c' in [w for _,w in worst],False,bad)
+
+        # ---- includers: transitive, because that is what make rebuilds ---
+        (d/'logview.h').write_text("void logview_report(double s);\n")
+        (d/'logview.c').write_text('#include "logview.h"\n'
+                                   "void logview_report(double s){}\n")
+        (d/'damstats.c').write_text('#include "damdiag.h"\n')
+        (d/'damdiag.h').write_text('#include "logview.h"\n'
+                                   +(d/'damdiag.h').read_text())
+        inc=includers()
+        # logview.c reaches it directly; damstats.c only through damdiag.h.
+        # Counting direct includes alone would say 1, and would have
+        # flattered exactly the umbrella-header arrangement that the real
+        # measurement rejected.
+        _chk("includers: counts a file that reaches a header indirectly",
+             inc.get('logview.h'),2,bad)
+
+        # ---- selftests(): from the table, not from function names --------
+        (d/'selftest.c').write_text("""
+const selftest_entry SELFTESTS[]={
+  {"one",one_selftest},
+  {"two",two_selftest},
+};
+ITG selftest_run_all(ITG v){return 0;}
+void selftest_gate(void){}
+/* A helper that a by-name count would wrongly call a third test.  Without
+   it the fixture could not tell the two counting rules apart, which is the
+   shape of a test that only looks like one. */
+static ITG two_coeff_selftest(void){ return 0; }
+""")
+        (d/'selftest_main.c').write_text("int main(void){return 0;}\n")
+        tot,deck=selftests()
+        _chk("selftests: counted from the table, not by name",tot,2,bad)
+        _chk("selftests: a helper matching the name is not counted",
+             tot,2,bad)
+    finally:
+        SRC=real
+        shutil.rmtree(d,ignore_errors=True)
+    print("\n[ARCH] self test: %d failure(s) -- %s"
+          %(len(bad),"FAILED" if bad else "PASSED"))
+    return len(bad)
+
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument('--check',action='store_true',
                     help='exit nonzero if any measured number is worse than the budget')
     ap.add_argument('--record',action='store_true',help='rewrite the budget')
+    ap.add_argument('--selftest',action='store_true',
+                    help='check every measurement against synthetic sources')
     ap.add_argument('--json',default=None)
     a=ap.parse_args()
+    if a.selftest: return selftest()
     m=measure()
     if a.json: pathlib.Path(a.json).write_text(json.dumps(m,indent=2,sort_keys=True)+"\n")
     if a.record:
