@@ -6013,6 +6013,21 @@ void trial_evaluate(const trialctx *t);         /* ...with its scratch: REALLOCA
 void trial_reduce(const trialctx *t,double *dst);/* ...reduce to a residual */
 void trial_residual(const trialctx *t,double *dst);/* scratch + both halves: REALLOCATES */
 ITG  trial_check(const trialctx *t);
+/* the path follower's predictor: capture f_hat, solve for the reference
+   direction, place lambda for this attempt.  It calls the linear solver,
+   hence the factorisation arguments.  The caller keeps the guard. */
+void pathdrv_predictor(pathdrv *p,glob_census *g,const trialctx *t,
+                       const double *xboun,const double *xbounold,
+                       double *ad,double *au,ITG *icol,const ITG *isolver,
+                       double sigma,ITG inputformat,ITG nrhs,
+                       ITG symmetryflag,ITG iit);
+/* one Newton iteration of the bordered system, once level 4 owns the
+   boundary.  The caller keeps the guard. */
+void damcont_corrector(damcont *k,const trialctx *t,
+                       const double *xboun,const double *xbounold,
+                       double *uam,
+                       const double *damjac,const double *damvisc,
+                       ITG inputformat,ITG nrhs,ITG symmetryflag);
 /* the one extra attempt a deferred stop buys, and which level gets it.
    Thirteen parameters: six objects and seven pieces of nonlingeo's own
    control flow.  See the block comment in rescue.c for why they are not

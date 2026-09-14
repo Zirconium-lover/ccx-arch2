@@ -1234,3 +1234,378 @@ void pathdrv_configure(pathdrv *p,const loadctl *c,const trialctx *t,
     }
   }
 }
+
+/* ---- the predictor -----------------------------------------------------
+
+   The largest block that was inline: 343 lines that capture f_hat, solve
+   for the reference direction, and place the load factor for this attempt
+   before the corrector runs.
+
+   It calls the LINEAR SOLVER, which is why ad, au, icol, isolver, sigma
+   and the three format flags are parameters: they are the factorisation's
+   arguments, not this object's state and not results() arguments either.
+   Everything else arrives through trialctx.
+
+   The guard stays with the caller, as everywhere else here.            */
+
+void pathdrv_predictor(pathdrv *p,glob_census *g,const trialctx *t,
+                       const double *xboun,const double *xbounold,
+                       double *ad,double *au,ITG *icol,const ITG *isolver,
+                       double sigma,ITG inputformat,ITG nrhs,
+                       ITG symmetryflag,ITG iit)
+{
+  double *b=*(t->b),*vold=*(t->vold),*vini=*(t->vini);
+  double *xbounact=*(t->xbounact),*adb=*(t->adb),*aub=*(t->aub);
+  double *f=*(t->f),*fext=*(t->fext);
+  ITG *neq=*(t->neq),*nzs=*(t->nzs),*irow=*(t->irow),*jq=*(t->jq);
+  ITG *nactdof=*(t->nactdof),*mi=*(t->mi),*nk=*(t->nk),*nboun=*(t->nboun);
+  double *dam=*(t->dam),*xstate=*(t->xstate),*fn=*(t->fn),*stx=*(t->stx);
+  double *xstiff=*(t->xstiff),*qa=t->qa,*cam=t->cam;
+  ITG *nstate_=*(t->nstate_),*ne=*(t->ne);
+  ITG num_cpus=*(t->num_cpus),iinc=*(t->iinc),nasym=*(t->nasym);
+  ITG mt=mi[1]+1,isiz,k;
+
+	  const double *fhat=pathfollow_fhat();
+	  for(k=0;k<neq[1];k++) p->uf[k]=fhat[k];
+	  if(*isolver==0){
+#ifdef SPOOLES
+	    spooles(ad,au,adb,aub,&sigma,p->uf,icol,irow,&neq[0],&nzs[0],
+		    &symmetryflag,&inputformat,&nzs[2]);
+#endif
+	  }else if(*isolver==7){
+#ifdef PARDISO
+	    pardiso_main(ad,au,adb,aub,&sigma,p->uf,icol,irow,&neq[0],&nzs[0],
+			 &symmetryflag,&inputformat,jq,&nzs[2],&nrhs);
+#endif
+	  }
+	  p->nstep++;
+
+	  /* ff is recorded on every iterate, engaged or not, so that the
+	     tangent predictor has a stiffness the moment the constraint
+	     takes over.  Only the APPLICATION is gated on engagement. */
+
+	  if((p->rhs0!=NULL)&&(ccxopt_getenv("CCX_PATHFOLLOW_SOLVECHECK")!=NULL)){
+	    double pfr1=0.,pfr2=0.,pfn1=0.,pfn2=0.,pft;
+	    ITG pfi,pfone=1;
+	    const double *pffh2=pathfollow_fhat();
+	    for(pfi=0;pfi<neq[1];pfi++) p->y[pfi]=0.;
+	    FORTRAN(op,(b,p->y,ad,au,jq,irow,&pfone,&neq[0]));
+	    for(pfi=0;pfi<neq[0];pfi++){
+	      pft=p->y[pfi]-p->rhs0[pfi];
+	      pfr1+=pft*pft;pfn1+=p->rhs0[pfi]*p->rhs0[pfi];
+	    }
+	    for(pfi=0;pfi<neq[1];pfi++) p->y[pfi]=0.;
+	    FORTRAN(op,(p->uf,p->y,ad,au,jq,irow,&pfone,&neq[0]));
+	    for(pfi=0;pfi<neq[0];pfi++){
+	      pft=p->y[pfi]-pffh2[pfi];
+	      pfr2+=pft*pft;pfn2+=pffh2[pfi]*pffh2[pfi];
+	    }
+	    printf("[PF-SOLVE] it=%" ITGFORMAT " |K*duR-rhs|/|rhs|=%.3e "
+	           "|K*duF-fhat|/|fhat|=%.3e\n",iit,
+	           sqrt(pfr1)/(sqrt(pfn1)+1.e-300),
+	           sqrt(pfr2)/(sqrt(pfn2)+1.e-300));
+	    fflush(stdout);
+	  }
+
+/* Evaluate CalculiX's own residual at (vold, LAMV) and copy fext-f into
+   DST.  b is zeroed first so results() leaves the displacement where it
+   is: the probe must read the residual AT a state, never move it.
+
+   iout=-1, not 0.  resultsini gates the correction on iout>-1 and the
+   prescribed-dof update on abs(iout)<2, so -1 sets the prescribed dofs
+   from xbounact (which IS "evaluating R at this lambda") while leaving the
+   free dofs alone - and, crucially, it does not request the output fields.
+   iout=0 does request them, and results() then writes inum/een/emn/epn,
+   which are not allocated on this path: measured as a SIGSEGV inside
+   memset called from nonlingeo. */
+
+#define PF_LIN_RESID(LAMV,DST) do{                                    \
+  ITG _k,_io=*(t->iout);                                              \
+  /* Every evaluation starts from the identical base state.  Without  \
+     this the probe measures its own leakage: idempotency (evaluating \
+     R at lambda0 twice) came out at 1.7e+05 relative near the limit  \
+     point, which is exactly the spurious "discontinuity" the sweep   \
+     then reported.  vold is NOT restored here - the caller perturbs it\
+     on purpose. */                                                   \
+  isiz=*nstate_*mi[0]**ne;cpypardou(xstate,p->sxs,&isiz,&num_cpus);   \
+  isiz=27*mi[0]**ne;cpypardou(xstiff,p->sxst,&isiz,&num_cpus);        \
+  isiz=neq[1];cpypardou(f,p->sf,&isiz,&num_cpus);                     \
+  isiz=mt**nk;cpypardou(fn,p->sfn,&isiz,&num_cpus);                   \
+  isiz=6*mi[0]**ne;cpypardou(stx,p->sstx,&isiz,&num_cpus);            \
+  if((dam!=NULL)&&(p->sdam!=NULL)){                                   \
+    isiz=mi[0]**ne;cpypardou(dam,p->sdam,&isiz,&num_cpus);}           \
+  for(_k=0;_k<4;_k++) qa[_k]=p->sqa[_k];                              \
+  for(_k=0;_k<5;_k++) cam[_k]=p->scam[_k];                            \
+  for(_k=0;_k<*nboun;_k++)                                            \
+    xbounact[_k]=xbounold[_k]+(xboun[_k]-xbounold[_k])*(LAMV);        \
+  for(_k=0;_k<neq[1];_k++) b[_k]=0.;                                  \
+  *(t->iout)=-1;                                                      \
+  isiz=mt**nk;cpypardou(*(t->v),vold,&isiz,&num_cpus);                \
+  trial_results(t);                                                   \
+  trial_reduce(t,b);                                                  \
+  isiz=neq[1];cpypardou((DST),b,&isiz,&num_cpus);                     \
+  *(t->iout)=_io;                                                     \
+    }while(0)
+
+	  /* ================= CCX_PATHFOLLOW_LINCHECK =====================
+	     The decisive gate.  A synthetic self test proves the formulas of
+	     pathfollow.c; it proves nothing about how u, lambda, xbounact, b
+	     and K are actually wired together inside CalculiX.  This measures
+	     that wiring, at the REAL base point - after prediction() has
+	     extrapolated and after the operator has been assembled - by
+	     finite differences of the residual CalculiX itself computes.
+
+	     Checked, from one base point, restoring the full trial state
+	     between evaluations, for a sweep of decreasing eps:
+
+	       q_FD  = [R(u,lambda+eps) - R(u,lambda)]/eps
+	       row 1 : [R(u+eps*p, lambda+eps*dl) - R(u,lambda)]/eps
+	               against  K*p + q_FD*dl
+
+	     and the frozen reference vector f_hat against -q_FD, which is
+	     the claim "a constant reference load reproduces the actual
+	     dR/dlambda" that must not be assumed. */
+
+	  if((p->lincheck>0)&&(iinc==p->lincheck)&&(iit==1)){
+	    ITG pq,pfone=1,pj,pnode,pi;
+	    double peps,plam0,pdl,pn1,pn2,pnq,pt,pfhq,pnf,pkp,pql,pqc;
+	    double pepsv[5]={1.e-3,1.e-4,1.e-5,1.e-6,1.e-7};
+
+	    if(p->p==NULL){
+	      NNEW(p->p,double,neq[1]);NNEW(p->r0,double,neq[1]);
+	      NNEW(p->r1,double,neq[1]);NNEW(p->q,double,neq[1]);
+	      NNEW(p->sv,double,mt**nk);
+	      NNEW(p->sxs,double,*nstate_*mi[0]**ne);
+	      if(dam!=NULL) NNEW(p->sdam,double,mi[0]**ne);
+	      NNEW(p->sf,double,neq[1]);NNEW(p->sfn,double,mt**nk);
+	      NNEW(p->sstx,double,6*mi[0]**ne);
+	      NNEW(p->sxb,double,*nboun);
+	      /* p->y is the mat-vec scratch; it is otherwise allocated only
+	         by SOLVECHECK, and LINCHECK dereferenced it as NULL. */
+	      if(p->y==NULL) NNEW(p->y,double,neq[1]);
+	      NNEW(p->sxst,double,27*mi[0]**ne);
+	      NNEW(p->lhs,double,neq[1]);NNEW(p->rhs,double,neq[1]);
+	    }
+
+	    /* --- snapshot everything the probe is about to disturb --- */
+	    isiz=mt**nk;cpypardou(p->sv,vold,&isiz,&num_cpus);
+	    isiz=*nstate_*mi[0]**ne;cpypardou(p->sxs,xstate,&isiz,&num_cpus);
+	    if((dam!=NULL)&&(p->sdam!=NULL)){
+	      isiz=mi[0]**ne;cpypardou(p->sdam,dam,&isiz,&num_cpus);}
+	    isiz=neq[1];cpypardou(p->sf,f,&isiz,&num_cpus);
+	    isiz=mt**nk;cpypardou(p->sfn,fn,&isiz,&num_cpus);
+	    isiz=6*mi[0]**ne;cpypardou(p->sstx,stx,&isiz,&num_cpus);
+	    isiz=*nboun;cpypardou(p->sxb,xbounact,&isiz,&num_cpus);
+	    isiz=27*mi[0]**ne;cpypardou(p->sxst,xstiff,&isiz,&num_cpus);
+	    for(k=0;k<4;k++) p->sqa[k]=qa[k];
+	    for(k=0;k<5;k++) p->scam[k]=cam[k];
+	    isiz=neq[1];cpypardou(p->p,b,&isiz,&num_cpus);   /* direction p */
+	    plam0=p->lam;
+	    pdl=(fabs(p->dlampred)>0.)?p->dlampred:1.e-3;
+
+	    /* p is left as du_R, the Newton correction itself, and is NOT
+	       normalised.  Rescaling it to unit norm makes eps*p a
+	       perturbation of order 1e-3 in displacement, which is larger
+	       than the cohesive d0 = 4e-4 and therefore no longer probes the
+	       branch the solver is on; the sweep then stopped converging for
+	       a reason that has nothing to do with the tangent.  du_R is the
+	       direction the method actually takes, which is the one worth
+	       verifying. */
+	    pt=sqrt(pathfollow_dot(p->p,p->p,neq[0]));
+
+	    printf("\n[PF-LIN] increment %" ITGFORMAT ", base point AFTER "
+	           "prediction(); lambda=%.10f  |p|=%.4e  dlambda_dir=%.4e\n",
+	           iinc,plam0,sqrt(pathfollow_dot(p->p,p->p,neq[1])),pdl);
+
+	    /* R at the base point */
+	    PF_LIN_RESID(plam0,p->r0);
+	    pn1=sqrt(pathfollow_dot(p->r0,p->r0,neq[0]));
+	    printf("[PF-LIN]   |R0| = %.6e   neq0=%" ITGFORMAT " neq1=%"
+	           ITGFORMAT "\n",pn1,neq[0],neq[1]);
+
+	    /* bisection: is ONE evaluation self-contaminating, or is it the
+	       perturbed ones that leave something behind? */
+	    PF_LIN_RESID(plam0,p->r1);
+	    pn2=0.;
+	    for(k=0;k<neq[0];k++){pt=p->r1[k]-p->r0[k];pn2+=pt*pt;}
+	    printf("[PF-LIN]   immediate re-evaluation at lambda0: "
+	           "|dR|/|R0| = %.6e\n",(pn1>0.)?sqrt(pn2)/pn1:sqrt(pn2));
+	    fflush(stdout);
+
+	    printf("[PF-LIN]   eps        |q_FD|      "
+	           "cos(f_hat,-q_FD)  |f_hat|/|q_FD|   row1 rel.err\n");
+	    for(pq=0;pq<10;pq++){
+	      if(pq==5){
+	        /* Second sweep with dlambda = 0.  This removes the load term
+	           entirely and tests ONLY whether the assembled operator is
+	           the derivative of the residual CalculiX computes, which is
+	           a statement about the element tangent and has nothing to do
+	           with path following. */
+	        pdl=0.;
+	        printf("[PF-LIN]   ---- dlambda = 0: pure tangent test, "
+	               "[R(u+eps*p)-R(u)]/eps  against  K*p ----\n");
+	      }
+	      peps=pepsv[pq%5];
+
+	      /* Re-anchor the base residual for every eps.  A single
+	         evaluation is idempotent (measured: |dR|/|R0| = 0 exactly),
+	         but the perturbed ones must not be allowed to bias the next
+	         difference. */
+	      PF_LIN_RESID(plam0,p->r0);
+
+	      /* ORDER MATTERS.  p->q was originally computed first and read
+	         last, and it did not survive the calls in between: |q| taken
+	         at the norm loop disagreed with the |q_FD| printed from the
+	         same buffer moments earlier (5.3e+03 against 8.1e-11).  The
+	         perturbed evaluation and the mat-vec are therefore done
+	         FIRST, and q is rebuilt immediately before it is used, so
+	         nothing can run between its definition and its use. */
+
+	      /* (a) full perturbation, in u and lambda together */
+	      for(pi=0;pi<*nk;pi++){
+	        for(pj=1;pj<mt;pj++){
+	          pnode=nactdof[mt*pi+pj];
+	          if(pnode>0) vold[mt*pi+pj]+=peps*p->p[pnode-1];
+	        }
+	      }
+	      PF_LIN_RESID(plam0+peps*pdl,p->r1);
+	      isiz=mt**nk;cpypardou(vold,p->sv,&isiz,&num_cpus);
+	      for(k=0;k<neq[0];k++) p->lhs[k]=(p->r1[k]-p->r0[k])/peps;
+
+	      /* (b) K*p */
+	      for(k=0;k<neq[1];k++) p->y[k]=0.;
+	      FORTRAN(op,(p->p,p->y,ad,au,jq,irow,&pfone,&neq[0]));
+
+	      /* (c) q_FD, built last */
+	      PF_LIN_RESID(plam0+peps,p->r1);
+	      for(k=0;k<neq[0];k++) p->q[k]=(p->r1[k]-p->r0[k])/peps;
+	      pnq=sqrt(pathfollow_dot(p->q,p->q,neq[0]));
+
+	      pfhq=0.;pnf=0.;
+	      if(pathfollow_have()==1){
+	        const double *pfh=pathfollow_fhat();
+	        pfhq=pathfollow_dot(pfh,p->q,neq[0]);
+	        pnf=sqrt(pathfollow_dot(pfh,pfh,neq[0]));
+	      }
+
+	      pn2=0.;pn1=0.;pkp=0.;pql=0.;pqc=0.;
+	      for(k=0;k<neq[0];k++) p->rhs[k]=-p->y[k]+pdl*p->q[k];
+	      for(k=0;k<neq[0];k++){
+	        pt=p->lhs[k]-p->rhs[k];  pn2+=pt*pt;
+	        pn1+=p->lhs[k]*p->lhs[k];
+	        pkp+=p->y[k]*p->y[k];
+	        pql+=p->rhs[k]*p->rhs[k];
+	        pqc+=p->q[k]*p->q[k];
+	      }
+	      printf("[PF-LIN]   %.1e  %.6e  %+.10f   %12.6e   %.6e"
+	             "   |lhs|=%.4e |Kp|=%.4e |rhs|=%.4e  |q|inloop=%.6e\n",
+	             peps,pnq,(pnf*pnq>0.)?pfhq/(pnf*pnq):0.,
+	             (pnq>0.)?pnf/pnq:0.,
+	             (pn1>0.)?sqrt(pn2)/sqrt(pn1):sqrt(pn2),
+	             sqrt(pn1),sqrt(pkp),sqrt(pql),sqrt(pqc));
+	      fflush(stdout);
+	    }
+
+	    /* Idempotency of the probe itself.  Everything above is only
+	       meaningful if evaluating R at the SAME point twice returns the
+	       same vector; if it does not, the sweep is measuring the probe's
+	       own leakage rather than dR/dlambda. */
+
+	    PF_LIN_RESID(plam0,p->r1);
+	    pn1=0.;pn2=0.;
+	    for(k=0;k<neq[0];k++){
+	      pt=p->r1[k]-p->r0[k];pn2+=pt*pt;pn1+=p->r0[k]*p->r0[k];
+	    }
+	    printf("[PF-LIN]   idempotency: |R(lam0) again - R0|/|R0| = %.6e"
+	           "   %s\n",(pn1>0.)?sqrt(pn2)/sqrt(pn1):sqrt(pn2),
+	           (sqrt(pn2)<=1.e-10*sqrt(pn1))?"clean":"PROBE LEAKS STATE");
+
+	    /* --- restore --- */
+	    isiz=mt**nk;cpypardou(vold,p->sv,&isiz,&num_cpus);
+	    isiz=*nstate_*mi[0]**ne;cpypardou(xstate,p->sxs,&isiz,&num_cpus);
+	    if((dam!=NULL)&&(p->sdam!=NULL)){
+	      isiz=mi[0]**ne;cpypardou(dam,p->sdam,&isiz,&num_cpus);}
+	    isiz=neq[1];cpypardou(f,p->sf,&isiz,&num_cpus);
+	    isiz=mt**nk;cpypardou(fn,p->sfn,&isiz,&num_cpus);
+	    isiz=6*mi[0]**ne;cpypardou(stx,p->sstx,&isiz,&num_cpus);
+	    isiz=*nboun;cpypardou(xbounact,p->sxb,&isiz,&num_cpus);
+	    isiz=27*mi[0]**ne;cpypardou(xstiff,p->sxst,&isiz,&num_cpus);
+	    for(k=0;k<4;k++) qa[k]=p->sqa[k];
+	    for(k=0;k<5;k++) cam[k]=p->scam[k];
+	    isiz=neq[1];cpypardou(b,p->p,&isiz,&num_cpus);
+	    p->lam=plam0;
+	    printf("[PF-LIN] state restored\n\n");
+	    fflush(stdout);
+	  }
+#undef PF_LIN_RESID
+
+	  pathfollow_measure(p->uf);
+	  p->applied=0;
+	  if(p->engaged==1){
+
+	    /* the trial displacement is READ FROM THE MODEL, not
+	       accumulated; see the design note in pathfollow.c */
+
+	    if(p->codmode>=1){
+
+	      /* Mode 1 (CCX_PATHFOLLOW_COD): phi is ABSOLUTE, the mean normal
+	         separation measured from the reference configuration.
+	         Mode 2 (CCX_CRACK_CONTROL): phi is INCREMENTAL, c^T(u-u_n),
+	         because the functional itself is refrozen every attempt and
+	         only its increment is meaningful across a refreeze.
+
+	         c only couples plus/minus node pairs, so in both cases the
+	         projection is exactly the controlled opening. */
+
+	      p->lam0it=p->lam;
+	      p->dlamit=0.;
+	      p->cu=pathfollow_project(pathfollow_cod_c(),vold,
+	                       (p->codmode==2)?vini:p->uref,nactdof,*nk,mt);
+	      p->applied=pathfollow_cod_step(b,p->uf,p->cu,&p->lam,p->clip,
+	                                     &p->g,&p->dlam,&p->reason);
+	      p->dg=p->cu;
+	      if(p->applied==1) glob_fired(g,GLOB_PATHFOLLOW);
+	      if(p->applied==1){
+	        p->dlamit=p->lam-p->lam0it;
+	        for(k=0;k<*nboun;k++){
+	          xbounact[k]=xbounold[k]+(xboun[k]-xbounold[k])*p->lam;
+	        }
+	      }
+	      goto pf_after_step;
+	    }
+	    p->pdu=pathfollow_project(pathfollow_fhat(),vold,vini,nactdof,*nk,mt);
+
+	    /* At the first iteration put lambda exactly on the constraint,
+	       in closed form, so that the coupled iteration does not open
+	       with a residual the stock extrapolation put there. */
+
+	    /* Measured: this does NOT rescue the descending branch (1 accepted
+	       increment past engagement against 2 without it), so it is
+	       opt-in and off by default.  It is kept because it isolates one
+	       hypothesis cleanly - the opening constraint residual is not
+	       what stops the run. */
+
+	    if((iit==1)&&(ccxopt_getenv("CCX_PATHFOLLOW_PROJECT")!=NULL)){
+	      if(pathfollow_project_lambda(p->pdu,&p->lam)==1){
+	        for(k=0;k<*nboun;k++){
+	          xbounact[k]=xbounold[k]+(xboun[k]-xbounold[k])*p->lam;
+	        }
+	      }
+	    }
+	    p->applied=pathfollow_step(b,p->uf,p->pdu,&p->lam,p->clip,
+	                               &p->dg,&p->g,&p->dlam,&p->reason);
+	  }
+	  if(p->applied==1){
+	    for(k=0;k<*nboun;k++){
+	      xbounact[k]=xbounold[k]+(xboun[k]-xbounold[k])*p->lam;
+	    }
+	  }
+	 pf_after_step:
+	  if(ccxopt_getenv("CCX_PATHFOLLOW_PROBE")!=NULL){
+	    printf("[PATHFOLLOW] it=%" ITGFORMAT " lambda=%.8f dlambda=%+.4e "
+	           "dG=%.6e g=%.4e applied=%" ITGFORMAT " reason=%" ITGFORMAT
+	           "\n",iit,p->lam,p->applied?p->dlam:0.,p->dg,p->g,
+	           p->applied,p->reason);
+	    fflush(stdout);
+	  }
+}

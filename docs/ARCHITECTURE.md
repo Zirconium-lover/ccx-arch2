@@ -290,6 +290,33 @@ matter of opinion.
    worse than `tools/arch_budget.json`. A number allowed to drift back up
    is not a measurement.
 
+### What the gate covers, and what it does not
+
+Of the loops that have moved, three are executed by gate cases and one is
+not, and the difference is worth stating case by case rather than letting
+"144 files identical" carry weight it has not earned:
+
+| moved loop | exercised by | evidence |
+|---|---|---|
+| `dogleg_rescue()` | `fast-wrapped` and 2 more | 79 `[DAMAGE TR]` lines, same before and after |
+| `rescue_backtrack()` | `fast-wrapped` | 66 `[DAMAGE BT]` lines |
+| `rescue_attempt()` | 3 cases | 8 `FIRED`, 2 `ACCEPTED` each |
+| `pathdrv_predictor()` | both `mixed-analytic` cases | 5000 accepted increments |
+| `opcheck_probe()` | nothing — **now `fast-plain-opcheck`** | 47 probe lines diffed by hand across the move, then given a case |
+| `damcont_corrector()` | **nothing, and it cannot be** | see below |
+
+`damcont_corrector()` is the honest bad case. Level 4 arms on every deck in
+this tree and is then refused by `damcont_select()`; raising the curvature
+tolerance only moves the refusal to another clause. The mechanism was built
+for a target deck that is not here. What was checked is the arming and
+selection path, which does run: the whole `[DAMAGE CT]` output of the
+wrapped deck, 28 lines, identical across the move. The body is covered by
+the compiler and by reading, and `damcont.c` says so at the function.
+
+Moving it was still right: the code is untestable either way, and after the
+move it is untestable *in the file that owns it* rather than untestable in
+the middle of a thirteen-thousand-line function.
+
 There is a limit to what check 2 can say, and it has to be said out loud:
 **byte identity over the gate proves nothing about code the gate does not
 execute.** 133 of the 153 switches are set by no case, so every mechanism

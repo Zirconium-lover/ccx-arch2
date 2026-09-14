@@ -432,3 +432,323 @@ void damcont_configure(damcont *k,dogleg *d,rescue *r,const loadctl *c)
     }
   }
 }
+
+/* ---- the corrector -----------------------------------------------------
+
+   NOTHING IN THIS TREE EXECUTES THIS FUNCTION, and that is worth knowing
+   before trusting it.  Level 4 arms on every deck here and is then REFUSED
+   by damcont_select() - on the wrapped fast deck the curvature is unstable
+   over the five committed intervals, and raising CCX_DAMAGE_CT_KAPTOL only
+   moves the refusal to `no candidate with five admissible intervals'.  The
+   mechanism was built for the s3rad target and its own banner says every
+   ending is PARTIAL.
+
+   So when this body moved out of nonlingeo(), the gate's byte identity
+   said nothing about it: the gate does not run it.  What WAS checked is
+   the arming and selection path, which does run - the whole [DAMAGE CT]
+   output of the wrapped deck, 28 lines, is identical across the move.  The
+   body itself is covered by the compiler and by reading, and by nothing
+   else.  Whoever next runs a continuation on s3rad is the first person to
+   execute this code since it was moved; if it is wrong, it is wrong here
+   and not in a thirteen-thousand-line function, which is the only thing
+   the move bought.
+
+   One Newton iteration of the bordered system, once level 4 owns the
+   boundary: solve the frozen constraint for dlambda, re-solve the
+   equilibrium row with the existing factorisation, and report rho and the
+   constraint residual rather than assuming either.
+
+   The GUARD stays with the caller - whether the continuation may run at
+   all this iteration is a decision about the increment.  The mesh side
+   arrives through trialctx; xbounold, the two damage arrays and the three
+   solver flags are passed because they are neither results() arguments nor
+   state of this object.                                                */
+
+void damcont_corrector(damcont *k,const trialctx *t,
+                       const double *xboun,const double *xbounold,
+                       double *uam,
+                       const double *damjac,const double *damvisc,
+                       ITG inputformat,ITG nrhs,ITG symmetryflag)
+{
+  double *b=*(t->b),*co=*(t->co),*vold=*(t->vold),*stx=*(t->stx);
+  double *qa=t->qa,*cam=t->cam;
+  double *xbounact=*(t->xbounact),*dam=*(t->dam),*xstate=*(t->xstate);
+  ITG *neq=*(t->neq),*mi=*(t->mi),*ne=*(t->ne),*nk=*(t->nk);
+  ITG *kon=*(t->kon),*ipkon=*(t->ipkon),*nactdof=*(t->nactdof);
+  ITG *nboun=*(t->nboun),*nstate_=*(t->nstate_);
+  char *lakon=*(t->lakon);
+  ITG num_cpus=*(t->num_cpus),iinc=*(t->iinc),ne0=*(t->ne0);
+  ITG mt=mi[1]+1,isiz;
+
+  ITG ctj,ctk,ctnst,ctbad=0,ctnsw=0;
+  k->used=1;
+  double ctlam,ctc,ctcuz,ctcuy,ctden,ctdlam,ctrho,ctyinf;
+  double ctdl[3],ctrm[9],ctsh[3],ctnrm,ctb0;
+
+  ctnst=*nstate_;
+  k->it++;k->ncorr++;
+  /* z is what the solver returned in b.  The base snapshot was taken
+     BEFORE the solve, at this iterate; it is only restored here. */
+  isiz=neq[1];cpypardou(k->z,b,&isiz,&num_cpus);
+
+  /* ---- q by transactional finite difference at the CURRENT u ----
+     arc_r0 and the whole read-before-write set were captured BEFORE
+     the solve, at this iterate, so every probe starts from ONE base
+     state.  The ladder runs on a step's first corrector iteration and
+     whenever a probe reports a category switch; the ACCEPTED q is the
+     refined q(eps_final). */
+  {
+    ITG cthalve,ctacc=0,cte,ctp;
+    double cteps,ctqn,ctdn,ctbase;
+    cteps=k->eps;
+    if(k->qh==NULL) NNEW(k->qh,double,neq[1]);
+
+    /* unperturbed baseline through the probe path: it fixes the
+       category map AND proves the base state is reproduced */
+    ctlam=k->lam;
+    for(ctj=0;ctj<neq[1];ctj++) b[ctj]=0.;
+    for(ctj=0;ctj<4;ctj++) qa[ctj]=k->qa[ctj];
+    for(ctj=0;ctj<5;ctj++) cam[ctj]=k->cam[ctj];
+    for(ctj=0;ctj<2;ctj++) uam[ctj]=k->uam[ctj];
+    isiz=mi[0]**ne;cpypardou(dam,k->dam,&isiz,&num_cpus);
+    if(damvisc!=NULL){
+      isiz=mi[0]**ne;
+      cpypardou(damvisc,k->visc,&isiz,&num_cpus);
+    }
+    if((ctnst>0)&&(k->xs!=NULL)){
+      isiz=ctnst*mi[0]**ne;
+      cpypardou(xstate,k->xs,&isiz,&num_cpus);
+    }
+    if((damjac!=NULL)&&(k->jac!=NULL)){
+      isiz=12*mi[0]**ne;
+      cpypardou(damjac,k->jac,&isiz,&num_cpus);
+    }
+    for(ctj=0;ctj<*nboun;ctj++)
+      xbounact[ctj]=xbounold[ctj]+(xboun[ctj]-xbounold[ctj])*ctlam;
+    trial_residual(t,k->beps);
+    k->neval++;
+    damage_evt_sign(stx,ipkon,lakon,ne0,mi[0],k->sgn);
+    ctbase=0.;
+    for(ctj=0;ctj<neq[1];ctj++)
+      if(fabs(k->beps[ctj]-k->r0[ctj])>ctbase)
+        ctbase=fabs(k->beps[ctj]-k->r0[ctj]);
+    if(k->it<=1){
+      printf("[DAMAGE CT FD] inc=%" ITGFORMAT " baseline reproduced: "
+             "max|R(base)-arc_r0|=%.6e (must be 0; a non-zero value "
+             "means the probe path does not start from the iterate the "
+             "residual was taken at)%s",iinc,ctbase,"\n");
+      fflush(stdout);
+    }
+
+    for(cthalve=0;cthalve<5;cthalve++){
+      ctlam=k->lam+cteps;
+      for(ctj=0;ctj<neq[1];ctj++) b[ctj]=0.;
+    for(ctj=0;ctj<4;ctj++) qa[ctj]=k->qa[ctj];
+    for(ctj=0;ctj<5;ctj++) cam[ctj]=k->cam[ctj];
+    for(ctj=0;ctj<2;ctj++) uam[ctj]=k->uam[ctj];
+    isiz=mi[0]**ne;cpypardou(dam,k->dam,&isiz,&num_cpus);
+    if(damvisc!=NULL){
+      isiz=mi[0]**ne;
+      cpypardou(damvisc,k->visc,&isiz,&num_cpus);
+    }
+    if((ctnst>0)&&(k->xs!=NULL)){
+      isiz=ctnst*mi[0]**ne;
+      cpypardou(xstate,k->xs,&isiz,&num_cpus);
+    }
+    if((damjac!=NULL)&&(k->jac!=NULL)){
+      isiz=12*mi[0]**ne;
+      cpypardou(damjac,k->jac,&isiz,&num_cpus);
+    }
+    for(ctj=0;ctj<*nboun;ctj++)
+      xbounact[ctj]=xbounold[ctj]+(xboun[ctj]-xbounold[ctj])*ctlam;
+    trial_residual(t,k->beps);
+    k->neval++;
+
+      ctnsw=damage_evt_flips(stx,ipkon,lakon,ne0,mi[0],k->sgn,
+                             &cte,&ctp);
+      for(ctj=0;ctj<neq[1];ctj++)
+        k->y[ctj]=(k->beps[ctj]-k->r0[ctj])/cteps;
+      if(ctnsw!=0){
+        printf("[DAMAGE CT FD] inc=%" ITGFORMAT " it=%" ITGFORMAT
+               " eps=%.3e REJECTED: %" ITGFORMAT " UC6 category "
+               "switch(es) between R(lambda) and R(lambda+eps)%s",
+               iinc,k->it,cteps,ctnsw,"\n");
+        cteps*=0.5;continue;
+      }
+      if((k->epsok==1)&&(cthalve==0)){ctacc=1;break;}
+      if(cthalve>0){
+        ctqn=0.;ctdn=0.;
+        for(ctj=0;ctj<neq[1];ctj++){
+          ctqn+=k->y[ctj]*k->y[ctj];
+          ctdn+=(k->y[ctj]-k->qh[ctj])
+               *(k->y[ctj]-k->qh[ctj]);
+        }
+        ctqn=sqrt(ctqn);ctdn=sqrt(ctdn);
+        printf("[DAMAGE CT FD] inc=%" ITGFORMAT " it=%" ITGFORMAT
+               " eps=%.3e |q|=%.6e rel.change vs 2eps=%.6e %s%s",
+               iinc,k->it,cteps,ctqn,(ctqn>0.)?ctdn/ctqn:0.,
+               ((ctqn>0.)&&(ctdn/ctqn<0.1))?
+               "ACCEPT (refined q used)":"halve again","\n");
+        if((ctqn>0.)&&(ctdn/ctqn<0.1)){
+          ctacc=1;k->eps=cteps;k->epsok=1;break;
+        }
+      }
+      isiz=neq[1];cpypardou(k->qh,k->y,&isiz,&num_cpus);
+      cteps*=0.5;
+    }
+    fflush(stdout);
+    if(ctacc==0) ctbad=9;
+  }
+#ifdef PARDISO
+  pardiso_solve(k->y,&neq[0],&symmetryflag,&inputformat,&nrhs);
+#endif
+
+  /* ---- the constraint at the current iterate ----
+     delta_c is anchored HERE, at the first corrector iteration of each
+     continuation step, from the same vold the corrector itself reads.
+     Anchoring it at arming instead left c off by 8e-10 against
+     ds=9.5e-12 on the short deck even though the ring endpoint and
+     vold agreed exactly at arming: the state moves between the load
+     build and the first corrector call.  With this anchor c = -ds
+     holds to machine precision at the start of every step, by
+     construction rather than by argument. */
+  damcont_kin(co,kon,ipkon[k->elem],vold,mt,k->ip,
+                ctdl,ctrm,ctsh);
+  if(k->newstep==1){
+    k->newstep=0;
+    for(ctj=0;ctj<3;ctj++) k->dc[ctj]=ctdl[ctj];
+    k->lamc=k->lam;
+    k->epsok=0;
+  }
+  ctc=k->m[0]*(ctdl[0]-k->dc[0])
+     +k->m[1]*(ctdl[1]-k->dc[1])
+     +k->m[2]*(ctdl[2]-k->dc[2])-k->ds;
+  ctcuz=0.;ctcuy=0.;ctnrm=0.;ctyinf=0.;
+  for(ctj=0;ctj<k->nsupp;ctj++){
+    ctk=k->supp[ctj];
+    if(ctk<0) continue;
+    ctcuz+=k->w[ctj]*k->z[ctk];
+    ctcuy+=k->w[ctj]*k->y[ctk];
+    ctnrm+=k->w[ctj]*k->w[ctj];
+  }
+  ctnrm=sqrt(ctnrm);
+  ctb0=0.;
+  for(ctj=0;ctj<k->nsupp;ctj++){
+    ctk=k->supp[ctj];
+    if(ctk<0) continue;
+    ctb0+=k->y[ctk]*k->y[ctk];
+  }
+  ctb0=sqrt(ctb0);
+  for(ctj=0;ctj<neq[1];ctj++)
+    if(fabs(k->y[ctj])>ctyinf) ctyinf=fabs(k->y[ctj]);
+
+  if(damcont_bordered(k->clam,ctcuz,ctcuy,ctc,
+                        &ctden,&ctdlam)==0) ctbad=1;
+  ctrho=damcont_rhoden(k->clam,ctnrm,ctb0,ctden);
+  k->den=ctden;k->rho=ctrho;k->cprev=ctc;
+
+  if((ctbad==0)&&(ctrho<k->rhomin)) ctbad=2;
+  if((ctbad==0)&&
+     (fabs(ctdlam)>k->clim*k->lamref)) ctbad=3;
+  if((ctbad==0)&&
+     (fabs(ctdlam)*ctyinf>k->ulim*k->duref)) ctbad=4;
+  if((ctbad==0)&&(ctnsw!=0)) ctbad=5;
+  if((ctbad==0)&&(k->neval>=k->maxeval)) ctbad=6;
+  if((ctbad==0)&&(k->nfact>=k->maxfact)) ctbad=7;
+  if((ctbad==0)&&(k->it>k->maxcorr)) ctbad=8;
+
+  printf("[DAMAGE CT] inc=%" ITGFORMAT " it=%" ITGFORMAT " step=%"
+         ITGFORMAT " lambda=%.12e ds=%.6e c=%.6e den=%.6e rho_den=%.4e "
+         "dlambda=%.6e |y|inf=%.4e cuz=%.4e cuy=%.4e switches=%"
+         ITGFORMAT " evals=%" ITGFORMAT " fact=%" ITGFORMAT " %s%s",
+         iinc,k->it,k->step,k->lam,k->ds,
+         ctc,ctden,ctrho,ctdlam,ctyinf,ctcuz,ctcuy,ctnsw,
+         k->neval,k->nfact,
+         (ctbad==0)?"OK":
+         ((ctbad==1)?"REFUSE:degenerate-den":
+         ((ctbad==2)?"REFUSE:rho_den":
+         ((ctbad==3)?"REFUSE:dlambda-bound":
+         ((ctbad==4)?"REFUSE:du-bound":
+         ((ctbad==5)?"REFUSE:category-switch-in-FD":
+         ((ctbad==6)?"REFUSE:eval-budget":
+         ((ctbad==7)?"REFUSE:fact-budget":
+         ((ctbad==9)?"REFUSE:FD-eps-ladder":
+                     "REFUSE:corrector-limit")))))))),
+         "\n");
+  fflush(stdout);
+
+  if(ctbad!=0){
+    /* A refusal attributable to THIS control point blacklists it for
+       the epoch and allows the next wall to try the next candidate;
+       a budget or FD refusal is not the point's fault and disarms the
+       mechanism outright.  The epoch clears on proven progress. */
+    if((ctbad==2)||(ctbad==3)||(ctbad==4)){
+      if(k->bl==NULL) NNEW(k->bl,ITG,64);
+      if(k->nbl<64){
+        k->bl[k->nbl++]=4*k->elem+k->ip;
+        printf("[DAMAGE CT] control point element %" ITGFORMAT " ip %"
+               ITGFORMAT " BLACKLISTED for this epoch (%" ITGFORMAT
+               " blacklisted); the next wall may try another "
+               "candidate.%s",k->elem+1,k->ip+1,
+               k->nbl,"\n");
+        k->refused=0;    /* a re-arm is allowed */
+      }else{
+        k->refused=1;
+      }
+    }else{
+      k->refused=1;
+    }
+    k->on=0;
+    if(k->refused==1) k->partial=1;
+    k->lam=k->lamc;
+    ctlam=k->lamc;
+    for(ctj=0;ctj<neq[1];ctj++) b[ctj]=k->z[ctj];
+    for(ctj=0;ctj<4;ctj++) qa[ctj]=k->qa[ctj];
+    for(ctj=0;ctj<5;ctj++) cam[ctj]=k->cam[ctj];
+    for(ctj=0;ctj<2;ctj++) uam[ctj]=k->uam[ctj];
+    isiz=mi[0]**ne;cpypardou(dam,k->dam,&isiz,&num_cpus);
+    if(damvisc!=NULL){
+      isiz=mi[0]**ne;
+      cpypardou(damvisc,k->visc,&isiz,&num_cpus);
+    }
+    if((ctnst>0)&&(k->xs!=NULL)){
+      isiz=ctnst*mi[0]**ne;
+      cpypardou(xstate,k->xs,&isiz,&num_cpus);
+    }
+    if((damjac!=NULL)&&(k->jac!=NULL)){
+      isiz=12*mi[0]**ne;
+      cpypardou(damjac,k->jac,&isiz,&num_cpus);
+    }
+    for(ctj=0;ctj<*nboun;ctj++)
+      xbounact[ctj]=xbounold[ctj]+(xboun[ctj]-xbounold[ctj])*ctlam;
+    trial_residual(t,k->beps);
+    k->neval++;
+
+  }else{
+    k->lam+=ctdlam;
+    ctlam=k->lam;
+    for(ctj=0;ctj<neq[1];ctj++)
+      b[ctj]=k->z[ctj]+k->y[ctj]*ctdlam;
+    for(ctj=0;ctj<4;ctj++) qa[ctj]=k->qa[ctj];
+    for(ctj=0;ctj<5;ctj++) cam[ctj]=k->cam[ctj];
+    for(ctj=0;ctj<2;ctj++) uam[ctj]=k->uam[ctj];
+    isiz=mi[0]**ne;cpypardou(dam,k->dam,&isiz,&num_cpus);
+    if(damvisc!=NULL){
+      isiz=mi[0]**ne;
+      cpypardou(damvisc,k->visc,&isiz,&num_cpus);
+    }
+    if((ctnst>0)&&(k->xs!=NULL)){
+      isiz=ctnst*mi[0]**ne;
+      cpypardou(xstate,k->xs,&isiz,&num_cpus);
+    }
+    if((damjac!=NULL)&&(k->jac!=NULL)){
+      isiz=12*mi[0]**ne;
+      cpypardou(damjac,k->jac,&isiz,&num_cpus);
+    }
+    for(ctj=0;ctj<*nboun;ctj++)
+      xbounact[ctj]=xbounold[ctj]+(xboun[ctj]-xbounold[ctj])*ctlam;
+    trial_residual(t,k->beps);
+    k->neval++;
+
+  }
+}
