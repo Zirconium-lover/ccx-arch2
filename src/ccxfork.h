@@ -30,6 +30,14 @@
 
 #include "CalculiX.h"
 
+/* The contexts are forward-declared here so that the order of declarations
+   in the rest of this file does not matter.  Without it, a function that
+   takes a trialctx has to be declared BELOW trialctx, which makes the
+   header's layout a constraint on which conversions can be done next -
+   exactly the kind of accidental coupling this work is removing. */
+typedef struct trialctx trialctx;
+typedef struct nlstate nlstate;
+
 /* dissipation-based path following; see pathfollow.c for the derivation
    and for the numerical verification of both rows of the bordered system.
    The driver holds no copy of the displacement: the caller projects f_hat
@@ -241,7 +249,7 @@ void converge_report(const converge *c,const ITG *nactdofinv,ITG mt,
    to anticipate its callers becomes a second copy of nonlingeo()'s
    prologue, which is the thing being fixed.  Adding a field is one line
    here and one in NLSTATE_BIND. */
-typedef struct{
+struct nlstate{
   ITG    *iit;                 /* Newton iteration inside this attempt   */
   double *ram,*ram1,*ram2;     /* residual norms: now, and two back      */
   double *cam;                 /* correction norms                       */
@@ -249,7 +257,7 @@ typedef struct{
   double *qa;                  /* force quantities this iteration        */
   double *qam;                 /* the reference force                    */
   double *ctrl;                /* the *CONTROLS table                    */
-}nlstate;
+};
 
 /* Bind to the caller's frame.  Valid from the point of the call to the end
    of the function, no matter what is reallocated in between, because
@@ -574,13 +582,10 @@ void damstats_append(const char *jobnamec,ITG istep,ITG iinc,
                                     ITG passes,ITG nactive,ITG ngt01,
                                     ITG ngt05,ITG ngt09,ITG nfull,
                                     double dmax,double maxdelta);
-void damstats_write_vtk(const char *jobnamec,
-                                 const double *co,const double *vold,
-                                 ITG nk,ITG mt,const ITG *kon,
-                                 const ITG *ipkon,const char *lakon,
-                                 const ITG *ielmat,ITG mi2,
-                                 const double *dam,ITG mi0,ITG ne0,
-                                 ITG istep,ITG iinc,double steptime);
+/* Sixteen arguments became three: thirteen of them were the mesh, the
+   material map and the damage state, all of which trialctx holds. */
+void damstats_write_vtk(const char *jobnamec,const trialctx *m,
+                        double steptime);
 
 /* ---- the path-following DRIVER's state (declared here, driven from
    nonlingeo()) ---------------------------------------------------------
@@ -825,7 +830,7 @@ ITG damage_wall_setdiff(const ITG *cat,const double *xstate,
    `&x') which is what makes trial_check() able to catch a field the bind
    forgot.  See the block comment at the top of trial.c.              */
 
-typedef struct{
+struct trialctx{
   double **    co;
   ITG **       nk;
   ITG **       kon;
@@ -1008,7 +1013,7 @@ typedef struct{
   /* not an argument of either call, but the atom brackets results()
      with it: the 1d/2d expansion needs inum and nothing else does. */
   ITG *        ne1d2d;
-}trialctx;
+};
 
 /* Bind the context to the caller's frame.  One line per field, next to the
    struct so the two cannot drift apart; trial_check() catches it if they
@@ -1471,14 +1476,13 @@ void topodiag_union(ITG *p,ITG a,ITG b);
 ITG topodiag_nope(const char *lak);
 ITG topodiag_selftest(void);
 void topodiag_report_zero(topodiag_report *r);
-void topodiag_run(topodiag_report *r,ITG *comp,
-                  const ITG *kon,const ITG *ipkon,const char *lakon,ITG ne,
-                  ITG nk,const ITG *nactdof,ITG mt,
-                  const ITG *nodeboun,const ITG *ndirboun,ITG nboun,
-                  const ITG *ipompc,const ITG *nodempc,ITG nmpc,
-                  const double *ad,const double *au,const ITG *jq,
-                  const ITG *irow,ITG neq,ITG nzs,
-                  const double *res);
+/* Twenty-two arguments became five.  Seventeen of them were the mesh, the
+   constraints and the equation structure, which trialctx has held all along;
+   mt is mi[1]+1, which the caller was computing by hand.  Only the assembled
+   diagonal and off-diagonal are still loose, and they are the linear system,
+   which has no object yet. */
+void topodiag_run(topodiag_report *r,ITG *comp,const trialctx *m,
+                  const double *ad,const double *au);
 double topodiag_project(const double *v,const double *w,ITG neq);
 void topodiag_support(ITG node,const ITG *kon,const ITG *ipkon,
                       const char *lakon,ITG ne,ITG *nbulk,ITG *nfac);

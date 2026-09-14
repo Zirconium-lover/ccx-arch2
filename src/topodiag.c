@@ -163,14 +163,28 @@ void topodiag_report_zero(topodiag_report *r){
   r->admin=-1.;
 }
 
-void topodiag_run(topodiag_report *r,ITG *comp,
-                  const ITG *kon,const ITG *ipkon,const char *lakon,ITG ne,
-                  ITG nk,const ITG *nactdof,ITG mt,
-                  const ITG *nodeboun,const ITG *ndirboun,ITG nboun,
-                  const ITG *ipompc,const ITG *nodempc,ITG nmpc,
-                  const double *ad,const double *au,const ITG *jq,
-                  const ITG *irow,ITG neq,ITG nzs,
-                  const double *res){
+void topodiag_run(topodiag_report *r,ITG *comp,const trialctx *m,
+                  const double *ad,const double *au){
+
+  /* Unpacked once, so the body below is the body that was there.  The
+     expressions look indirect because every trialctx field holds the ADDRESS
+     of the caller's local - that is what makes the binding survive the
+     reallocations nonlingeo() does on every iteration. */
+  const ITG *kon=*(m->kon),*ipkon=*(m->ipkon);
+  const char *lakon=*(m->lakon);
+  const ITG ne=**(m->ne),nk=**(m->nk);
+  const ITG *nactdof=*(m->nactdof);
+  const ITG mt=(*(m->mi))[1]+1;
+  /* ndirboun was a parameter of this function and the body never touched
+     it.  Twenty-two arguments is how a dead one goes unnoticed: nobody
+     reads a list that long looking for the one that does nothing. */
+  const ITG *nodeboun=*(m->nodeboun);
+  const ITG nboun=**(m->nboun);
+  const ITG *ipompc=*(m->ipompc),*nodempc=*(m->nodempc);
+  const ITG nmpc=**(m->nmpc);
+  const ITG *jq=*(m->jq),*irow=*(m->irow);
+  const ITG neq=*(m->neq1),nzs=(*(m->nzs))[0];
+  const double *res=*(m->b);
 
   ITG i,j,k,n,nope,idx,root,*p=NULL,*held=NULL,*nn=NULL,*ndof=NULL;
   ITG *map=NULL,c,nc=0;

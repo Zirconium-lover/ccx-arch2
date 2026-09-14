@@ -351,12 +351,35 @@ def struct_fields(name):
     then went into a plan."""
     for h in [SRC/'CalculiX.h']+fork_headers():
         t=h.read_text(errors='replace')
-        end=t.find('}%s;'%name)
-        if end<0: continue
-        start=t.rfind('typedef struct',0,end)
-        if start<0: continue
+        # Two spellings, because the extension uses both: the anonymous
+        # `typedef struct{...}name;' and, for the contexts that have to be
+        # forward-declared, the tagged `struct name{...};'.  Handling only
+        # the first was WRONG AND SILENT: tagging trialctx made this return
+        # the empty set, the context-field set collapsed to the derived
+        # scalars, and the duplicated-parameter count fell from 263 to 73
+        # without a line of solver code changing.  A metric that improves
+        # when you rename a struct is not measuring anything.
+        start=t.find('struct %s{'%name)
+        if start>=0:
+            end=t.find('\n};',start)
+        else:
+            end=t.find('}%s;'%name)
+            if end<0: continue
+            start=t.rfind('typedef struct',0,end)
+        if start<0 or end<0: continue
         body=re.sub(r'/\*.*?\*/','',t[start:end],flags=re.S)
-        return set(re.findall(r'\b(\w+)\s*;',body))
+        # One name per DECLARATOR, not per statement.  `double *ram,*ram1,
+        # *ram2;' declares three fields and a regex ending at the semicolon
+        # sees one - which read nlstate as holding seven of its nine.
+        # trialctx happens to put one field per line, so the bug was
+        # invisible there and would have stayed invisible.
+        out=set()
+        for stmt in body.split(';'):
+            stmt=stmt.split('{')[-1]
+            for part in stmt.split(','):
+                m=re.search(r'([A-Za-z_]\w*)\s*(?:\[[^\]]*\])*\s*$',part)
+                if m: out.add(m.group(1))
+        return out
     return set()
 
 def context_fields():

@@ -135,14 +135,21 @@ void damstats_append(const char *jobnamec,ITG istep,ITG iinc,
    DUCT_IP are CELL_DATA taken directly from the solver integration-point
    history; no extrapolation or nodal averaging is involved.  Coordinates
    are written in the current deformed configuration. */
-void damstats_write_vtk(const char *jobnamec,
-                                 const double *co,const double *vold,
-                                 ITG nk,ITG mt,const ITG *kon,
-                                 const ITG *ipkon,const char *lakon,
-                                 const ITG *ielmat,ITG mi2,
-                                 const double *dam,ITG mi0,ITG ne0,
-                                 ITG istep,ITG iinc,double steptime)
+void damstats_write_vtk(const char *jobnamec,const trialctx *m,
+                        double steptime)
 {
+  /* Unpacked once so the body below is the body that was there.  Every
+     trialctx field holds the ADDRESS of the caller's local, which is what
+     makes the binding survive nonlingeo()'s reallocations. */
+  const double *co=*(m->co),*vold=*(m->vold);
+  const ITG nk=**(m->nk),mt=(*(m->mi))[1]+1;
+  const ITG *kon=*(m->kon),*ipkon=*(m->ipkon);
+  const char *lakon=*(m->lakon);
+  const ITG *ielmat=*(m->ielmat);
+  const ITG mi2=(*(m->mi))[2],mi0=(*(m->mi))[0];
+  const double *dam=*(m->dam);
+  const ITG ne0=*(m->ne0),istep=**(m->istep),iinc=*(m->iinc);
+
   char fname[200]="",seq[32]="";
   FILE *f=NULL;
   ITG i,j,indexe,node,ncell=0;

@@ -5893,9 +5893,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	  ITG td_it,td_k,td_m,td_nm;
 #define TD_NMODE 3
 
-	  topodiag_run(&td_rep,td_comp,kon,ipkon,lakon,*ne,*nk,nactdof,mt,
-	               nodeboun,ndirboun,*nboun,ipompc,nodempc,*nmpc,
-	               ad,au,jq,irow,neq[1],nzs[0],b);
+	  topodiag_run(&td_rep,td_comp,&nlgt,ad,au);
 	  printf("[TOPODIAG] --- inc=%" ITGFORMAT " icutb=%" ITGFORMAT
 	         " iter=%" ITGFORMAT " committed_state=%016llx ---\n",
 	         iinc,icutb,iit,td_state);
@@ -9357,9 +9355,7 @@ damage_active_set_closed:
                                 de1.nfull,de1.dmax,
                                 de1.maxdelta);
 
-        damstats_write_vtk(jobnamec,co,vold,*nk,mt,kon,ipkon,lakon,
-                             ielmat,mi[2],dam,mi[0],ne0,*istep,iinc,
-                             theta**tper);
+        damstats_write_vtk(jobnamec,&nlgt,theta**tper);
 
         printf("[DAMAGE DE1 OUTPUT] exact cell snapshot: %s.de1.vtk; "
                "history: %s.de1stats\n",jobnamec,jobnamec);
@@ -10343,9 +10339,7 @@ damage_controller_done:
                                 de1.gt09,de1.nfull,
                                 de1.dmax,de1.maxdelta);
 
-        damstats_write_vtk(jobnamec,co,vold,*nk,mt,kon,ipkon,lakon,
-                             ielmat,mi[2],dam,mi[0],ne0,*istep,iinc,
-                             theta**tper);
+        damstats_write_vtk(jobnamec,&nlgt,theta**tper);
         fflush(stdout);
       }
     }
