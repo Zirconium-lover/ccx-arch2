@@ -763,6 +763,12 @@ ITG  dogleg_pick(double dl,double nd2,double nw2,double npn2,
                  double dtpn,double *pa,double *pb,double *nrm);
 /* the model's predicted reduction for that step: the denominator of rho */
 double dogleg_pred(double pa,double pb,double nb2,double nd2,double nw2);
+/* Everything the dogleg needs from J, taken while J is still allocated:
+   d = J^T r0, w = J d, p_N, the four norms, and the transpose identity
+   that decides whether the mechanism arms at all. */
+void dogleg_capture(dogleg *d,probedrv *p,const trialctx *mdl,
+                    const nlstate *n,double *ad,double *au,
+                    ITG symmetryflag);
 /* The sign convention, measured rather than asserted: 350 lines that sat
    inside nonlingeo() between a residual save and a trust-region step.  It
    borrows the solver's state and gives it back.  The caller keeps the

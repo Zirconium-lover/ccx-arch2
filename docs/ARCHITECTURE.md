@@ -232,14 +232,17 @@ against criterion 4 is a worse metric than none.
 
 | | at the start | now |
 |---|---|---|
-| **parameters a context already holds** | 295 | **71** |
-| signatures over the 6-argument budget | 36 | 25 |
+| **parameters a context already holds** | 295 | **74** |
+| — of a context that exists (`trialctx`, `nlstate`) | — | 49 |
+| — a derived scalar (`mt`, `mi0`, `nstate`) | — | 6 |
+| — of the linear system, which has no object | — | 19 |
+| signatures over the 6-argument budget | 36 | 26 |
 | widest public signature | 22 | 22 |
 | files recompiled by an interface change | 210 | 50 |
 | self tests runnable without a deck | 0 of 19 | 19 of 19 |
 | self test lines in a production run | 56–82 | 1 |
 | layering violations | 1 | 0 |
-| `nonlingeo()` lines / locals | 11,313 / 631 | 10,577 / 618 |
+| `nonlingeo()` lines / locals | 11,313 / 631 | 10,434 / 618 |
 
 The widest signature has not moved, and that row is kept to say so
 honestly: `erosion_mark` still takes twenty-two arguments and is not going
@@ -297,9 +300,29 @@ the new function takes the four objects it composes plus five fork arrays
 has never heard of `dambase` or `damjac`). Both rise *by construction* on
 every extraction. They are recorded upward here with that said out loud,
 rather than treated as a regression, because a ratchet that forbids naming
-a block is pushing against the thing it exists to encourage. The number that
-would have been a regression is `duplicated_params`, and it did not move: 71
-before, 71 after. Width is the symptom; duplication is the disease.
+a block is pushing against the thing it exists to encourage.
+
+`duplicated_params` is the number that *would* be a regression, and the next
+extraction moved it: 71 to 74, when `dogleg_capture()` took `ad`, `au` and
+`symmetryflag`. So the report now says which of two diseases each parameter
+is, because they have two different cures:
+
+- **a field of a context that exists** (49) — a caller taking apart a
+  `trialctx` or an `nlstate` it could have passed whole. Fixable today, one
+  call at a time, and that is where the fall from 295 came from;
+- **a derived scalar** (6) — `mt`, `mi0`, `nstate`, recomputed by hand from
+  `mi`. Fixable by an accessor;
+- **the linear system** (19) — `ad`, `au`, `symmetryflag`, `isolver`,
+  `sigma`, `nrhs`, `inputformat`, spread over six functions. NOT fixable
+  today, on purpose. A separate object holding them would split the matrix
+  across two contexts, because `trialctx` already holds `adb`, `aub`, `irow`,
+  `jq`, `nzs` and `neq`; on "where is the matrix" there would be two answers.
+  They are to become parameters of the `pre_solve` extension point instead,
+  and this row is the running count of what that point will have to take.
+
+Keeping the total as the ratchet and the split as the report is the point:
+the total still may not drift up without a reason written down, and the
+reason is now a row rather than a sentence.
 
 ## The objects
 
@@ -519,6 +542,7 @@ letting "every file identical" carry weight it has not earned:
 | `opcheck_probe()` | nothing — **now `fast-plain-opcheck`** | 47 probe lines diffed by hand across the move, then given a case |
 | `release_arm()` | nothing — **now `fast-plain-release`** | two 91-line blocks proved character-identical to each other, then given a case |
 | `dogleg_lincheck()` | nothing — **now `fast-plain-lincheck`** | 150 probe lines identical across the move with the probe armed, then given a case |
+| `dogleg_capture()` | `fast-wrapped` and 2 more | the transpose identity and the arming banner, byte for byte over the whole gate |
 | `damcont_corrector()` | **nothing, and it cannot be** | see below |
 
 `damcont_corrector()` is the honest bad case. Level 4 arms on every deck in

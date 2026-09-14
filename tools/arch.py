@@ -445,6 +445,16 @@ def duplicated_params(own):
     passing an object is the cure, not the disease."""
     ctx=context_fields()
     keep=selftest_reachable(own)
+    # Two different diseases hide in one number, and they have two different
+    # cures.  A parameter naming a trialctx or nlstate field is a caller
+    # taking apart an object that EXISTS; a LINSYS name is a parameter of the
+    # context this tree decided not to build (see the plan: a separate object
+    # would split the matrix between two contexts, so `how to solve it' is to
+    # become a parameter of the pre_solve extension point instead).  Only the
+    # first is fixable today, and the second is the evidence for when to fix
+    # it, so the report says which is which.
+    split={'context':0,'derived':0,'linsys':0}
+    own_ctx=struct_fields('trialctx')|struct_fields('nlstate')
     types=set()
     for h in [SRC/'CalculiX.h']+fork_headers():
         types|=typedefs_in(h.read_text(errors='replace'))
@@ -461,11 +471,14 @@ def duplicated_params(own):
                 ty=re.match(r'(?:const\s+)?(\w+)',a)
                 if ty and ty.group(1) in types: continue
                 g=re.findall(r'(\w+)\s*(?:\[\s*\])?$',a)
-                if g and g[0] in ctx: k+=1
+                if g and g[0] in ctx:
+                    k+=1
+                    split['context' if g[0] in own_ctx else
+                          'derived' if g[0] in DERIVED else 'linsys']+=1
             if k: worst.append((k,name))
             n+=k
     worst.sort(reverse=True)
-    return n,worst,len(keep)
+    return n,worst,len(keep),split
 
 def includers():
     """header name -> the .c files that reach it, following headers.
@@ -603,9 +616,10 @@ def measure():
     m['c_files']=ncfile
     m['selftests']=ntest
     m['selftests_deckless']=ndeckless
-    ndup,worstdup,nkeep=duplicated_params(own)
+    ndup,worstdup,nkeep,dupsplit=duplicated_params(own)
     m['selftest_reachable']=nkeep
     m['duplicated_params']=ndup
+    m['dup_split']=dupsplit
     m['worst_duplicators']=[{'name':x[1],'params':x[0]} for x in worstdup[:10]]
     return m
 
@@ -643,6 +657,12 @@ def table(m):
                            m['over_param_budget']))
     o.append("  %-46s %d"%("parameters a context already holds",
                            m['duplicated_params']))
+    s=m['dup_split']
+    o.append("  %-46s %d"%("  a context that EXISTS: trialctx, nlstate",
+                           s['context']))
+    o.append("  %-46s %d"%("  a derived scalar: mt, mi0, nstate",s['derived']))
+    o.append("  %-46s %d"%("  the linear system, which has no object yet",
+                           s['linsys']))
     o.append("  %-46s %d"%("  functions exempt: a self test calls them",
                            m['selftest_reachable']))
     o.append("  %-46s %d of %d"%("files recompiled by an interface change",
@@ -792,6 +812,7 @@ void damdiag_a(const double *co,ITG nk,double z);
 void damdiag_b(const trialctx *co,double z);
 void damdiag_c(const double *co,ITG nk);
 void damdiag_d(const nlstate *co,double z);
+void damdiag_e(ITG nk,ITG mt,double *ad);
 ITG  damdiag_selftest(void);
 """)
         (d/'damdiag.c').write_text(
@@ -799,9 +820,10 @@ ITG  damdiag_selftest(void);
           "void damdiag_b(const trialctx *co,double z){}\n"
           "void damdiag_c(const double *co,ITG nk){}\n"
           "void damdiag_d(const nlstate *co,double z){}\n"
+          "void damdiag_e(ITG nk,ITG mt,double *ad){}\n"
           "ITG damdiag_selftest(void){ damdiag_c(0,0); return 0; }\n")
         own=module_symbols()
-        n,worst,nkeep=duplicated_params(own)
+        n,worst,nkeep,sp=duplicated_params(own)
         _chk("duplicated_params: a context field counts",
              dict(( (w,k) for k,w in worst )).get('damdiag_a'),2,bad)
         # damdiag_b's parameter is deliberately NAMED `co', which IS a
@@ -819,6 +841,18 @@ ITG  damdiag_selftest(void);
              'damdiag_d' in [w for _,w in worst],False,bad)
         _chk("duplicated_params: a self test's callee is exempt",
              'damdiag_c' in [w for _,w in worst],False,bad)
+        # The split, because one number was hiding two diseases with two
+        # different cures.  damdiag_e takes one of each: `nk' is a field of
+        # a context that EXISTS, `mt' is a derived scalar, `ad' belongs to
+        # the linear system, which has no object.  A classifier that put
+        # everything in the first bucket - the easy mistake, since that is
+        # the bucket the total used to be - leaves the other two at zero.
+        _chk("dup_split: a field of an existing context",
+             sp['context'],3,bad)
+        _chk("dup_split: a derived scalar is not that",
+             sp['derived'],1,bad)
+        _chk("dup_split: a linear-system name is not that either",
+             sp['linsys'],1,bad)
 
         # ---- includers: transitive, because that is what make rebuilds ---
         (d/'logview.h').write_text("void logview_report(double s);\n")

@@ -1,13 +1,13 @@
 {
-  "duplicated_params": 71,
+  "duplicated_params": 74,
   "fork_locals": 127,
   "header_fanout": 50,
   "layer_violations": 0,
   "locals_in_longest": 618,
-  "longest_function_lines": 10577,
-  "nonlingeo_lines": 10748,
-  "over_param_budget": 25,
-  "public_api": 180,
+  "longest_function_lines": 10434,
+  "nonlingeo_lines": 10605,
+  "over_param_budget": 26,
+  "public_api": 181,
   "selftests_deckless": -19,
   "sites": {
     "BATCHTRACE": 3,
@@ -23,7 +23,7 @@
     "DAMAGE RAY": 4,
     "DAMAGE REG": 2,
     "DAMAGE RELEASE": 4,
-    "DAMAGE TR": 8,
+    "DAMAGE TR": 7,
     "DAMSTATE": 3,
     "DISSIPATION": 3,
     "FRACTURE": 3,
@@ -35,7 +35,7 @@
     "SWITCHES": 1,
     "TOPODIAG": 4,
     "TOPOLOGY": 6,
-    "WALLDIAG": 5
+    "WALLDIAG": 4
   },
   "widest_signature": 22
 }

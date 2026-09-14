@@ -149,6 +149,176 @@ double dogleg_pred(double pa,double pb,double nb2,double nd2,
        |r0|^2 = 2  and  dot(d,p_N) = 2   - the same identity the run checks.
    Prints PASS/FAIL per case and returns the number of failures. */
 
+/* Everything the dogleg needs from J, taken while
+   J is still allocated.  Two lines below, ad and au are freed, and
+   every trial residual evaluation happens after that - so a dogleg
+   that wanted a matrix-vector product per trial could not have one.
+   It does not need one:
+
+       J p_N = r0        (exactly: p_N is what the solver returned)
+       J d   = w         (computed here, once)
+
+   and every step this trust region can propose is p = pa*d + pb*p_N,
+   so J p = pa*w + pb*r0 is a two-scalar combination of vectors that
+   already exist.  No matrix, no second factorisation and no second
+   solve for the whole trial loop.
+
+   Storage (add_sm_st_as.f:29-56, mastruct.c:795-820, cross-checked
+   against opas.f:34-46): jq and irow are 1-based; column c (0-based)
+   owns au[jq[c]-1 .. jq[c+1]-2]; for slot k in that column with
+   r=irow[k]-1 > c,  au[k] = J(r,c)  and  au[nzs[2]+k] = J(c,r);
+   ad[i] = J(i,i).  sigma is 0 everywhere in nonlingeo, so the
+   factorised operator is (ad,au) with no shift.
+
+   THE TRANSPOSE IS PROVED, NOT ASSERTED.  d = J^T r0 and J p_N = r0
+   give dot(d,p_N) = r0^T J J^-1 r0 = |r0|^2 identically.  Swap the
+   two halves of au, or use J where J^T is meant, and the identity
+   fails at once.  It is checked on every armed iteration and the
+   mechanism REFUSES TO ARM when it is off by more than 1e-3.
+
+   The caller keeps the guard, as every other mechanism here does; this
+   runs while ad and au are still allocated, two lines before they are
+   freed. */
+void dogleg_capture(dogleg *d,probedrv *p,const trialctx *mdl,
+                    const nlstate *n,double *ad,double *au,
+                    ITG symmetryflag)
+{
+  /* Unpacked once, so the body below is the body that was there; every
+     trialctx field holds the ADDRESS of the caller's local. */
+  double *b=*(mdl->b);
+  ITG *irow=*(mdl->irow),*jq=*(mdl->jq),*nactdof=*(mdl->nactdof);
+  ITG *mi=*(mdl->mi),*neq=*(mdl->neq),*nzs=*(mdl->nzs),*nk=*(mdl->nk);
+  ITG *ithermal=*(mdl->ithermal);
+  ITG iinc=*(mdl->iinc),nasym=*(mdl->nasym),num_cpus=*(mdl->num_cpus);
+  ITG iit=*(n->iit);
+  ITG mt=mi[1]+1,isiz;
+
+    if((nasym!=1)||(symmetryflag!=2)||(*ithermal>=2)||
+       (nzs[2]!=nzs[1])||(neq[0]!=neq[1])){
+      if(d->have>=0){
+        printf("[DAMAGE TR] REFUSING TO ARM: the assembled operator is "
+               "not the one this construction was proved on (nasym=%"
+               ITGFORMAT " symmetryflag=%" ITGFORMAT " ithermal=%"
+               ITGFORMAT " neq0=%" ITGFORMAT " neq1=%" ITGFORMAT
+               " nzs1=%" ITGFORMAT " nzs2=%" ITGFORMAT ").  The wall "
+               "goes to the original stock stop.%s",
+               nasym,symmetryflag,*ithermal,neq[0],neq[1],
+               nzs[1],nzs[2],"\n");
+        fflush(stdout);
+      }
+      d->have=(d->on==1)?-1:d->have;
+      d->on=0;d->lc_due=0;
+    }else{
+      ITG dk,dc,dr;
+      double daden,dad;
+      if(d->d==NULL){
+        NNEW(d->d,double,neq[1]);
+        NNEW(d->w,double,neq[1]);
+        NNEW(d->pn,double,neq[1]);
+      }
+      /* d = J^T r0 */
+      for(dk=0;dk<neq[1];dk++)
+        d->d[dk]=ad[dk]*d->r0[dk];
+      for(dc=0;dc<neq[1];dc++){
+        for(dk=jq[dc]-1;dk<jq[dc+1]-1;dk++){
+          dr=irow[dk]-1;
+          d->d[dc]+=au[dk]*d->r0[dr];
+          d->d[dr]+=au[nzs[2]+dk]*d->r0[dc];
+        }
+      }
+      /* w = J d   (the same loop with the two halves exchanged) */
+      for(dk=0;dk<neq[1];dk++)
+        d->w[dk]=ad[dk]*d->d[dk];
+      for(dc=0;dc<neq[1];dc++){
+        for(dk=jq[dc]-1;dk<jq[dc+1]-1;dk++){
+          dr=irow[dk]-1;
+          d->w[dr]+=au[dk]*d->d[dc];
+          d->w[dc]+=au[nzs[2]+dk]*d->d[dr];
+        }
+      }
+      isiz=neq[1];cpypardou(d->pn,b,&isiz,&num_cpus);
+      /* [WALLDIAG] MASKSTEP.  pm = p_N with every component that
+         belongs to an AUTOSPC-masked node zeroed, and wm = J pm by the
+         same proved loop.  Built HERE because ad and au are freed
+         before the linearisation check runs; pm and wm are the only
+         things that survive to it.  Nothing on a solution path reads
+         either. */
+      if((p->wall_maskstep!=0)&&(damage_spc_mask!=NULL)&&
+         (damage_spc_nk>=*nk)){
+        ITG mi_,mj_,mk_;
+        if(d->pm==NULL){
+          NNEW(d->pm,double,neq[1]);
+          NNEW(d->wm,double,neq[1]);
+        }
+        for(dk=0;dk<neq[1];dk++) d->pm[dk]=d->pn[dk];
+        for(mi_=0;mi_<*nk;mi_++){
+          if(damage_spc_mask[mi_]==0) continue;
+          for(mj_=1;mj_<mt;mj_++){
+            mk_=nactdof[mt*mi_+mj_];
+            if(mk_>0) d->pm[mk_-1]=0.;
+          }
+        }
+        for(dk=0;dk<neq[1];dk++)
+          d->wm[dk]=ad[dk]*d->pm[dk];
+        for(dc=0;dc<neq[1];dc++){
+          for(dk=jq[dc]-1;dk<jq[dc+1]-1;dk++){
+            dr=irow[dk]-1;
+            d->wm[dr]+=au[dk]*d->pm[dc];
+            d->wm[dc]+=au[nzs[2]+dk]*d->pm[dr];
+          }
+        }
+        d->npm2=0.;
+        for(dk=0;dk<neq[1];dk++)
+          d->npm2+=d->pm[dk]*d->pm[dk];
+      }
+      d->nb2=0.;d->nd2=0.;d->nw2=0.;
+      d->npn2=0.;d->dtpn=0.;
+      for(dk=0;dk<neq[1];dk++){
+        d->nb2+=d->r0[dk]*d->r0[dk];
+        d->nd2+=d->d[dk]*d->d[dk];
+        d->nw2+=d->w[dk]*d->w[dk];
+        d->npn2+=d->pn[dk]*d->pn[dk];
+        d->dtpn+=d->d[dk]*d->pn[dk];
+      }
+      /* how far from symmetric the operator actually IS - measured,
+         because the dogleg is only worth building if J^T != J */
+      d->asym=0.;daden=0.;
+      for(dk=0;dk<nzs[1];dk++){
+        dad=fabs(au[dk]-au[nzs[2]+dk]);
+        if(dad>d->asym) d->asym=dad;
+        if(fabs(au[dk])>daden) daden=fabs(au[dk]);
+      }
+      if(daden>0.) d->asym/=daden;
+      d->ident=(d->nb2>0.)?
+                       d->dtpn/d->nb2:0.;
+      if((d->nb2<=0.)||(d->nw2<=0.)||
+         (d->nd2<=0.)||(fabs(d->ident-1.)>1.e-3)){
+        printf("[DAMAGE TR] TRANSPOSE-CHECK FAILED at inc=%" ITGFORMAT
+               " iter=%" ITGFORMAT ": dot(J^T R,p_N)/|R|^2 = %.12e, "
+               "and it must be 1.  Either the transpose is not a "
+               "transpose or the solve is not a solve.  The dogleg "
+               "DISARMS and the wall goes to the original stock stop.%s",
+               iinc,iit,d->ident,"\n");
+        fflush(stdout);
+        d->have=-1;d->on=0;d->lc_due=0;
+      }else{
+        d->tc=d->nd2/d->nw2;
+        d->have=1;
+        if(d->on==1) d->nfact++;
+        if(d->banner==0){
+          d->banner=1;
+          printf("[DAMAGE TR] TRANSPOSE-CHECK inc=%" ITGFORMAT " iter=%"
+                 ITGFORMAT " dot(J^T R,p_N)/|R|^2 = %.12e (exact value "
+                 "1; a J used in place of J^T does not satisfy it).  "
+                 "OPERATOR ASYMMETRY max|au_L-au_U|/max|au_L| = %.6e, "
+                 "so J^T R is genuinely not J R here.%s",
+                 iinc,iit,d->ident,d->asym,"\n");
+          fflush(stdout);
+        }
+      }
+    }
+}
+
 /* The sign convention, measured rather than asserted.
 
 
