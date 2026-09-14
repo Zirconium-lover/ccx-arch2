@@ -673,11 +673,11 @@ void damcont_init(damcont *c);
 void damcont_kin(const double *co,const ITG *kon,ITG indexe,
                           const double *v,ITG mt,ITG mint,
                           double *dl,double *rmat,double *shape);
-void damcont_snap(const double *co,const ITG *kon,const ITG *ipkon,
-                           const char *lakon,const double *v,
-                           const double *stx,const double *xstate,
-                           ITG ne0,ITG mi0,ITG nstate,ITG mt,
-                           double *ring,ITG *fl);
+/* Thirteen arguments became five.  v and stx stay parameters: which state
+   the caller wants snapped is its decision, and the one call site passes
+   vold and sti rather than the context's v and stx. */
+void damcont_snap(const trialctx *mdl,const double *v,const double *stx,
+                  double *ring,ITG *fl);
 ITG damcont_bordered(double clam,double cuz,double cuy,double c,
                               double *den,double *dlam);
 double damcont_rhoden(double clam,double cunorm,double ysupp,

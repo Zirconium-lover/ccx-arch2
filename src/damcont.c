@@ -127,12 +127,17 @@ void damcont_kin(const double *co,const ITG *kon,ITG indexe,
    category.  Both flags are needed because the historical admissibility
    guards test them at BOTH endpoints of an interval. */
 
-void damcont_snap(const double *co,const ITG *kon,const ITG *ipkon,
-                           const char *lakon,const double *v,
-                           const double *stx,const double *xstate,
-                           ITG ne0,ITG mi0,ITG nstate,ITG mt,
-                           double *ring,ITG *fl)
+void damcont_snap(const trialctx *mdl,const double *v,const double *stx,
+                  double *ring,ITG *fl)
 {
+  /* Unpacked once, so the body below is the body that was there. */
+  const double *co=*(mdl->co);
+  const ITG *kon=*(mdl->kon),*ipkon=*(mdl->ipkon);
+  const char *lakon=*(mdl->lakon);
+  const double *xstate=*(mdl->xstate);
+  const ITG ne0=*(mdl->ne0),mi0=(*(mdl->mi))[0];
+  const ITG nstate=**(mdl->nstate_),mt=(*(mdl->mi))[1]+1;
+
   double dl[3],rmat[9],shape[3];
   ITG i,j,np,idx;
 

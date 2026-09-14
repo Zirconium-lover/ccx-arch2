@@ -3135,8 +3135,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         }
         ctn=mi[0]*ne0;
         ct.head=(ct.nring==0)?0:((ct.head+1)%6);
-        damcont_snap(co,kon,ipkon,lakon,vold,sti,xstate,ne0,mi[0],
-                       *nstate_,mt,
+        damcont_snap(&nlgt,vold,sti,
                        &ct.ring[3*ctn*ct.head],
                        &ct.fl[ctn*ct.head]);
         if(ct.nring>0){

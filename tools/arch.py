@@ -388,6 +388,29 @@ def context_fields():
     for n in ('trialctx','nlstate'): out|=struct_fields(n)
     return out|DERIVED|LINSYS
 
+def selftest_reachable(own):
+    """Public functions a self test calls directly.
+
+    These are the ones that must KEEP taking plain arrays.  A self test
+    builds a synthetic four-element mesh and three materials; it cannot
+    build a 180-field trialctx bound to the locals of a running solver, and
+    it should not have to.  Converting such a function to take the context
+    would not tidy it - it would delete the only check on it.
+
+    It is not an accident that the widest three functions in this tree are
+    all in this set.  A function that takes plain arrays is a function you
+    can test; a function that takes the context is one you can only run."""
+    out=set()
+    for p in sorted(SRC.glob('*.c')):
+        txt=p.read_text(errors='replace')
+        for name,first,body,last in functions(p):
+            if 'selftest' not in name and not name.endswith('_legacycheck'):
+                continue
+            seg="\n".join(txt.split('\n')[first-1:last])
+            for c in set(re.findall(r'\b([a-z_]\w*)\s*\(',seg)):
+                if c in own and c!=name: out.add(c)
+    return out
+
 def duplicated_params(own):
     """How many parameters name something a context already holds.
 
@@ -403,6 +426,7 @@ def duplicated_params(own):
     A parameter whose TYPE is one of the extension's structs is not counted:
     passing an object is the cure, not the disease."""
     ctx=context_fields()
+    keep=selftest_reachable(own)
     types=set()
     for h in [SRC/'CalculiX.h']+fork_headers():
         types|=set(re.findall(r'^\}\s*(\w+)\s*;',h.read_text(errors='replace'),re.M))
@@ -412,6 +436,7 @@ def duplicated_params(own):
         for name,args in re.findall(
                 r'\n(?:[A-Za-z_][\w \t*]*?)\b([A-Za-z_]\w*)\s*\(([^;{}]*?)\)\s*;',txt,re.S):
             if name not in own: continue
+            if name in keep: continue     # must stay callable from a test
             k=0
             for a in args.split(','):
                 a=a.strip()
@@ -422,7 +447,7 @@ def duplicated_params(own):
             if k: worst.append((k,name))
             n+=k
     worst.sort(reverse=True)
-    return n,worst
+    return n,worst,len(keep)
 
 def includers():
     """header name -> the .c files that reach it, following headers.
@@ -560,7 +585,8 @@ def measure():
     m['c_files']=ncfile
     m['selftests']=ntest
     m['selftests_deckless']=ndeckless
-    ndup,worstdup=duplicated_params(own)
+    ndup,worstdup,nkeep=duplicated_params(own)
+    m['selftest_reachable']=nkeep
     m['duplicated_params']=ndup
     m['worst_duplicators']=[{'name':x[1],'params':x[0]} for x in worstdup[:10]]
     return m
@@ -599,6 +625,8 @@ def table(m):
                            m['over_param_budget']))
     o.append("  %-46s %d"%("parameters a context already holds",
                            m['duplicated_params']))
+    o.append("  %-46s %d"%("  functions exempt: a self test calls them",
+                           m['selftest_reachable']))
     o.append("  %-46s %d of %d"%("files recompiled by an interface change",
                                  m['header_fanout'],m['c_files']))
     for h,n in sorted(m['header_cost'].items(),key=lambda kv:-kv[1]):

@@ -148,6 +148,28 @@ somebody pays on every change rather than a matter of taste:
    `ccxfork.h` now — 49 files — with `ccxopt.h` and `logview.h` split off
    because they are platform rather than mechanism.
 
+### The limit of a context, found by measuring
+
+Nine of the twenty-nine widest functions are called by a self test, and they
+include the widest three — `erosion_mark` (22), `loadcut_width` (22),
+`converge_norms` (21). That is not a coincidence. A self test builds a
+synthetic four-element mesh and three materials; it cannot build a 180-field
+`trialctx` bound to the locals of a running solver, and it should not have
+to. **A function that takes plain arrays is a function you can test; a
+function that takes the context is one you can only run.**
+
+So the rule is not "pass the context everywhere". It is:
+
+> Convert at the boundary the driver calls. Keep a plain-array core wherever
+> a test needs one. Where both are wanted, the context-taking function is a
+> thin wrapper over the testable core.
+
+`tools/arch.py` knows this — it exempts any public function a self test
+calls, and prints how many. Without that exemption the metric would have
+rewarded deleting the only checks on the three widest functions in the tree,
+which is the exact opposite of what it exists for. A metric that pushes
+against criterion 4 is a worse metric than none.
+
 ### Where these numbers are now
 
 | | at the start | now |
