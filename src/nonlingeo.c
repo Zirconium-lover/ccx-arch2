@@ -7200,78 +7200,11 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         for(ljj=0;ljj<4;ljj++) lqas[ljj]=qa[ljj];
         for(ljj=0;ljj<2;ljj++) luams[ljj]=uam[ljj];
 
-        /* [WALLDIAG] The active set AT THE CURRENT ITERATE.  xstate, dam and
-           stx here belong to u, because the iteration's own results() call
-           built them and nothing has stepped yet.  Every rung below is
-           compared against this one census, so a transition count is the
-           number of integration points the step moved across a branch. */
-
-        if(prb.wall_cat==NULL) NNEW(prb.wall_cat,ITG,mi[0]**ne);
-        damage_ray_census(prb.wall_cat,&nlgt,damdamageini,damage_damvisc);
-        {
-          ITG wj,wnadv=0,wnlive=0;
-          double wpinf=0.;
-          for(wj=0;wj<mi[0]*ne0;wj++){
-            if(prb.wall_cat[wj]&DAMCAT_USOFT) wnlive++;
-            if(prb.wall_cat[wj]&DAMCAT_UADV) wnadv++;
-          }
-          for(wj=0;wj<neq[1];wj++)
-            if(fabs(dog.pn[wj])>wpinf) wpinf=fabs(dog.pn[wj]);
-          printf("[WALLDIAG] inc=%" ITGFORMAT " iter=%" ITGFORMAT
-                 " base state: UC6 points past initiation %" ITGFORMAT
-                 ", of which ADVANCING (deff>dmax0) %" ITGFORMAT
-                 "; |p_N|inf=%.6e |p_N|2=%.6e |R|2=%.6e%s",
-                 iinc,iit,wnlive,wnadv,wpinf,sqrt(dog.npn2),
-                 sqrt(dog.nb2),"\n");
-          damage_wall_where("residual",dog.r0,&nlgt,5);
-          damage_wall_where("correction",dog.pn,&nlgt,5);
-          /* [WALLDIAG] STIFFNESS AT THE RESIDUAL PEAK.  The convergence test
-             checkconvergence() applies is on max|R| over the mechanical
-             block, not on |R|2, so the dof that decides the run is the peak
-             one.  This reports, for the five largest residual dofs, the
-             assembled diagonal AGAINST that node's own intact value and the
-             displacement |R|/k that would be needed to null the residual
-             locally.  A peak sitting on a node whose diagonal has collapsed,
-             needing a displacement far larger than anything physical, is a
-             different object from a peak on a healthy node, and only the
-             second is a convergence problem in the ordinary sense. */
-          {
-            ITG *wsn=NULL,*wsd=NULL,wi,wj,wk,wt,wbest;
-            double wa;
-            NNEW(wsn,ITG,neq[1]);NNEW(wsd,ITG,neq[1]);
-            for(wi=0;wi<neq[1];wi++){wsn[wi]=-1;wsd[wi]=0;}
-            for(wi=0;wi<*nk;wi++)
-              for(wj=1;wj<mt;wj++){
-                wk=nactdof[mt*wi+wj];
-                if((wk>0)&&(wk<=neq[1])){wsn[wk-1]=wi;wsd[wk-1]=wj;}
-              }
-            for(wt=0;wt<5;wt++){
-              wbest=-1;wa=-1.;
-              for(wi=0;wi<neq[1];wi++){
-                if(wsn[wi]<0) continue;
-                if(fabs(dog.r0[wi])>wa){wa=fabs(dog.r0[wi]);wbest=wi;}
-              }
-              if(wbest<0) break;
-              wi=wsn[wbest];
-              printf("[WALLDIAG]   Rpeak #%" ITGFORMAT ": node %" ITGFORMAT
-                     " dir %" ITGFORMAT " R=%.6e  addiag=%.6e addiag0=%.6e "
-                     "ratio=%.6e spc_masked=%" ITGFORMAT " need_du=|R|/k=%.6e"
-                     "%s",wt+1,wi+1,wsd[wbest],dog.r0[wbest],
-                     (damage_addiag!=NULL)?damage_addiag[wi]:0.,
-                     (damage_addiag0!=NULL)?damage_addiag0[wi]:0.,
-                     ((damage_addiag!=NULL)&&(damage_addiag0!=NULL)&&
-                      (damage_addiag0[wi]>0.))?
-                       damage_addiag[wi]/damage_addiag0[wi]:-1.,
-                     ((damage_spc_mask!=NULL)&&(damage_spc_nk>wi))?
-                       damage_spc_mask[wi]:-1,
-                     ((damage_addiag!=NULL)&&(damage_addiag[wi]>0.))?
-                       fabs(dog.r0[wbest])/damage_addiag[wi]:-1.,"\n");
-              wsn[wbest]=-1;
-            }
-            SFREE(wsn);SFREE(wsd);
-          }
-          fflush(stdout);
-        }
+        /* [WALLDIAG] the base state and the residual peaks.  Seventy
+           lines of it used to sit here; damdiag.c owns the report now. */
+        damage_wall_report(&prb,&nlgt,&nls,&dog,damdamageini,
+                           damage_damvisc,damage_addiag,damage_addiag0,
+                           damage_spc_mask,damage_spc_nk);
 
         {
         ITG lpassn=2;

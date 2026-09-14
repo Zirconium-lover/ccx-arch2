@@ -40,6 +40,8 @@ typedef struct nlstate nlstate;
 typedef struct erosion_batch erosion_batch;
 typedef struct erosion_policy erosion_policy;
 typedef struct topo_txn topo_txn;
+typedef struct dogleg dogleg;
+typedef struct probedrv probedrv;
 
 /* dissipation-based path following; see pathfollow.c for the derivation
    and for the numerical verification of both rows of the bordered system.
@@ -448,7 +450,7 @@ void opcheckdrv_configure_fd(opcheckdrv *p);
    locals, six clusters, one object - each field keeps its cluster's name
    because more than one cluster had an `inc'.                         */
 
-typedef struct{
+struct probedrv{
   /* the residual ray along the Newton direction */
   ITG     *ray_cat;
   double  ray_growth;
@@ -473,7 +475,7 @@ typedef struct{
   double  null_amax,null_nb,null_nn,null_nx;
   ITG     null_cnt,null_inc,null_it,null_nit,null_seed;
   double  *null_x;
-}probedrv;
+};
 void probedrv_init(probedrv *p);
 void probedrv_configure_aba(probedrv *p);
 
@@ -731,7 +733,7 @@ ITG damcont_selftest(void);
    still in nonlingeo(); see the block comment in dogleg.c for why, and
    for what changed about whether it has to be.                        */
 
-typedef struct{
+struct dogleg{
   /* policy - read from the switches at arming */
   ITG    on,mode,banner,lincheck,selfrec,incarm;
   ITG    maxarm,maxeval,maxfact,maxtrial;
@@ -746,7 +748,7 @@ typedef struct{
   /* census - what the mechanism actually did, over the run */
   ITG    narm,nacc,nrej,nnewt,ncau,ndog,neval,nfact,nfail,used;
   ITG    recdone,lasthelp,lc_due,lc_it,lc_nit;
-}dogleg;
+};
 
 void dogleg_init(dogleg *d);
 /* the step: 1 NEWTON, 2 CAUCHY, 3 DOGLEG, 0 REFUSE (degenerate or NaN -
@@ -818,6 +820,14 @@ void damage_wall_where(const char *tag,const double *x,const trialctx *mdl,
                        ITG ntop);
 /* Fifteen arguments became three, for the same reason. */
 void damage_wall_split(const char *tag,const double *x,const trialctx *mdl);
+/* The base state at the current iterate and the five residual peaks:
+   seventy lines that sat inside nonlingeo() with nothing but the [WALLDIAG]
+   tag to say they were one report.  Reads and prints; changes nothing. */
+void damage_wall_report(probedrv *p,const trialctx *mdl,const nlstate *n,
+                        const dogleg *d,const double *dambase,
+                        const double *damvisc,const double *addiag,
+                        const double *addiag0,const ITG *spcmask,ITG spcnk);
+
 ITG damage_wall_setdiff(const ITG *cat,const trialctx *mdl,
                         const double *dambase,const double *visc,ITG *nb);
 

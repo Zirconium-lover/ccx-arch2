@@ -253,9 +253,24 @@ ITG logview_selftest(void){
        >1.e-6*logview_incl[outer]+1.e-7){
       printf("[LOGVIEW] *ERROR: self+child is not inclusive: %e + %e != %e\n",
              logview_self[outer],logview_incl[inner],logview_incl[outer]);bad++;}
-    /* and the child must dominate: it ran four times the work */
-    if(logview_incl[inner]<=logview_self[outer]){
-      printf("[LOGVIEW] *ERROR: the child did not dominate its parent\n");
+    /* The child's time must have been TAKEN OUT of the parent's self time.
+       This is the intent of the check that used to stand here, which
+       compared the child's inclusive time against the parent's self time on
+       the grounds that the child ran four times the work.  That was a race,
+       not a test: the two are independently scheduled wall-clock
+       measurements, and under load the parent's idle portion is descheduled
+       and measures longer than the child's busy one.  OBSERVED: two of
+       twelve concurrent runs failed, and the gate running four cases at once
+       hit it.
+
+       It was also redundant.  A swapped attribution - self time that still
+       contains the child - is caught exactly by the identity above, because
+       self+child would then exceed inclusive.  What is left here says the
+       same thing without consulting the scheduler. */
+    if(logview_self[outer]>=logview_incl[outer]){
+      printf("[LOGVIEW] *ERROR: the child's time was not removed from the "
+             "parent's self time: self=%e inclusive=%e\n",
+             logview_self[outer],logview_incl[outer]);
       bad++;}
     if(logview_pcalls[outer][inner]!=1){
       printf("[LOGVIEW] *ERROR: the caller of the inner event was not recorded\n");

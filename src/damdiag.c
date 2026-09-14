@@ -441,6 +441,90 @@ void damage_wall_split(const char *tag,const double *x,const trialctx *mdl)
   SFREE(touch);
 }
 
+/* The base state at the current iterate, and the five residual peaks.
+
+   Seventy lines that sat inside nonlingeo(), between an arming block and a
+   line-search ladder, with nothing but the [WALLDIAG] tag to say they were
+   one report.  xstate, dam and stx here belong to u, because the
+   iteration's own results() built them and nothing has stepped yet - which
+   is the whole reason the census is taken HERE and not anywhere more
+   convenient.  Every rung of the ladder below is compared against this one
+   census, so a transition count is the number of integration points the
+   step moved across a branch.
+
+   STIFFNESS AT THE RESIDUAL PEAK is the second half.  checkconvergence()
+   tests max|R| over the mechanical block, not |R|2, so the dof that decides
+   the run is the peak one.  For the five largest it reports the assembled
+   diagonal against that node's own intact value, and the displacement
+   |R|/k that would null the residual locally.  A peak on a node whose
+   diagonal has collapsed, needing a displacement far larger than anything
+   physical, is a different object from a peak on a healthy node, and only
+   the second is a convergence problem in the ordinary sense.
+
+   Reads and prints.  Changes nothing. */
+void damage_wall_report(probedrv *p,const trialctx *mdl,const nlstate *n,
+                        const dogleg *d,const double *dambase,
+                        const double *damvisc,const double *addiag,
+                        const double *addiag0,const ITG *spcmask,ITG spcnk)
+{
+  const ITG *mi=*(mdl->mi),*ne=*(mdl->ne),*nk=*(mdl->nk);
+  const ITG *neq=*(mdl->neq),*nactdof=*(mdl->nactdof);
+  const ITG ne0=*(mdl->ne0),mt=mi[1]+1,iinc=*(mdl->iinc),iit=*(n->iit);
+  ITG wj,wnadv=0,wnlive=0;
+  double wpinf=0.;
+  ITG *wsn=NULL,*wsd=NULL,wi,wk,wt,wbest;
+  double wa;
+
+  if(p->wall_cat==NULL) NNEW(p->wall_cat,ITG,mi[0]**ne);
+  damage_ray_census(p->wall_cat,mdl,dambase,damvisc);
+
+  for(wj=0;wj<mi[0]*ne0;wj++){
+    if(p->wall_cat[wj]&DAMCAT_USOFT) wnlive++;
+    if(p->wall_cat[wj]&DAMCAT_UADV) wnadv++;
+  }
+  for(wj=0;wj<neq[1];wj++)
+    if(fabs(d->pn[wj])>wpinf) wpinf=fabs(d->pn[wj]);
+  printf("[WALLDIAG] inc=%" ITGFORMAT " iter=%" ITGFORMAT
+         " base state: UC6 points past initiation %" ITGFORMAT
+         ", of which ADVANCING (deff>dmax0) %" ITGFORMAT
+         "; |p_N|inf=%.6e |p_N|2=%.6e |R|2=%.6e%s",
+         iinc,iit,wnlive,wnadv,wpinf,sqrt(d->npn2),
+         sqrt(d->nb2),"\n");
+  damage_wall_where("residual",d->r0,mdl,5);
+  damage_wall_where("correction",d->pn,mdl,5);
+
+  NNEW(wsn,ITG,neq[1]);NNEW(wsd,ITG,neq[1]);
+  for(wi=0;wi<neq[1];wi++){wsn[wi]=-1;wsd[wi]=0;}
+  for(wi=0;wi<*nk;wi++)
+    for(wj=1;wj<mt;wj++){
+      wk=nactdof[mt*wi+wj];
+      if((wk>0)&&(wk<=neq[1])){wsn[wk-1]=wi;wsd[wk-1]=wj;}
+    }
+  for(wt=0;wt<5;wt++){
+    wbest=-1;wa=-1.;
+    for(wi=0;wi<neq[1];wi++){
+      if(wsn[wi]<0) continue;
+      if(fabs(d->r0[wi])>wa){wa=fabs(d->r0[wi]);wbest=wi;}
+    }
+    if(wbest<0) break;
+    wi=wsn[wbest];
+    printf("[WALLDIAG]   Rpeak #%" ITGFORMAT ": node %" ITGFORMAT
+           " dir %" ITGFORMAT " R=%.6e  addiag=%.6e addiag0=%.6e "
+           "ratio=%.6e spc_masked=%" ITGFORMAT " need_du=|R|/k=%.6e"
+           "%s",wt+1,wi+1,wsd[wbest],d->r0[wbest],
+           (addiag!=NULL)?addiag[wi]:0.,
+           (addiag0!=NULL)?addiag0[wi]:0.,
+           ((addiag!=NULL)&&(addiag0!=NULL)&&(addiag0[wi]>0.))?
+             addiag[wi]/addiag0[wi]:-1.,
+           ((spcmask!=NULL)&&(spcnk>wi))?spcmask[wi]:-1,
+           ((addiag!=NULL)&&(addiag[wi]>0.))?
+             fabs(d->r0[wbest])/addiag[wi]:-1.,"\n");
+    wsn[wbest]=-1;
+  }
+  SFREE(wsn);SFREE(wsd);
+  fflush(stdout);
+}
+
 ITG damage_wall_setdiff(const ITG *cat,const trialctx *mdl,
                         const double *dambase,const double *visc,ITG *nb)
 {
