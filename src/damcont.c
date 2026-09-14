@@ -460,20 +460,20 @@ void damcont_configure(damcont *k,dogleg *d,rescue *r,const loadctl *c)
    solver flags are passed because they are neither results() arguments nor
    state of this object.                                                */
 
-void damcont_corrector(damcont *k,const trialctx *t,
+void damcont_corrector(damcont *k,const trialctx *mdl,
                        const double *xboun,const double *xbounold,
                        double *uam,
                        const double *damjac,const double *damvisc,
                        ITG inputformat,ITG nrhs,ITG symmetryflag)
 {
-  double *b=*(t->b),*co=*(t->co),*vold=*(t->vold),*stx=*(t->stx);
-  double *qa=t->qa,*cam=t->cam;
-  double *xbounact=*(t->xbounact),*dam=*(t->dam),*xstate=*(t->xstate);
-  ITG *neq=*(t->neq),*mi=*(t->mi),*ne=*(t->ne),*nk=*(t->nk);
-  ITG *kon=*(t->kon),*ipkon=*(t->ipkon),*nactdof=*(t->nactdof);
-  ITG *nboun=*(t->nboun),*nstate_=*(t->nstate_);
-  char *lakon=*(t->lakon);
-  ITG num_cpus=*(t->num_cpus),iinc=*(t->iinc),ne0=*(t->ne0);
+  double *b=*(mdl->b),*co=*(mdl->co),*vold=*(mdl->vold),*stx=*(mdl->stx);
+  double *qa=mdl->qa,*cam=mdl->cam;
+  double *xbounact=*(mdl->xbounact),*dam=*(mdl->dam),*xstate=*(mdl->xstate);
+  ITG *neq=*(mdl->neq),*mi=*(mdl->mi),*ne=*(mdl->ne),*nk=*(mdl->nk);
+  ITG *kon=*(mdl->kon),*ipkon=*(mdl->ipkon),*nactdof=*(mdl->nactdof);
+  ITG *nboun=*(mdl->nboun),*nstate_=*(mdl->nstate_);
+  char *lakon=*(mdl->lakon);
+  ITG num_cpus=*(mdl->num_cpus),iinc=*(mdl->iinc),ne0=*(mdl->ne0);
   ITG mt=mi[1]+1,isiz;
 
   ITG ctj,ctk,ctnst,ctbad=0,ctnsw=0;
@@ -521,7 +521,7 @@ void damcont_corrector(damcont *k,const trialctx *t,
     }
     for(ctj=0;ctj<*nboun;ctj++)
       xbounact[ctj]=xbounold[ctj]+(xboun[ctj]-xbounold[ctj])*ctlam;
-    trial_residual(t,k->beps);
+    trial_residual(mdl,k->beps);
     k->neval++;
     damage_evt_sign(stx,ipkon,lakon,ne0,mi[0],k->sgn);
     ctbase=0.;
@@ -557,7 +557,7 @@ void damcont_corrector(damcont *k,const trialctx *t,
     }
     for(ctj=0;ctj<*nboun;ctj++)
       xbounact[ctj]=xbounold[ctj]+(xboun[ctj]-xbounold[ctj])*ctlam;
-    trial_residual(t,k->beps);
+    trial_residual(mdl,k->beps);
     k->neval++;
 
       ctnsw=damage_evt_flips(stx,ipkon,lakon,ne0,mi[0],k->sgn,
@@ -717,7 +717,7 @@ void damcont_corrector(damcont *k,const trialctx *t,
     }
     for(ctj=0;ctj<*nboun;ctj++)
       xbounact[ctj]=xbounold[ctj]+(xboun[ctj]-xbounold[ctj])*ctlam;
-    trial_residual(t,k->beps);
+    trial_residual(mdl,k->beps);
     k->neval++;
 
   }else{
@@ -743,7 +743,7 @@ void damcont_corrector(damcont *k,const trialctx *t,
     }
     for(ctj=0;ctj<*nboun;ctj++)
       xbounact[ctj]=xbounold[ctj]+(xboun[ctj]-xbounold[ctj])*ctlam;
-    trial_residual(t,k->beps);
+    trial_residual(mdl,k->beps);
     k->neval++;
 
   }

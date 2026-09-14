@@ -91,14 +91,14 @@ void rescue_init(rescue *r)
    and inum are not named here at all any more: the evaluation that used to
    open-code the scratch dance is trial_evaluate().                     */
 
-void rescue_backtrack(rescue *r,const trialctx *t,glob_census *g,
+void rescue_backtrack(rescue *r,const trialctx *mdl,glob_census *g,
                       probedrv *p,double *damvisc,ITG iit)
 {
-  double *b=*(t->b),*dam=*(t->dam),*xstate=*(t->xstate);
-  ITG *neq=*(t->neq),*mi=*(t->mi),*ne=*(t->ne);
-  ITG *nstate_=*(t->nstate_),*ipkon=*(t->ipkon);
-  char *lakon=*(t->lakon);
-  ITG ne0=*(t->ne0),iinc=*(t->iinc),num_cpus=*(t->num_cpus),isiz;
+  double *b=*(mdl->b),*dam=*(mdl->dam),*xstate=*(mdl->xstate);
+  ITG *neq=*(mdl->neq),*mi=*(mdl->mi),*ne=*(mdl->ne);
+  ITG *nstate_=*(mdl->nstate_),*ipkon=*(mdl->ipkon);
+  char *lakon=*(mdl->lakon);
+  ITG ne0=*(mdl->ne0),iinc=*(mdl->iinc),num_cpus=*(mdl->num_cpus),isiz;
 
   /* gcc warns that bref `may be used uninitialized' here and did NOT warn
      about the identical lines inside nonlingeo() - checked, by compiling
@@ -149,7 +149,7 @@ void rescue_backtrack(rescue *r,const trialctx *t,glob_census *g,
       cpypardou(xstate,r->bt_xs,&isiz,&num_cpus);
     }
     for(bjj=0;bjj<neq[1];bjj++) b[bjj]=ba*p->ray_p[bjj];
-    trial_residual(t,p->ray_res);
+    trial_residual(mdl,p->ray_res);
     br=0.;br2=0.;
     for(bjj=0;bjj<neq[0];bjj++){
       if(fabs(p->ray_res[bjj])>br) br=fabs(p->ray_res[bjj]);
@@ -159,12 +159,12 @@ void rescue_backtrack(rescue *r,const trialctx *t,glob_census *g,
 
     if((p->evt_on==1)&&(bii==0)){
       if(p->evt_sgn==NULL) NNEW(p->evt_sgn,ITG,mi[0]*ne0);
-      damage_evt_sign((*(t->stx)),ipkon,lakon,ne0,mi[0],p->evt_sgn);
+      damage_evt_sign((*(mdl->stx)),ipkon,lakon,ne0,mi[0],p->evt_sgn);
       for(bjj=0;bjj<8;bjj++){
         p->evt_nsw[bjj]=0;p->evt_fe[bjj]=0;p->evt_fp[bjj]=0;
       }
     }else if((p->evt_on==1)&&(bii<8)){
-      p->evt_nsw[bii]=damage_evt_flips((*(t->stx)),ipkon,lakon,ne0,mi[0],
+      p->evt_nsw[bii]=damage_evt_flips((*(mdl->stx)),ipkon,lakon,ne0,mi[0],
                                            p->evt_sgn,
                                            &p->evt_fe[bii],
                                            &p->evt_fp[bii]);
@@ -245,7 +245,7 @@ void rescue_backtrack(rescue *r,const trialctx *t,glob_census *g,
     isiz=bnst*mi[0]**ne;cpypardou(xstate,r->bt_xs,&isiz,&num_cpus);
   }
   for(bjj=0;bjj<neq[1];bjj++) b[bjj]=ba*p->ray_p[bjj];
-  trial_evaluate(t);
+  trial_evaluate(mdl);
   glob_fired(&*g,GLOB_BACKTRACK);
   printf("[DAMAGE BT] inc=%" ITGFORMAT " iter=%" ITGFORMAT
          " R0=%.6e trials=%" ITGFORMAT " %s%.6f%s",
@@ -491,14 +491,14 @@ void rescue_configure_levels(rescue *r,loadctl *c,probedrv *p)
 
 void rescue_attempt(rescue *r,dogleg *d,damcont *k,
                     loadctl *c,probedrv *p,glob_census *g,
-                    const trialctx *t,
+                    const trialctx *mdl,
                     double *dtheta,double *dthetaref,
                     double theta,const double *tper,ITG iit,ITG idamagereeq)
 {
-  ITG iinc=*(t->iinc),*ipkon=*(t->ipkon),*ielprop=*(t->ielprop);
-  ITG *mi=*(t->mi),ne0=*(t->ne0);
-  double time=*(t->time),dtime=*(t->dtime),*prop=*(t->prop);
-  char *lakon=*(t->lakon);
+  ITG iinc=*(mdl->iinc),*ipkon=*(mdl->ipkon),*ielprop=*(mdl->ielprop);
+  ITG *mi=*(mdl->mi),ne0=*(mdl->ne0);
+  double time=*(mdl->time),dtime=*(mdl->dtime),*prop=*(mdl->prop);
+  char *lakon=*(mdl->lakon);
 
 if(ccx_rescue_req==1){
   ccx_rescue_req=0;

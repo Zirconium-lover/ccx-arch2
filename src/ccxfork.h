@@ -1202,7 +1202,7 @@ struct trialctx{
   }while(0)
 
 /* WHICH OF THESE MOVES THE SCRATCH ARRAYS.  A caller that binds a local
-   alias to *(t->v), *(t->stx), *(t->fn) or *(t->inum) needs to know, and
+   alias to *(mdl->v), *(mdl->stx), *(mdl->fn) or *(mdl->inum) needs to know, and
    the answer is: trial_results() and trial_reduce() do NOT - they read and
    write through the arrays that are there.  trial_evaluate() and
    trial_residual() free and reallocate all four, so an alias taken before
@@ -1210,22 +1210,22 @@ struct trialctx{
    is correct because it only ever calls trial_results(); rescue_backtrack()
    reads stx through the context at each use because it does not have that
    luxury. */
-void trial_results(const trialctx *t);          /* evaluate the model   */
-void trial_evaluate(const trialctx *t);         /* ...with its scratch: REALLOCATES v,stx,fn,inum */
-void trial_reduce(const trialctx *t,double *dst);/* ...reduce to a residual */
-void trial_residual(const trialctx *t,double *dst);/* scratch + both halves: REALLOCATES */
-ITG  trial_check(const trialctx *t);
+void trial_results(const trialctx *mdl);          /* evaluate the model   */
+void trial_evaluate(const trialctx *mdl);         /* ...with its scratch: REALLOCATES v,stx,fn,inum */
+void trial_reduce(const trialctx *mdl,double *dst);/* ...reduce to a residual */
+void trial_residual(const trialctx *mdl,double *dst);/* scratch + both halves: REALLOCATES */
+ITG  trial_check(const trialctx *mdl);
 /* the path follower's predictor: capture f_hat, solve for the reference
    direction, place lambda for this attempt.  It calls the linear solver,
    hence the factorisation arguments.  The caller keeps the guard. */
-void pathdrv_predictor(pathdrv *p,glob_census *g,const trialctx *t,
+void pathdrv_predictor(pathdrv *p,glob_census *g,const trialctx *mdl,
                        const double *xboun,const double *xbounold,
                        double *ad,double *au,ITG *icol,const ITG *isolver,
                        double sigma,ITG inputformat,ITG nrhs,
                        ITG symmetryflag,ITG iit);
 /* one Newton iteration of the bordered system, once level 4 owns the
    boundary.  The caller keeps the guard. */
-void damcont_corrector(damcont *k,const trialctx *t,
+void damcont_corrector(damcont *k,const trialctx *mdl,
                        const double *xboun,const double *xbounold,
                        double *uam,
                        const double *damjac,const double *damvisc,
@@ -1236,15 +1236,15 @@ void damcont_corrector(damcont *k,const trialctx *t,
    bundled. */
 void rescue_attempt(rescue *r,dogleg *d,damcont *k,
                     loadctl *c,probedrv *p,glob_census *g,
-                    const trialctx *t,
+                    const trialctx *mdl,
                     double *dtheta,double *dthetaref,
                     double theta,const double *tper,ITG iit,ITG idamagereeq);
 /* the operator check's measurement: the assembled tangent against a
    central difference, split by population.  A diagnostic that ends the
    run; the caller keeps the guard. */
-void opcheck_probe(opcheckdrv *o,const trialctx *t,const ITG *ndmat_,
+void opcheck_probe(opcheckdrv *o,const trialctx *mdl,const ITG *ndmat_,
                    const ITG *damcat,ITG iit);
-void pathdrv_configure(pathdrv *p,const loadctl *c,const trialctx *t,
+void pathdrv_configure(pathdrv *p,const loadctl *c,const trialctx *mdl,
                        const ITG *isolver,ITG ncont);
 
 /* The trust-region LOOP.  239 lines that could not be moved before
@@ -1252,7 +1252,7 @@ void pathdrv_configure(pathdrv *p,const loadctl *c,const trialctx *t,
    to give them; now there is one, of seven arguments.  The caller keeps
    the guard - whether the region may fire at all is a decision about the
    increment - and this does what the region then does. */
-void dogleg_rescue(dogleg *d,const trialctx *t,glob_census *g,
+void dogleg_rescue(dogleg *d,const trialctx *mdl,glob_census *g,
                    double *damvisc,ITG iit,ITG icutb,double *uam);
 
 /* Transactional backtracking, the second loop that could not be moved.
@@ -1260,7 +1260,7 @@ void dogleg_rescue(dogleg *d,const trialctx *t,glob_census *g,
    before every probe, accepts on Armijo against a non-monotone reference,
    restores the full step if nothing is acceptable.  It CHANGES THE ANSWER
    and is off by default; the caller keeps the guard. */
-void rescue_backtrack(rescue *r,const trialctx *t,glob_census *g,
+void rescue_backtrack(rescue *r,const trialctx *mdl,glob_census *g,
                       probedrv *p,double *damvisc,ITG iit);
 
 /* ---- which elements leave the assembly (erosion.c) --------------------

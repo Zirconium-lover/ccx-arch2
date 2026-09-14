@@ -247,13 +247,13 @@ ITG dogleg_selftest(void)
    body that was there.  None of the arrays they name is reallocated while
    this runs: trial_residual() replaces v, stx and fn, and nothing else. */
 
-void dogleg_rescue(dogleg *d,const trialctx *t,glob_census *g,
+void dogleg_rescue(dogleg *d,const trialctx *mdl,glob_census *g,
                    double *damvisc,ITG iit,ITG icutb,double *uam)
 {
-  double *b=*(t->b),*xstate=*(t->xstate),*dam=*(t->dam);
-  double *qa=t->qa,*cam=t->cam;
-  ITG *neq=*(t->neq),*mi=*(t->mi),*ne=*(t->ne),*nstate_=*(t->nstate_);
-  ITG num_cpus=*(t->num_cpus),iinc=*(t->iinc);
+  double *b=*(mdl->b),*xstate=*(mdl->xstate),*dam=*(mdl->dam);
+  double *qa=mdl->qa,*cam=mdl->cam;
+  ITG *neq=*(mdl->neq),*mi=*(mdl->mi),*ne=*(mdl->ne),*nstate_=*(mdl->nstate_);
+  ITG num_cpus=*(mdl->num_cpus),iinc=*(mdl->iinc);
   ITG isiz;
 
   ITG tnst,tii,tjj,tacc,tkind,tbnd,tkkind;
@@ -367,7 +367,7 @@ void dogleg_rescue(dogleg *d,const trialctx *t,glob_census *g,
     }
     for(tjj=0;tjj<neq[1];tjj++)
       b[tjj]=tpa*d->d[tjj]+tpb*d->pn[tjj];
-    trial_residual(t,d->res);
+    trial_residual(mdl,d->res);
     d->neval++;
     tphi=0.;tinf=0.;
     for(tjj=0;tjj<neq[1];tjj++){
@@ -442,7 +442,7 @@ void dogleg_rescue(dogleg *d,const trialctx *t,glob_census *g,
     }
     for(tjj=0;tjj<neq[1];tjj++)
       b[tjj]=tpa*d->d[tjj]+tpb*d->pn[tjj];
-    trial_residual(t,d->res);
+    trial_residual(mdl,d->res);
     d->neval++;
     tphi=0.;tinf=0.;
     for(tjj=0;tjj<neq[1];tjj++){

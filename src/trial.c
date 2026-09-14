@@ -96,7 +96,7 @@
 
    One deliberate cosmetic difference: NNEW/SFREE record the TEXT of their
    argument for the CCX_LOG_ALLOC trace, so allocations made here are
-   logged as `*(t->v)' rather than `v', with this file and line.  That
+   logged as `*(mdl->v)' rather than `v', with this file and line.  That
    trace is opt-in and the pointer is the same one; no output the gate
    compares is affected, and the gate is 144 files byte for byte.       */
 
@@ -107,65 +107,65 @@
 #include "CalculiX.h"
 
 #include "ccxfork.h"
-void trial_results(const trialctx *t)
+void trial_results(const trialctx *mdl)
 {
-  results(*(t->co),*(t->nk),*(t->kon),*(t->ipkon),*(t->lakon),*(t->ne),
-          *(t->v),*(t->stn),*(t->inum),*(t->stx),*(t->elcon),*(t->nelcon),
-          *(t->rhcon),*(t->nrhcon),*(t->alcon),*(t->nalcon),*(t->alzero),
-          *(t->ielmat),*(t->ielorien),*(t->norien),*(t->orab),
-          *(t->ntmat_),*(t->t0),*(t->t1act),*(t->ithermal),*(t->prestr),
-          *(t->iprestr),*(t->filab),*(t->eme),*(t->emn),*(t->een),
-          *(t->iperturb),*(t->f),*(t->fn),*(t->nactdof),t->iout,t->qa,
-          *(t->vold),*(t->b),*(t->nodeboun),*(t->ndirboun),*(t->xbounact),
-          *(t->nboun),*(t->ipompc),*(t->nodempc),*(t->coefmpc),
-          *(t->labmpc),*(t->nmpc),*(t->nmethod),t->cam,t->neq1,
-          *(t->veold),*(t->accold),t->bet,t->gam,t->dtime,t->time,
-          *(t->ttime),*(t->plicon),*(t->nplicon),*(t->plkcon),
-          *(t->nplkcon),*(t->xstateini),*(t->xstiff),*(t->xstate),
-          *(t->npmat_),*(t->epn),*(t->matname),*(t->mi),t->ielas,t->icmd,
-          *(t->ncmat_),*(t->nstate_),*(t->stiini),*(t->vini),*(t->ikboun),
-          *(t->ilboun),*(t->ener),*(t->enern),*(t->emeini),*(t->xstaten),
-          *(t->eei),*(t->enerini),*(t->cocon),*(t->ncocon),*(t->set),
-          *(t->nset),*(t->istartset),*(t->iendset),*(t->ialset),
-          *(t->nprint),*(t->prlab),*(t->prset),*(t->qfx),*(t->qfn),
-          *(t->trab),*(t->inotr),*(t->ntrans),*(t->fmpc),*(t->nelemload),
-          *(t->nload),*(t->ikmpc),*(t->ilmpc),*(t->istep),t->iinc,
-          *(t->springarea),t->reltime,t->ne0,*(t->thicke),*(t->shcon),
-          *(t->nshcon),*(t->sideload),*(t->xloadact),*(t->xloadold),
-          t->icfd,*(t->inomat),*(t->pslavsurf),*(t->pmastsurf),
-          *(t->mortar),*(t->islavact),*(t->cdn),*(t->islavnode),
-          *(t->nslavnode),*(t->ntie),*(t->clearini),*(t->islavsurf),
-          *(t->ielprop),*(t->prop),t->energyini,*(t->energy),t->kscale,
-          *(t->iponoeln),*(t->inoeln),*(t->nener),*(t->orname),
-          *(t->network),*(t->ipobody),*(t->xbodyact),*(t->ibody),
-          *(t->typeboun),*(t->itiefac),*(t->tieset),*(t->smscale),
-          t->mscalmethod,*(t->nbody),*(t->t0g),*(t->t1g),
-          *(t->islavquadel),*(t->aut),*(t->irowt),*(t->jqt),
-          t->mortartrafoflag,t->intscheme,*(t->physcon),*(t->dam),
-          *(t->damn),*(t->iponoel));
+  results(*(mdl->co),*(mdl->nk),*(mdl->kon),*(mdl->ipkon),*(mdl->lakon),*(mdl->ne),
+          *(mdl->v),*(mdl->stn),*(mdl->inum),*(mdl->stx),*(mdl->elcon),*(mdl->nelcon),
+          *(mdl->rhcon),*(mdl->nrhcon),*(mdl->alcon),*(mdl->nalcon),*(mdl->alzero),
+          *(mdl->ielmat),*(mdl->ielorien),*(mdl->norien),*(mdl->orab),
+          *(mdl->ntmat_),*(mdl->t0),*(mdl->t1act),*(mdl->ithermal),*(mdl->prestr),
+          *(mdl->iprestr),*(mdl->filab),*(mdl->eme),*(mdl->emn),*(mdl->een),
+          *(mdl->iperturb),*(mdl->f),*(mdl->fn),*(mdl->nactdof),mdl->iout,mdl->qa,
+          *(mdl->vold),*(mdl->b),*(mdl->nodeboun),*(mdl->ndirboun),*(mdl->xbounact),
+          *(mdl->nboun),*(mdl->ipompc),*(mdl->nodempc),*(mdl->coefmpc),
+          *(mdl->labmpc),*(mdl->nmpc),*(mdl->nmethod),mdl->cam,mdl->neq1,
+          *(mdl->veold),*(mdl->accold),mdl->bet,mdl->gam,mdl->dtime,mdl->time,
+          *(mdl->ttime),*(mdl->plicon),*(mdl->nplicon),*(mdl->plkcon),
+          *(mdl->nplkcon),*(mdl->xstateini),*(mdl->xstiff),*(mdl->xstate),
+          *(mdl->npmat_),*(mdl->epn),*(mdl->matname),*(mdl->mi),mdl->ielas,mdl->icmd,
+          *(mdl->ncmat_),*(mdl->nstate_),*(mdl->stiini),*(mdl->vini),*(mdl->ikboun),
+          *(mdl->ilboun),*(mdl->ener),*(mdl->enern),*(mdl->emeini),*(mdl->xstaten),
+          *(mdl->eei),*(mdl->enerini),*(mdl->cocon),*(mdl->ncocon),*(mdl->set),
+          *(mdl->nset),*(mdl->istartset),*(mdl->iendset),*(mdl->ialset),
+          *(mdl->nprint),*(mdl->prlab),*(mdl->prset),*(mdl->qfx),*(mdl->qfn),
+          *(mdl->trab),*(mdl->inotr),*(mdl->ntrans),*(mdl->fmpc),*(mdl->nelemload),
+          *(mdl->nload),*(mdl->ikmpc),*(mdl->ilmpc),*(mdl->istep),mdl->iinc,
+          *(mdl->springarea),mdl->reltime,mdl->ne0,*(mdl->thicke),*(mdl->shcon),
+          *(mdl->nshcon),*(mdl->sideload),*(mdl->xloadact),*(mdl->xloadold),
+          mdl->icfd,*(mdl->inomat),*(mdl->pslavsurf),*(mdl->pmastsurf),
+          *(mdl->mortar),*(mdl->islavact),*(mdl->cdn),*(mdl->islavnode),
+          *(mdl->nslavnode),*(mdl->ntie),*(mdl->clearini),*(mdl->islavsurf),
+          *(mdl->ielprop),*(mdl->prop),mdl->energyini,*(mdl->energy),mdl->kscale,
+          *(mdl->iponoeln),*(mdl->inoeln),*(mdl->nener),*(mdl->orname),
+          *(mdl->network),*(mdl->ipobody),*(mdl->xbodyact),*(mdl->ibody),
+          *(mdl->typeboun),*(mdl->itiefac),*(mdl->tieset),*(mdl->smscale),
+          mdl->mscalmethod,*(mdl->nbody),*(mdl->t0g),*(mdl->t1g),
+          *(mdl->islavquadel),*(mdl->aut),*(mdl->irowt),*(mdl->jqt),
+          mdl->mortartrafoflag,mdl->intscheme,*(mdl->physcon),*(mdl->dam),
+          *(mdl->damn),*(mdl->iponoel));
 }
 
 /* The reduction half: turn the model state results() just built into the
    residual the solver works in.  Five sites called this with the identical
    thirty-five arguments and differed only in where the answer went. */
-void trial_reduce(const trialctx *t,double *dst)
+void trial_reduce(const trialctx *mdl,double *dst)
 {
-  calcresidual(*(t->nmethod),*(t->neq),dst,*(t->fext),*(t->f),*(t->iexpl),
-          *(t->nactdof),*(t->aux2),*(t->vold),*(t->vini),t->dtime,
-          *(t->accold),*(t->nk),*(t->adb),*(t->aub),*(t->jq),*(t->irow),
-          *(t->nzl),*(t->alpha),*(t->fextini),*(t->fini),*(t->islavnode),
-          *(t->nslavnode),*(t->mortar),*(t->ntie),*(t->mi),*(t->nzs),
-          t->nasym,t->idamping,*(t->veold),*(t->adc),*(t->auc),
-          *(t->cvini),*(t->cv),t->alpham,t->num_cpus);
+  calcresidual(*(mdl->nmethod),*(mdl->neq),dst,*(mdl->fext),*(mdl->f),*(mdl->iexpl),
+          *(mdl->nactdof),*(mdl->aux2),*(mdl->vold),*(mdl->vini),mdl->dtime,
+          *(mdl->accold),*(mdl->nk),*(mdl->adb),*(mdl->aub),*(mdl->jq),*(mdl->irow),
+          *(mdl->nzl),*(mdl->alpha),*(mdl->fextini),*(mdl->fini),*(mdl->islavnode),
+          *(mdl->nslavnode),*(mdl->mortar),*(mdl->ntie),*(mdl->mi),*(mdl->nzs),
+          mdl->nasym,mdl->idamping,*(mdl->veold),*(mdl->adc),*(mdl->auc),
+          *(mdl->cvini),*(mdl->cv),mdl->alpham,mdl->num_cpus);
 }
 
 /* Scratch and evaluate, without the reduce.  Two sites want the model
    evaluated at a trial state and then read the STATE - the stored
    tractions, the damage - rather than the residual, and both had written
    these eight lines out by hand. */
-void trial_evaluate(const trialctx *t)
+void trial_evaluate(const trialctx *mdl)
 {
-  ITG *nk=*(t->nk),*ne=*(t->ne),*mi=*(t->mi);
+  ITG *nk=*(mdl->nk),*ne=*(mdl->ne),*mi=*(mdl->mi);
   ITG mt=mi[1]+1,isiz;
 
   /* The scratch arrays belong to this operation.  The hand-written copies
@@ -173,24 +173,24 @@ void trial_evaluate(const trialctx *t)
      after the caller has filled b, is the only ordering difference and it
      is the safe direction - the arrays are alive for longer, never for
      less. */
-  SFREE(*(t->v)); SFREE(*(t->stx)); SFREE(*(t->fn));
-  MNEW(*(t->v),double,mt**nk);
-  isiz=mt**nk; cpypardou(*(t->v),*(t->vold),&isiz,t->num_cpus);
-  NNEW(*(t->stx),double,6*mi[0]**ne);
-  MNEW(*(t->fn),double,mt**nk);
-  if(*(t->ne1d2d)==1) NNEW(*(t->inum),ITG,*nk);
+  SFREE(*(mdl->v)); SFREE(*(mdl->stx)); SFREE(*(mdl->fn));
+  MNEW(*(mdl->v),double,mt**nk);
+  isiz=mt**nk; cpypardou(*(mdl->v),*(mdl->vold),&isiz,mdl->num_cpus);
+  NNEW(*(mdl->stx),double,6*mi[0]**ne);
+  MNEW(*(mdl->fn),double,mt**nk);
+  if(*(mdl->ne1d2d)==1) NNEW(*(mdl->inum),ITG,*nk);
 
-  trial_results(t);
+  trial_results(mdl);
 
-  if(*(t->ne1d2d)==1) SFREE(*(t->inum));
+  if(*(mdl->ne1d2d)==1) SFREE(*(mdl->inum));
 }
 
 /* The whole atom: scratch, evaluate, reduce.  The caller fills b first -
    the step is the caller's decision and this file takes no view on it. */
-void trial_residual(const trialctx *t,double *dst)
+void trial_residual(const trialctx *mdl,double *dst)
 {
-  trial_evaluate(t);
-  trial_reduce(t,dst);
+  trial_evaluate(mdl);
+  trial_reduce(mdl,dst);
 }
 
 /* Every field is the address of one of the caller's locals, so every field
@@ -199,9 +199,9 @@ void trial_residual(const trialctx *t,double *dst)
    increments later.  It walks the struct as an array of pointers, which is
    legal here because every member is a pointer and C guarantees no padding
    between members of identical type. */
-ITG trial_check(const trialctx *t)
+ITG trial_check(const trialctx *mdl)
 {
-  const void *const *p=(const void *const *)t;
+  const void *const *p=(const void *const *)mdl;
   ITG n=(ITG)(sizeof(trialctx)/sizeof(void *)),i,nbad=0;
 
   for(i=0;i<n;i++) if(p[i]==NULL) nbad++;

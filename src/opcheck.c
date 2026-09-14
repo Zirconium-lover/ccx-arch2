@@ -368,16 +368,16 @@ void opcheckdrv_configure_fd(opcheckdrv *p)
    does not decide which population an element is in, it reports the
    operator error per population.                                      */
 
-void opcheck_probe(opcheckdrv *o,const trialctx *t,const ITG *ndmat_,
+void opcheck_probe(opcheckdrv *o,const trialctx *mdl,const ITG *ndmat_,
                    const ITG *damcat,ITG iit)
 {
-  double *v=*(t->v),*vold=*(t->vold),*fn=*(t->fn),*dam=*(t->dam);
-  double *xstate=*(t->xstate);
-  ITG *nk=*(t->nk),*mi=*(t->mi),*ipkon=*(t->ipkon),*kon=*(t->kon);
-  ITG *nactdof=*(t->nactdof),*nstate_=*(t->nstate_);
-  ITG *irow=*(t->irow),*jq=*(t->jq),*nzs=*(t->nzs),*istep=*(t->istep);
-  char *lakon=*(t->lakon);
-  ITG iinc=*(t->iinc),ne0=*(t->ne0),nasym=*(t->nasym),mt=mi[1]+1;
+  double *v=*(mdl->v),*vold=*(mdl->vold),*fn=*(mdl->fn),*dam=*(mdl->dam);
+  double *xstate=*(mdl->xstate);
+  ITG *nk=*(mdl->nk),*mi=*(mdl->mi),*ipkon=*(mdl->ipkon),*kon=*(mdl->kon);
+  ITG *nactdof=*(mdl->nactdof),*nstate_=*(mdl->nstate_);
+  ITG *irow=*(mdl->irow),*jq=*(mdl->jq),*nzs=*(mdl->nzs),*istep=*(mdl->istep);
+  char *lakon=*(mdl->lakon);
+  ITG iinc=*(mdl->iinc),ne0=*(mdl->ne0),nasym=*(mdl->nasym),mt=mi[1]+1;
   ITG i,k,idir;
 
   /* Aliasing v and fn is safe HERE and would not be everywhere: this probe
@@ -556,7 +556,7 @@ void opcheck_probe(opcheckdrv *o,const trialctx *t,const ITG *ndmat_,
   	memcpy(v,o->fd_vsav,sizeof(double)*mt**nk);
   	if(o->fd_s==0)      v[mt*o->fd_node+idir]+=o->fd_h;
   	else if(o->fd_s==1) v[mt*o->fd_node+idir]-=o->fd_h;
-  	trial_results(t);
+  	trial_results(mdl);
   	if(o->fd_s==0)
   	  memcpy(o->fd_fp,fn,sizeof(double)*mt**nk);
   	else if(o->fd_s==1)

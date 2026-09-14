@@ -1014,17 +1014,17 @@ void pathdrv_init(pathdrv *p)
    of this object - they are facts about the run this mechanism refuses
    on. */
 
-void pathdrv_configure(pathdrv *p,const loadctl *c,const trialctx *t,
+void pathdrv_configure(pathdrv *p,const loadctl *c,const trialctx *mdl,
                        const ITG *isolver,ITG ncont)
 {
   const char *e;
-    double *co=*(t->co),*vold=*(t->vold);
-    ITG *ipkon=*(t->ipkon),*kon=*(t->kon),*nactdof=*(t->nactdof);
-    ITG *ne=*(t->ne),*nk=*(t->nk),*neq=*(t->neq),*nboun=*(t->nboun);
-    ITG *nmethod=*(t->nmethod),*ithermal=*(t->ithermal),*mortar=*(t->mortar);
-    ITG *iexpl=*(t->iexpl),*mi=*(t->mi);
-    char *lakon=*(t->lakon);
-    ITG num_cpus=*(t->num_cpus),mt=mi[1]+1,isiz;
+    double *co=*(mdl->co),*vold=*(mdl->vold);
+    ITG *ipkon=*(mdl->ipkon),*kon=*(mdl->kon),*nactdof=*(mdl->nactdof);
+    ITG *ne=*(mdl->ne),*nk=*(mdl->nk),*neq=*(mdl->neq),*nboun=*(mdl->nboun);
+    ITG *nmethod=*(mdl->nmethod),*ithermal=*(mdl->ithermal),*mortar=*(mdl->mortar);
+    ITG *iexpl=*(mdl->iexpl),*mi=*(mdl->mi);
+    char *lakon=*(mdl->lakon);
+    ITG num_cpus=*(mdl->num_cpus),mt=mi[1]+1,isiz;
 
   p->env=ccxopt_getenv("CCX_PATHFOLLOW");
   if(p->env!=NULL){
@@ -1244,21 +1244,21 @@ void pathdrv_configure(pathdrv *p,const loadctl *c,const trialctx *t,
 
    The guard stays with the caller, as everywhere else here.            */
 
-void pathdrv_predictor(pathdrv *p,glob_census *g,const trialctx *t,
+void pathdrv_predictor(pathdrv *p,glob_census *g,const trialctx *mdl,
                        const double *xboun,const double *xbounold,
                        double *ad,double *au,ITG *icol,const ITG *isolver,
                        double sigma,ITG inputformat,ITG nrhs,
                        ITG symmetryflag,ITG iit)
 {
-  double *b=*(t->b),*vold=*(t->vold),*vini=*(t->vini);
-  double *xbounact=*(t->xbounact),*adb=*(t->adb),*aub=*(t->aub);
-  double *f=*(t->f),*fext=*(t->fext);
-  ITG *neq=*(t->neq),*nzs=*(t->nzs),*irow=*(t->irow),*jq=*(t->jq);
-  ITG *nactdof=*(t->nactdof),*mi=*(t->mi),*nk=*(t->nk),*nboun=*(t->nboun);
-  double *dam=*(t->dam),*xstate=*(t->xstate),*fn=*(t->fn),*stx=*(t->stx);
-  double *xstiff=*(t->xstiff),*qa=t->qa,*cam=t->cam;
-  ITG *nstate_=*(t->nstate_),*ne=*(t->ne);
-  ITG num_cpus=*(t->num_cpus),iinc=*(t->iinc),nasym=*(t->nasym);
+  double *b=*(mdl->b),*vold=*(mdl->vold),*vini=*(mdl->vini);
+  double *xbounact=*(mdl->xbounact),*adb=*(mdl->adb),*aub=*(mdl->aub);
+  double *f=*(mdl->f),*fext=*(mdl->fext);
+  ITG *neq=*(mdl->neq),*nzs=*(mdl->nzs),*irow=*(mdl->irow),*jq=*(mdl->jq);
+  ITG *nactdof=*(mdl->nactdof),*mi=*(mdl->mi),*nk=*(mdl->nk),*nboun=*(mdl->nboun);
+  double *dam=*(mdl->dam),*xstate=*(mdl->xstate),*fn=*(mdl->fn),*stx=*(mdl->stx);
+  double *xstiff=*(mdl->xstiff),*qa=mdl->qa,*cam=mdl->cam;
+  ITG *nstate_=*(mdl->nstate_),*ne=*(mdl->ne);
+  ITG num_cpus=*(mdl->num_cpus),iinc=*(mdl->iinc),nasym=*(mdl->nasym);
   ITG mt=mi[1]+1,isiz,k;
 
 	  const double *fhat=pathfollow_fhat();
@@ -1316,7 +1316,7 @@ void pathdrv_predictor(pathdrv *p,glob_census *g,const trialctx *t,
    memset called from nonlingeo. */
 
 #define PF_LIN_RESID(LAMV,DST) do{                                    \
-  ITG _k,_io=*(t->iout);                                              \
+  ITG _k,_io=*(mdl->iout);                                              \
   /* Every evaluation starts from the identical base state.  Without  \
      this the probe measures its own leakage: idempotency (evaluating \
      R at lambda0 twice) came out at 1.7e+05 relative near the limit  \
@@ -1335,12 +1335,12 @@ void pathdrv_predictor(pathdrv *p,glob_census *g,const trialctx *t,
   for(_k=0;_k<*nboun;_k++)                                            \
     xbounact[_k]=xbounold[_k]+(xboun[_k]-xbounold[_k])*(LAMV);        \
   for(_k=0;_k<neq[1];_k++) b[_k]=0.;                                  \
-  *(t->iout)=-1;                                                      \
-  isiz=mt**nk;cpypardou(*(t->v),vold,&isiz,&num_cpus);                \
-  trial_results(t);                                                   \
-  trial_reduce(t,b);                                                  \
+  *(mdl->iout)=-1;                                                      \
+  isiz=mt**nk;cpypardou(*(mdl->v),vold,&isiz,&num_cpus);                \
+  trial_results(mdl);                                                   \
+  trial_reduce(mdl,b);                                                  \
   isiz=neq[1];cpypardou((DST),b,&isiz,&num_cpus);                     \
-  *(t->iout)=_io;                                                     \
+  *(mdl->iout)=_io;                                                     \
     }while(0)
 
 	  /* ================= CCX_PATHFOLLOW_LINCHECK =====================
