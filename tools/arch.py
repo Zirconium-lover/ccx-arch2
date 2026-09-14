@@ -329,6 +329,78 @@ def public_api(own):
             out.append((name,0 if a in ('','void') else a.count(',')+1))
     return sorted(set(out),key=lambda x:(-x[1],x[0]))
 
+# The scalars every caller recomputes from the model by hand.  mt is mi[1]+1,
+# mi0 is mi[0], mi2 is mi[2], nstate is *nstate_.  Derived, so they are not
+# state anybody owns - they are an accessor somebody has not written.
+DERIVED={'mt','mi0','mi2','nstate','ndmat_','ntmat_','ndmat','ntmat'}
+
+# The assembled operator and how to solve it.  These travel together through
+# four functions and are not held by any object; they are a context nobody
+# has built yet.
+LINSYS={'ad','au','adb','aub','icol','irow','jq','nzs','isolver',
+        'symmetryflag','inputformat','sigma','nrhs','nzs3','neq','ndof'}
+
+def struct_fields(name):
+    """The field names of one typedef'd struct in the extension headers.
+
+    The closing `}name;' is found first and the opening searched BACKWARDS
+    from it.  Searching forwards from the first `typedef struct' matches the
+    wrong struct entirely - a non-greedy span from the first one runs through
+    every struct in between, which reported trialctx as holding 367 fields
+    and owning half of nlstate's.  Measured the hard way, on a number that
+    then went into a plan."""
+    for h in [SRC/'CalculiX.h']+fork_headers():
+        t=h.read_text(errors='replace')
+        end=t.find('}%s;'%name)
+        if end<0: continue
+        start=t.rfind('typedef struct',0,end)
+        if start<0: continue
+        body=re.sub(r'/\*.*?\*/','',t[start:end],flags=re.S)
+        return set(re.findall(r'\b(\w+)\s*;',body))
+    return set()
+
+def context_fields():
+    """Everything some context already holds, or trivially could."""
+    out=set()
+    for n in ('trialctx','nlstate'): out|=struct_fields(n)
+    return out|DERIVED|LINSYS
+
+def duplicated_params(own):
+    """How many parameters name something a context already holds.
+
+    THE number this work is judged by, and the reason the obvious metric -
+    how wide is the widest signature - is the wrong one.  A function that
+    composes seven mechanisms and names all seven is honest at seven
+    arguments; forcing it under six would mean inventing an eighth object
+    whose only purpose is to hide the seven.  Width is a symptom.  The
+    disease is a caller taking apart a context that already exists and
+    passing the pieces in one at a time - which is exactly what the call to
+    slownewton_allow() was doing with its own slownewton object.
+
+    A parameter whose TYPE is one of the extension's structs is not counted:
+    passing an object is the cure, not the disease."""
+    ctx=context_fields()
+    types=set()
+    for h in [SRC/'CalculiX.h']+fork_headers():
+        types|=set(re.findall(r'^\}\s*(\w+)\s*;',h.read_text(errors='replace'),re.M))
+    n=0; worst=[]
+    for h in [SRC/'CalculiX.h']+fork_headers():
+        txt=re.sub(r'/\*.*?\*/','',h.read_text(errors='replace'),flags=re.S)
+        for name,args in re.findall(
+                r'\n(?:[A-Za-z_][\w \t*]*?)\b([A-Za-z_]\w*)\s*\(([^;{}]*?)\)\s*;',txt,re.S):
+            if name not in own: continue
+            k=0
+            for a in args.split(','):
+                a=a.strip()
+                ty=re.match(r'(?:const\s+)?(\w+)',a)
+                if ty and ty.group(1) in types: continue
+                g=re.findall(r'(\w+)\s*(?:\[\s*\])?$',a)
+                if g and g[0] in ctx: k+=1
+            if k: worst.append((k,name))
+            n+=k
+    worst.sort(reverse=True)
+    return n,worst
+
 def includers():
     """header name -> the .c files that reach it, following headers.
 
@@ -465,6 +537,9 @@ def measure():
     m['c_files']=ncfile
     m['selftests']=ntest
     m['selftests_deckless']=ndeckless
+    ndup,worstdup=duplicated_params(own)
+    m['duplicated_params']=ndup
+    m['worst_duplicators']=[{'name':x[1],'params':x[0]} for x in worstdup[:10]]
     return m
 
 def table(m):
@@ -499,6 +574,8 @@ def table(m):
                                  m['widest_signature'],m['widest_signature_name']))
     o.append("  %-46s %d"%("signatures over the %d-argument budget"%PARAM_BUDGET,
                            m['over_param_budget']))
+    o.append("  %-46s %d"%("parameters a context already holds",
+                           m['duplicated_params']))
     o.append("  %-46s %d of %d"%("files recompiled by an interface change",
                                  m['header_fanout'],m['c_files']))
     for h,n in sorted(m['header_cost'].items(),key=lambda kv:-kv[1]):
@@ -509,6 +586,11 @@ def table(m):
         o.append("")
         o.append("  the widest, which are the missing objects named:")
         for w in m['worst_signatures']:
+            o.append("    %-26s %2d"%(w['name'],w['params']))
+    if m['worst_duplicators']:
+        o.append("")
+        o.append("  taking apart a context that already exists:")
+        for w in m['worst_duplicators']:
             o.append("    %-26s %2d"%(w['name'],w['params']))
     o.append("")
     o.append("LAYERS  (a module may call strictly DOWN, never sideways or up)")
@@ -543,6 +625,7 @@ def main():
              'public_api':m['public_api'],
              'widest_signature':m['widest_signature'],
              'over_param_budget':m['over_param_budget'],
+             'duplicated_params':m['duplicated_params'],
              'header_fanout':m['header_fanout'],
              'layer_violations':len(m['layer_violations']),
              'selftests_deckless':-m['selftests_deckless'],
@@ -557,7 +640,7 @@ def main():
         b=json.loads(BUDGET.read_text());bad=[]
         for k in ('nonlingeo_lines','longest_function_lines','locals_in_longest',
                   'fork_locals','public_api','widest_signature',
-                  'over_param_budget','header_fanout'):
+                  'over_param_budget','header_fanout','duplicated_params'):
             if k in b and m[k]>b[k]: bad.append("%s: %d, budget %d"%(k,m[k],b[k]))
         # Layering is not a ratchet, it is a floor: the table was adopted on a
         # tree with zero violations, so any violation at all is new.
