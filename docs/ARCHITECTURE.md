@@ -206,6 +206,21 @@ rather than a matter of taste:
    deck in this tree can reach, is a thing to know before spending a day
    making it tidy. Its reachable half already lives in `damcont.c`.
 
+   The third case is the one that taught the most, because the answer was
+   neither of the first two. `SELF-RECOVERY` is 26 lines that announce the
+   trust region actually worked — five consecutive increments committed on
+   plain Newton after a rescue, and the block says so itself: *"this, and
+   not t_end, is the criterion the method was built to meet."* It has no
+   switch and never printed in any case. The reason is not that it is
+   unreachable. Three cases DO arm the trust region and it DOES converge in
+   all three — and in all three the help lands at increment 99, which is the
+   increment the run then stops on. It needs five increments afterwards and
+   gets zero. The report that would say the method succeeded has never had
+   an occasion to print, because in this collection of decks the trust
+   region only ever fires on the increment the run dies on. That is a fact
+   about the decks, not the code, and it is not fixed by moving the code —
+   so it is not moved, and the thing to build is the deck.
+
 ### The limit of a context, found by measuring
 
 Nine of the twenty-nine widest functions are called by a self test, and they
