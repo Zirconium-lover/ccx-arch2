@@ -174,21 +174,28 @@ against criterion 4 is a worse metric than none.
 
 | | at the start | now |
 |---|---|---|
+| **parameters a context already holds** | 295 | **71** |
+| signatures over the 6-argument budget | 36 | 22 |
 | widest public signature | 22 | 22 |
-| signatures over the 6-argument budget | 36 | 35 |
 | files recompiled by an interface change | 210 | 49 |
 | self tests runnable without a deck | 0 of 19 | 19 of 19 |
 | self test lines in a production run | 56–82 | 1 |
 | layering violations | 1 | 0 |
-| `nonlingeo()` lines / locals | 11,313 / 631 | 11,252 / 593 |
+| `nonlingeo()` lines / locals | 11,313 / 631 | 11,206 / 593 |
 
-The first row is the honest one: the signatures are barely touched. One of
-the twenty-seven is converted and it was the cheapest. What moves that
-number is the three contexts — `trialctx` existed, `nlstate` now exists, and
-the derived-scalar accessors do not.
+The widest signature has not moved, and that row is kept to say so
+honestly: `erosion_mark` still takes twenty-two arguments and is not going
+to lose them, because it is one of the nine functions a self test calls.
+Width is the symptom; the first row is the disease, and it has fallen by
+three quarters.
 
-Everything above that row is infrastructure, and it was taken first on
-purpose: `ccx_selftest` pays for itself on every later step, and an
+Read the first row with one caveat: part of the fall from 295 is the
+self-test exemption being introduced, not parameters going away. The
+conversions themselves account for the rest, and each one is a separate
+commit with its own byte-for-byte A/B.
+
+Everything below the first two rows is infrastructure, and it was taken
+first on purpose: `ccx_selftest` pays for itself on every later step, and an
 interface change that recompiles 49 files instead of 210 is what makes
 trying one affordable.
 
