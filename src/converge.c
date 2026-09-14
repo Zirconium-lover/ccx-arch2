@@ -209,11 +209,13 @@ void converge_norms(converge *c,const double *b,const ITG *neq,
  *
  * ran is ctrl[18], the coefficient the force criterion uses, so the printed
  * tolerance is the one the verdict will actually apply. */
-void converge_report(const converge *c,const ITG *nactdofinv,ITG mt,
-                     ITG ithermal,double ran,
-                     const double *qa,const double *qam,const double *ram,
-                     const double *cam,const double *uam)
+void converge_report(const converge *c,const trialctx *mdl,const nlstate *n,
+                     const ITG *nactdofinv,double ran)
 {
+  const ITG mt=(*(mdl->mi))[1]+1,ithermal=**(mdl->ithermal);
+  const double *qa=n->qa,*qam=n->qam,*ram=n->ram;
+  const double *cam=n->cam,*uam=n->uam;
+
   ITG inode,idir;
 
   if(ithermal!=2){

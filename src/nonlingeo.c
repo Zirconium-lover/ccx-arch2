@@ -4016,7 +4016,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
       }else{
         /* ---- freeze the control point, m, the stencil and c_lambda ---- */
         ct.elem=abest;ct.ip=aip;
-        damcont_kin(co,kon,ipkon[abest],vold,mt,aip,adl,armat,ash);
+        damcont_kin(&nlgt,ipkon[abest],vold,aip,adl,armat,ash);
         for(ak=0;ak<3;ak++){
           ag[ak]=ct.m[0]*armat[ak]+ct.m[1]*armat[3+ak]
                 +ct.m[2]*armat[6+ak];
@@ -8208,8 +8208,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	   two are gone: the object that excludes is the object that
 	   reports. */
 
-	converge_report(&damage_cvg,nactdofinv,mt,*ithermal,ctrl[18],
-	                qa,qam,ram,cam,uam);
+	converge_report(&damage_cvg,&nlgt,&nls,nactdofinv,ctrl[18]);
 
 	FORTRAN(writecvg,(istep,&iinc,&icutb,&iit,ne,&ne0,ram,qam,cam,uam,
 			  ithermal));
@@ -8506,11 +8505,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                           ithermal,t1,xstate,xstateini,nstate_,vold,
                           &idamage,&damage_mode,&damage_alphaevent));
 
-      damstats_element(dam,damde1prev,ipkon,lakon,ne0,mi[0],
-                       &de1.nactive,&de1.gt01,
-                       &de1.gt05,&de1.gt09,
-                       &de1.nfull,&de1.nchanged,
-                       &de1.dmax,&de1.maxdelta);
+      damstats_element(&de1,&nlgt,damde1prev);
 
       /* DE1.3 terminal active-set extension.  The just-converged same-load
          equilibrium may have driven additional surviving DE1.2 elements
@@ -9511,11 +9506,7 @@ damage_active_set_closed:
 			    xstateini,nstate_,vold,&idamage,
 			    &damage_mode,&damage_alphaevent));
 
-        damstats_element(dam,damde1prev,ipkon,lakon,ne0,mi[0],
-                         &de1.nactive,&de1.gt01,
-                         &de1.gt05,&de1.gt09,
-                         &de1.nfull,&de1.nchanged,
-                         &de1.dmax,&de1.maxdelta);
+        damstats_element(&de1,&nlgt,damde1prev);
 
       if((idamage>0)&&(*iexpl<=1)){
 
@@ -10291,11 +10282,7 @@ damage_controller_done:
        exact integration-point state directly. */
     if((damage_de12_enabled)&&(icutb==0)&&(idamagereeq==0)&&
        (damdamageini!=NULL)){
-      damstats_element(dam,damdamageini,ipkon,lakon,ne0,mi[0],
-                       &de1.nactive,&de1.gt01,
-                       &de1.gt05,&de1.gt09,
-                       &de1.nfull,&de1.nchanged,
-                       &de1.dmax,&de1.maxdelta);
+      damstats_element(&de1,&nlgt,damdamageini);
 
       if(de1.nactive>0){
         printf("[DAMAGE DE1.2 COMMIT] inc=%" ITGFORMAT
@@ -10638,8 +10625,7 @@ damage_controller_done:
         }
         if((ct.elem>=0)&&(ct.elem<ne0)&&
            (ipkon[ct.elem]>=0)&&(ct.w!=NULL)){
-          damcont_kin(co,kon,ipkon[ct.elem],vold,mt,ct.ip,
-                        cqdl,cqrm,cqsh);
+          damcont_kin(&nlgt,ipkon[ct.elem],vold,ct.ip,cqdl,cqrm,cqsh);
           cqop=ct.m[0]*(cqdl[0]-ct.dc[0])
               +ct.m[1]*(cqdl[1]-ct.dc[1])
               +ct.m[2]*(cqdl[2]-ct.dc[2]);

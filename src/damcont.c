@@ -81,10 +81,12 @@ void damcont_init(damcont *c)
    REFERENCE geometry co alone, so they are a mesh constant.  shape is the
    integration-point specific weight set: 1/6 off-point, 2/3 on-point. */
 
-void damcont_kin(const double *co,const ITG *kon,ITG indexe,
-                          const double *v,ITG mt,ITG mint,
-                          double *dl,double *rmat,double *shape)
+void damcont_kin(const trialctx *mdl,ITG indexe,const double *v,ITG mint,
+                 double *dl,double *rmat,double *shape)
 {
+  const double *co=*(mdl->co);
+  const ITG *kon=*(mdl->kon),mt=(*(mdl->mi))[1]+1;
+
   double e1[3],e2[3],cv[3],jump[3],n1,nc;
   ITG i,k,nm,np;
 
@@ -131,12 +133,14 @@ void damcont_snap(const trialctx *mdl,const double *v,const double *stx,
                   double *ring,ITG *fl)
 {
   /* Unpacked once, so the body below is the body that was there. */
-  const double *co=*(mdl->co);
-  const ITG *kon=*(mdl->kon),*ipkon=*(mdl->ipkon);
+  /* co, kon and mt went when damcont_kin() started taking the context
+     itself: this function was unpacking them for no other purpose than to
+     hand them straight on. */
+  const ITG *ipkon=*(mdl->ipkon);
   const char *lakon=*(mdl->lakon);
   const double *xstate=*(mdl->xstate);
   const ITG ne0=*(mdl->ne0),mi0=(*(mdl->mi))[0];
-  const ITG nstate=**(mdl->nstate_),mt=(*(mdl->mi))[1]+1;
+  const ITG nstate=**(mdl->nstate_);
 
   double dl[3],rmat[9],shape[3];
   ITG i,j,np,idx;
@@ -152,7 +156,7 @@ void damcont_snap(const trialctx *mdl,const double *v,const double *stx,
     if(lakon[8*i]!='U') continue;
     for(j=0;j<np;j++){
       idx=mi0*i+j;
-      damcont_kin(co,kon,ipkon[i],v,mt,j,dl,rmat,shape);
+      damcont_kin(mdl,ipkon[i],v,j,dl,rmat,shape);
       ring[3*idx]=dl[0];ring[3*idx+1]=dl[1];ring[3*idx+2]=dl[2];
       fl[idx]=((xstate[nstate*idx+3]>=0.5)?1:0)
              |((stx[6*idx]<0.)?2:0);              /* bit0 failed, bit1 comp */
@@ -471,14 +475,14 @@ void damcont_corrector(damcont *k,const trialctx *mdl,
                        const double *damjac,const double *damvisc,
                        ITG inputformat,ITG nrhs,ITG symmetryflag)
 {
-  double *b=*(mdl->b),*co=*(mdl->co),*vold=*(mdl->vold);
+  double *b=*(mdl->b),*vold=*(mdl->vold);
   double *qa=mdl->qa,*cam=mdl->cam;
   double *xbounact=*(mdl->xbounact),*dam=*(mdl->dam),*xstate=*(mdl->xstate);
   ITG *neq=*(mdl->neq),*mi=*(mdl->mi),*ne=*(mdl->ne);
-  ITG *kon=*(mdl->kon),*ipkon=*(mdl->ipkon);
+  ITG *ipkon=*(mdl->ipkon);
   ITG *nboun=*(mdl->nboun),*nstate_=*(mdl->nstate_);
   ITG num_cpus=*(mdl->num_cpus),iinc=*(mdl->iinc);
-  ITG mt=mi[1]+1,isiz;
+  ITG isiz;
 
   ITG ctj,ctk,ctnst,ctbad=0,ctnsw=0;
   k->used=1;
@@ -611,8 +615,7 @@ void damcont_corrector(damcont *k,const trialctx *mdl,
      build and the first corrector call.  With this anchor c = -ds
      holds to machine precision at the start of every step, by
      construction rather than by argument. */
-  damcont_kin(co,kon,ipkon[k->elem],vold,mt,k->ip,
-                ctdl,ctrm,ctsh);
+  damcont_kin(mdl,ipkon[k->elem],vold,k->ip,ctdl,ctrm,ctsh);
   if(k->newstep==1){
     k->newstep=0;
     for(ctj=0;ctj<3;ctj++) k->dc[ctj]=ctdl[ctj];

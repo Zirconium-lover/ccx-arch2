@@ -37,13 +37,17 @@ void damstats_init(damstats *d){ memset(d,0,sizeof(*d)); }
    For each element the maximum degradation over its active integration
    points is used.  In the present DE1 implementation only C3D4 is enabled,
    therefore this is exactly the single integration-point value. */
-void damstats_element(const double *dam,const double *damold,
-                             const ITG *ipkon,const char *lakon,
-                             ITG ne0,ITG mi0,
-                             ITG *nactive,ITG *ngt01,ITG *ngt05,
-                             ITG *ngt09,ITG *nfull,ITG *nchanged,
-                             double *dmax,double *maxdelta)
+void damstats_element(damstats *d,const trialctx *mdl,const double *damold)
 {
+  const double *dam=*(mdl->dam);
+  const ITG *ipkon=*(mdl->ipkon);
+  const char *lakon=*(mdl->lakon);
+  const ITG ne0=*(mdl->ne0),mi0=(*(mdl->mi))[0];
+  ITG *const nactive=&d->nactive,*const ngt01=&d->gt01;
+  ITG *const ngt05=&d->gt05,*const ngt09=&d->gt09;
+  ITG *const nfull=&d->nfull,*const nchanged=&d->nchanged;
+  double *const dmax=&d->dmax,*const maxdelta=&d->maxdelta;
+
   ITG i,j,nip;
   double de,dold,delta,demax,delmax;
 

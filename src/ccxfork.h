@@ -232,10 +232,10 @@ void converge_norms(converge *c,const double *b,const ITG *neq,
                     double qau,double ea,
                     double *ram,double *ram1,double *ram2,
                     const double *cam,double *uam,double *qam);
-void converge_report(const converge *c,const ITG *nactdofinv,ITG mt,
-                     ITG ithermal,double ran,
-                     const double *qa,const double *qam,const double *ram,
-                     const double *cam,const double *uam);
+/* Ten arguments became five: the five norms are nlstate's, ithermal is
+   trialctx's and mt is mi[1]+1. */
+void converge_report(const converge *c,const trialctx *mdl,const nlstate *n,
+                     const ITG *nactdofinv,double ran);
 /* ---- where the Newton solve IS (nlstate.c) ----------------------------
 
    The iteration counter and the convergence quantities, in one object,
@@ -571,12 +571,12 @@ void damstats_init(damstats *d);
    For each element the maximum degradation over its active integration
    points is used.  In the present DE1 implementation only C3D4 is enabled,
    therefore this is exactly the single integration-point value. */
-void damstats_element(const double *dam,const double *damold,
-                             const ITG *ipkon,const char *lakon,
-                             ITG ne0,ITG mi0,
-                             ITG *nactive,ITG *ngt01,ITG *ngt05,
-                             ITG *ngt09,ITG *nfull,ITG *nchanged,
-                             double *dmax,double *maxdelta);
+/* Fourteen arguments became three.  Five were trialctx's; the other eight
+   were the fields of the damstats object the call was ABOUT, taken apart at
+   the call site and handed back one at a time - the same shape the call to
+   slownewton_allow() had.  damold stays a parameter because the three call
+   sites pass different baselines. */
+void damstats_element(damstats *d,const trialctx *mdl,const double *damold);
 void damstats_append(const char *jobnamec,ITG istep,ITG iinc,
                                     double steptime,double totaltime,
                                     ITG passes,ITG nactive,ITG ngt01,
@@ -670,9 +670,8 @@ typedef struct{
 
 void damcont_init(damcont *c);
 void damcont_init(damcont *c);
-void damcont_kin(const double *co,const ITG *kon,ITG indexe,
-                          const double *v,ITG mt,ITG mint,
-                          double *dl,double *rmat,double *shape);
+void damcont_kin(const trialctx *mdl,ITG indexe,const double *v,ITG mint,
+                 double *dl,double *rmat,double *shape);
 /* Thirteen arguments became five.  v and stx stay parameters: which state
    the caller wants snapped is its decision, and the one call site passes
    vold and sti rather than the context's v and stx. */
