@@ -129,21 +129,46 @@ somebody pays on every change rather than a matter of taste:
    `dammat.c` now, below both callers.
 
 7. **A test that needs a deck is a test that runs once a day.** All
-   nineteen self tests in this tree are compiled into the solver and reached
-   only from inside `nonlingeo()`, so proving a forty-line classifier costs
-   a finite element analysis — and every production job pays for it too,
-   printing between 56 and 82 lines of self test output, depending on which
-   switches arm, before it reaches increment 1. Criterion 4 above says an
+   nineteen self tests used to be compiled into the solver and reached only
+   from inside `nonlingeo()`, so proving a forty-line classifier cost a
+   finite element analysis — and every production job paid for it too, 56 to
+   82 lines of self test output before increment 1. `ccx_selftest` runs all
+   nineteen in 14 ms now, and `selftest_gate()` keeps the interlock from
+   `main()`; production output is one line. Criterion 4 above says an
    object must be able to fail a test; this one says the test has to be
    cheap enough that it actually got run. `dammat_selftest()` found two
    bugs in its own first hour — an offset that made three assertions
    unfailable, and a missing case that let `nconst==4` relax to `nconst>=4`
    unnoticed — because it could be compiled and run in a second.
 
-8. **The rebuild is part of the interface.** Changing any of the 153
-   extension declarations recompiles 208 of 208 `.c` files, because they all
-   live in `CalculiX.h`. That is the price of every experiment, paid by
-   whoever tries anything, and it is not a question of style.
+8. **The rebuild is part of the interface.** Changing any extension
+   declaration used to recompile 208 of 208 `.c` files, because they all
+   lived in `CalculiX.h`. That is the price of every experiment, paid by
+   whoever tries anything, and it is not a question of style. They live in
+   `ccxfork.h` now — 49 files — with `ccxopt.h` and `logview.h` split off
+   because they are platform rather than mechanism.
+
+### Where these numbers are now
+
+| | at the start | now |
+|---|---|---|
+| widest public signature | 22 | 22 |
+| signatures over the 6-argument budget | 36 | 35 |
+| files recompiled by an interface change | 210 | 49 |
+| self tests runnable without a deck | 0 of 19 | 19 of 19 |
+| self test lines in a production run | 56–82 | 1 |
+| layering violations | 1 | 0 |
+| `nonlingeo()` lines / locals | 11,313 / 631 | 11,252 / 593 |
+
+The first row is the honest one: the signatures are barely touched. One of
+the twenty-seven is converted and it was the cheapest. What moves that
+number is the three contexts — `trialctx` existed, `nlstate` now exists, and
+the derived-scalar accessors do not.
+
+Everything above that row is infrastructure, and it was taken first on
+purpose: `ccx_selftest` pays for itself on every later step, and an
+interface change that recompiles 49 files instead of 210 is what makes
+trying one affordable.
 
 Where these come from, in the same spirit as the shapes above: the layering
 rule is the ordinary package-dependency discipline (Martin's stable-
