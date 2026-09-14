@@ -77,16 +77,16 @@ ITG slownewton_estimate(ITG iit,double value,
    direct stock force and correction targets are used.  Requiring two
    consecutive contractions rejects residual oscillation and one-step noise;
    the hard cap and remaining-iteration cap bound the cost. */
-ITG slownewton_allow(ITG iit,const double *ram,
-                                    const double *ram1,const double *ram2,
-                                    const double *cam,const double *uam,
-                                    double camprev1,double camprev2,
-                                    const double *qa,const double *qam,
-                                    const double *ctrl,ITG maxiters,
-                                    ITG *iestres,ITG *iestcorr,
-                                    ITG *iesttotal,double *rratio,
-                                    double *cratio)
+ITG slownewton_allow(slownewton *s,const nlstate *n)
 {
+  const ITG iit=*(n->iit),maxiters=s->maxiters;
+  const double *ram=n->ram,*ram1=n->ram1,*ram2=n->ram2;
+  const double *cam=n->cam,*uam=n->uam,*qa=n->qa,*qam=n->qam;
+  const double *ctrl=n->ctrl;
+  const double camprev1=s->camprev1,camprev2=s->camprev2;
+  ITG *const iestres=&s->estres,*const iestcorr=&s->estcorr;
+  ITG *const iesttotal=&s->esttotal;
+  double *const rratio=&s->rratio,*const cratio=&s->cratio;
   ITG ip;
   double ea,c1,c2,targetres,targetcorr;
 

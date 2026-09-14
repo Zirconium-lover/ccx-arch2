@@ -228,6 +228,41 @@ void converge_report(const converge *c,const ITG *nactdofinv,ITG mt,
                      ITG ithermal,double ran,
                      const double *qa,const double *qam,const double *ram,
                      const double *cam,const double *uam);
+/* ---- where the Newton solve IS (nlstate.c) ----------------------------
+
+   The iteration counter and the convergence quantities, in one object,
+   because four different mechanisms ask for them and none of them owned
+   them.  Every field is the ADDRESS of a local of nonlingeo(): the counter
+   changes every iteration and the norms are rewritten in place, so a
+   context holding values would be stale before its first use.  For the
+   fixed-size arrays the array IS the address, so one rule covers both.
+
+   Deliberately holds only what its readers ask for.  A context that tries
+   to anticipate its callers becomes a second copy of nonlingeo()'s
+   prologue, which is the thing being fixed.  Adding a field is one line
+   here and one in NLSTATE_BIND. */
+typedef struct{
+  ITG    *iit;                 /* Newton iteration inside this attempt   */
+  double *ram,*ram1,*ram2;     /* residual norms: now, and two back      */
+  double *cam;                 /* correction norms                       */
+  double *uam;                 /* largest displacement increment         */
+  double *qa;                  /* force quantities this iteration        */
+  double *qam;                 /* the reference force                    */
+  double *ctrl;                /* the *CONTROLS table                    */
+}nlstate;
+
+/* Bind to the caller's frame.  Valid from the point of the call to the end
+   of the function, no matter what is reallocated in between, because
+   nothing here is a copy. */
+#define NLSTATE_BIND(N) do{                                             \
+  memset(&(N),0,sizeof(N));                                             \
+  (N).iit=&iit;   (N).ram=ram;   (N).ram1=ram1; (N).ram2=ram2;          \
+  (N).cam=cam;    (N).uam=uam;   (N).qa=qa;     (N).qam=qam;            \
+  (N).ctrl=ctrl;                                                        \
+}while(0)
+
+ITG nlstate_check(const nlstate *n);
+
 /* ---- which globalization mechanism did anything (globalize.c) ---------
 
    Six mechanisms stacked in a fixed order
@@ -498,15 +533,11 @@ void slownewton_init(slownewton *s);
 void slownewton_init(slownewton *s);
 ITG slownewton_estimate(ITG iit,double value,
                                        double previous,double target);
-ITG slownewton_allow(ITG iit,const double *ram,
-                                    const double *ram1,const double *ram2,
-                                    const double *cam,const double *uam,
-                                    double camprev1,double camprev2,
-                                    const double *qa,const double *qam,
-                                    const double *ctrl,ITG maxiters,
-                                    ITG *iestres,ITG *iestcorr,
-                                    ITG *iesttotal,double *rratio,
-                                    double *cratio);
+/* Seventeen arguments became two.  Nine of them were the Newton state,
+   which nlstate now owns; the other eight - camprev1, camprev2, maxiters
+   and the five results - were ALREADY fields of this same slownewton
+   object, taken apart at the call site and passed back in one at a time. */
+ITG slownewton_allow(slownewton *s,const nlstate *n);
 
 /* ---- what the damage state looks like, reported (damstats.c) ---------
 
@@ -982,7 +1013,13 @@ typedef struct{
 /* Bind the context to the caller's frame.  One line per field, next to the
    struct so the two cannot drift apart; trial_check() catches it if they
    do.  Call it once, after every local it names exists. */
+/* Zero FIRST.  Without it the check below this macro cannot do the job its
+   own comment claims: `trialctx nlgt;' is an uninitialised local, so a field
+   TRIAL_BIND forgot holds stack garbage, not NULL, and trial_check() walks
+   past it reporting 0 unbound.  OBSERVED - commenting a field out of the
+   bind left the check green.  One memset makes the claim true. */
 #define TRIAL_BIND(T) do{ \
+  memset(&(T),0,sizeof(T)); \
   (T).co=&co; \
   (T).nk=&nk; \
   (T).kon=&kon; \

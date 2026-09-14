@@ -1041,6 +1041,7 @@ elementcpuload.c \
 expand.c \
 damcont.c \
 dammat.c \
+nlstate.c \
 selftest.c \
 loadctl.c \
 damstats.c \

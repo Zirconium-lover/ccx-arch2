@@ -238,7 +238,7 @@ def ext_modules():
 # force the sideways edges.
 LAYERS={'ccxopt':0,
         'census':1,'dammat':1,'logview':1,'monitor':1,
-        'damstate':2,'topology':2,'trial':2,
+        'damstate':2,'nlstate':2,'topology':2,'trial':2,
         'damdiag':3,'damstats':3,'loadctl':3,'opcheck':3,'topodiag':3,
         'converge':4,'crackcontrol':4,'damcont':4,'erosion':4,'globalize':4,
         'loadcut':4,'lsladder':4,

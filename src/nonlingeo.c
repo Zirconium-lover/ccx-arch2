@@ -406,6 +406,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 
   /* [TRIAL] the residual evaluator's view of this frame; see trial.c */
   trialctx nlgt;
+  nlstate nls;
 
   /* [TOPOLOGY] the erosion transaction.  Nine locals with no owner became
      one object with one lifetime.  Six copies of "discard the marked set", in three
@@ -504,6 +505,9 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
      the ADDRESS of a local, so this is valid from here to the end of
      the function no matter how often the arrays are reallocated. */
   TRIAL_BIND(nlgt);
+  /* [NLSTATE] and the same for where the solve IS - the iteration counter
+     and the convergence quantities.  Same rule, same reason. */
+  NLSTATE_BIND(nls);
   dogleg_init(&dog);
   damcont_init(&ct);
   pathdrv_init(&pf);
@@ -1972,6 +1976,16 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
            "        Every field is the address of a local, so a NULL\n"
            "        means TRIAL_BIND and the struct have drifted\n"
            "        apart and results() would be called with one.\n");
+    fflush(stdout);
+    FORTRAN(stop,());
+  }
+
+  if(nlstate_check(&nls)!=0){
+    printf("*ERROR: the Newton-state context has unbound fields.\n"
+           "        Same rule as above: every field is the address of a\n"
+           "        local, so a NULL means NLSTATE_BIND and the struct\n"
+           "        have drifted apart and a convergence decision would\n"
+           "        be taken on one.\n");
     fflush(stdout);
     FORTRAN(stop,());
   }
@@ -8272,12 +8286,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         }
 
         if(slow.active){
-          slow.allow=slownewton_allow(
-              iit,ram,ram1,ram2,cam,uam,slow.camprev1,
-              slow.camprev2,qa,qam,ctrl,slow.maxiters,
-              &slow.estres,&slow.estcorr,
-              &slow.esttotal,&slow.rratio,
-              &slow.cratio);
+          slow.allow=slownewton_allow(&slow,&nls);
         }
 
         if((slow.allow)&&
