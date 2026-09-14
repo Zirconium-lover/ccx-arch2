@@ -6120,6 +6120,17 @@ ITG  erosion_selftest(void);
    that object does not exist yet; erosion.c owns the answer meanwhile and
    topology.c calls it directly rather than inventing a dependency. */
 ITG dammat_selftest(void);
+
+/* The self test table, and the one place that runs it.  selftest_gate() is
+   the interlock nonlingeo() calls: silent on a sound build, and it stops
+   the run on a bad one.  ccx_selftest calls selftest_run_all(1) for the
+   whole table with output. */
+typedef ITG (*selftest_fn)(void);
+typedef struct { const char *name; selftest_fn fn; } selftest_entry;
+extern const selftest_entry SELFTESTS[];
+extern const ITG NSELFTEST;
+ITG  selftest_run_all(ITG verbose);
+void selftest_gate(void);
 ITG damage_progressive_material(ITG imat,const ITG *ndmcon,
                                 const double *dmcon,ITG ndmat,ITG ntmat);
 

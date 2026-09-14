@@ -140,6 +140,25 @@ _set_output_format(_TWO_DIGIT_EXPONENT);
 
   putenv("CCX_JOBNAME_GETJOBNAME=jobnamec");
 
+  /* [SELFTEST] Every self test in the tree, before this program does
+     anything else.
+
+     Ten separate sites inside nonlingeo() used to do this - four
+     unconditionally and six when their own switch armed - and between them
+     a production run printed 56 to 82 lines before it reached increment 1.
+     The interlock they gave is kept and strengthened three ways: all
+     nineteen run on every job rather than whichever ones a given set of
+     switches happened to reach; a failure stops the run rather than quietly
+     disarming one mechanism and carrying on; and it happens HERE rather
+     than in nonlingeo(), so a linear or a purely thermal analysis - which
+     never enters nonlingeo() at all - is covered too.  That last one is why
+     this is not in the solver: a check that only some analysis types reach
+     is a check with a hole in it.
+
+     Silent on a sound build.  Run ccx_selftest for the table with its
+     output; see selftest.c for what it does and why. */
+  selftest_gate();
+
 #ifdef BAM
   ITG lop=0,lrestart=0,kstep=1,kinc=1;
   double time[2],dtime;

@@ -285,7 +285,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     damage_active_pass=0,damage_soft_reeq=0,damage_fast_retry=0,damage_fast_used=0,
     damage_fast_recover=0,damage_fast_failures=0,
     damage_de12_enabled=0,damage_de12_matcount=0,damage_dm20_matcount=0,
-    damage_tangent_mode=0,damage_rank1_bad=0,
+    damage_tangent_mode=0,
     damage_cut_on=0,damage_cut_bad=0,damage_cut_narrow=0,
     damage_cut_exact=0,
     damage_topology_deferred_mode=0,damage_topology_rebuild=1,*damage_damcat=NULL,
@@ -1438,11 +1438,6 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
             printf("[LOADCUT] *ERROR: CCX_FRACTURE_CUT must be a fraction "
                    "strictly between 0 and 1; got %s.  Not armed.\n",cutenv);
             damage_cut_frac=0.;
-          }else if(loadcut_selftest()!=0){
-            printf("[LOADCUT] *ERROR: the self test failed; refusing to "
-                   "arm rather than stop a run on a measurement that may "
-                   "be wrong.\n");
-            damage_cut_frac=0.;
           }else{
             damage_cut_on=1;
 
@@ -1693,17 +1688,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         if(damage_spc_g>1.e-1) damage_spc_g=1.e-1;
         if(damage_spc_g>0.){
           damage_stiff_probe=1;
-          /* [DAMSTATE] prove the judgement before letting it decide
-             anything, on every run, the discipline lsladder.c set. */
-          if(damstate_selftest()!=0){
-            printf("[DAMSTATE] *ERROR: the load-path judgement self test "
-                   "failed; disabling AUTOSPC rather than judging nodes by a "
-                   "rule that is not the one that was tested.\n");
-            damage_spc_g=0.;
-            damage_stiff_probe=0;
-          }else{
-            printf("[DAMAGE AUTOSPC] a node whose assembled diagonal has fallen below %.1e of its own intact value is excluded from the DISPLACEMENT convergence norm; the force residual is untouched and nothing is deleted\n",damage_spc_g);
-          }
+          printf("[DAMAGE AUTOSPC] a node whose assembled diagonal has fallen below %.1e of its own intact value is excluded from the DISPLACEMENT convergence norm; the force residual is untouched and nothing is deleted\n",damage_spc_g);
         }
       }
       if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_STIFF_MIN"))!=NULL){
@@ -1724,12 +1709,6 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
          the trajectory, which is exactly the kind of behaviour change a
          self test must not smuggle in.  Measured: doing it the wrong way
          round moved m.cvg on three gate cases. */
-      if((damage_stiff_probe>0)&&(stiffcensus_selftest()!=0)){
-        printf("[CENSUS] *ERROR: the stiffness census self test failed; "
-               "not printing a census rather than printing one that may be "
-               "wrong.  The solve is untouched.\n");
-        damage_census_ok=0;
-      }
       /* Default 0 since E-22.  damdangle cannot distinguish a dangling
          sliver from the legitimate last element at a node, so it deletes
          healthy load-bearing material and on a small mesh removes every
@@ -1985,14 +1964,6 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
      corrupts a run that still prints plausible numbers. */
   glob_census_init(&damage_glob);
   glob_census_arm(&damage_glob);
-  if(glob_selftest()!=0){
-    printf("[GLOBALIZE] *ERROR: the globalization-census self test failed. "
-           " An instrument that has not been checked cannot be used to "
-           "justify deleting a mechanism, which is what this one exists "
-           "for, so the run stops here.\n");
-    fflush(stdout);
-    FORTRAN(stop,());
-  }
 
   if(trial_check(&nlgt)!=0){
     printf("*ERROR: the trial-evaluation context has unbound fields.\n"
@@ -2004,40 +1975,13 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
   }
 
   erosion_batch_init(&damage_ebatch);
-  if(erosion_selftest()!=0){
-    printf("*ERROR: the erosion rules failed their own self test.  They\n"
-           "        decide which elements leave the assembly, so a run\n"
-           "        made with them wrong is not a measurement of anything.\n");
-    fflush(stdout);
-    FORTRAN(stop,());
-  }
 
   topo_txn_init(&dtxn);
-  if(topo_selftest()!=0){
-    printf("[TOPOLOGY] *ERROR: the erosion-transaction self test failed.  "
-           "The object that records which elements were deleted, and when, "
-           "cannot be trusted, so the run stops here rather than committing "
-           "a batch it cannot account for.\n");
-    fflush(stdout);
-    FORTRAN(stop,());
-  }
 
   converge_init(&damage_cvg,damage_qam_floor,0,NULL,0);
-  if(converge_selftest()!=0){
-    printf("[CONVERGE] *ERROR: the convergence-norm self test failed.  The "
-           "numbers every convergence verdict is made from cannot be "
-           "trusted, and there is nothing to fall back to, so the run "
-           "stops here rather than reporting a result computed by a rule "
-           "that is not the one that was tested.\n");
-    fflush(stdout);
-    FORTRAN(stop,());
-  }
 
   if((td_trace!=0)||(td_from>0)){
-    if(topodiag_selftest()!=0){
-      printf("[TOPODIAG] *ERROR: self test failed; diagnostics disabled\n");
-      td_trace=0;td_from=0;
-    }else{
+    {
       td_armed=1;
       NNEW(td_comp,ITG,*nk);
       NNEW(td_sort,ITG,(*ne>0)?*ne:1);
@@ -2159,20 +2103,13 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         /* The rank-1 projection is the one piece of this mode the
            structural FD probe cannot exonerate on its own: a discrepancy
            it measures could equally be damjac, the projection, or the
-           probe's reading of the CSR.  damrank1test settles the middle
-           one offline, against e_c3d's own quadruple sum and against a
-           finite difference of the element internal force.  If it fails,
-           the mode is refused rather than run, because every number the
-           mode would then produce is suspect. */
-
-        printf("[DAMRANK1 SELFTEST] the rank-1 element projection\n");
-        FORTRAN(damrank1test,(&damage_rank1_bad));
-        if(damage_rank1_bad!=0){
-          printf("[DAMAGE TANGENT UNSYM] *ERROR: the rank-1 projection self "
-                 "test failed; the asymmetric tangent is DISARMED rather "
-                 "than run with a projection known to be wrong.\n");
-          damage_tangent_mode=0;
-        }
+           probe's reading of the CSR.  damrank1test settles the middle one
+           offline, against e_c3d's own quadruple sum and against a finite
+           difference of the element internal force.  It now runs in
+           selftest_gate() with the other eighteen, before anything is
+           armed, and a failure stops the run rather than disarming this
+           mode - every number the rest of the run would produce comes from
+           the same build. */
       }else{
         printf("[DAMAGE TANGENT BK2] secant g(D)*Cep baseline enabled - "
                "this is the DEFAULT and the measured best on both fast "
@@ -2259,13 +2196,6 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
          through: the search would silently go back to handing back a
          step it had measured to be worse. */
 
-      if(lsladder_selftest()!=0){
-        printf("[DAMAGE LINESEARCH] *ERROR: the backtracking ladder self "
-               "test failed; disabling the adaptive line search rather "
-               "than running with a rule that is not the one that was "
-               "tested.\n");
-        rsc.linesearch_mode=0;
-      }
 
       if(ccxopt_getenv("CCX_DAMAGE_LS_LEGACY")!=NULL){
         rsc.ls_legacy=1;

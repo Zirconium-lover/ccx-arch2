@@ -1044,9 +1044,6 @@ void pathdrv_configure(pathdrv *p,const loadctl *c,const trialctx *t,
              "; needs static, ithermal<2, no contact, implicit, "
              "prescribed dofs, SPOOLES or PARDISO)\n",
              *nmethod,*ithermal,*mortar,ncont,*iexpl,*nboun,*isolver);
-    }else if(pathfollow_selftest()!=0){
-      printf("[PATHFOLLOW] *ERROR: the bordered-algebra self test "
-             "failed; refusing to arm.\n");
     }else if(pathfollow_arm(p->tauv,neq[1])==0){
       printf("[PATHFOLLOW] *ERROR: could not allocate; not armed.\n");
     }else{
@@ -1105,9 +1102,6 @@ void pathdrv_configure(pathdrv *p,const loadctl *c,const trialctx *t,
         if(ncoh==0){
           printf("[CRACKCTL] *ERROR: CCX_CRACK_CONTROL needs UC6 "
                  "cohesive elements; none found.  Not armed.\n");
-        }else if(crackcontrol_selftest()!=0){
-          printf("[CRACKCTL] *ERROR: the kinematics self test failed; "
-                 "refusing to arm.\n");
         }else{
           p->dphi=atof(ccxopt_getenv("CCX_CRACK_CONTROL"));
           if(!(p->dphi>0.)){

@@ -316,15 +316,22 @@ def header_fanout():
 def selftests():
     """(how many self tests exist, how many can be run without a deck).
 
-    The second number is the one that matters.  Today every self test is
-    compiled into the solver and reached only from inside nonlingeo(), so a
-    test costs a full analysis to run; the count of deck-free ones is
-    therefore whatever a standalone runner can reach, and zero until one
-    exists."""
-    total=0
-    for p in sorted(SRC.glob('*.c')):
-        for name,first,_,_ in functions(p):
-            if 'selftest' in name or name.endswith('_legacycheck'): total+=1
+    The second number is the one that matters.  A test reachable only from
+    inside nonlingeo() costs a full analysis to run, and a test that costs
+    minutes is a test that runs once a day.
+
+    Counted from the TABLE in selftest.c rather than by matching function
+    names.  Name matching was the first version and it was wrong twice over:
+    it counted selftest_run_all() and selftest_gate() - the machinery, not
+    tests - and it would have missed any test whose name did not contain the
+    word.  The table is what both callers actually iterate, so it is what
+    there are."""
+    src=(SRC/'selftest.c')
+    if not src.exists(): return 0,0
+    txt=src.read_text(errors='replace')
+    m=re.search(r'SELFTESTS\[\]\s*=\s*\{(.*?)\n\};',txt,re.S)
+    total=len(re.findall(r'\{\s*"[^"]+"\s*,',m.group(1))) if m else 0
+    # Deck-free means a runner exists that can reach them without a solve.
     runner=(SRC/'selftest_main.c').exists()
     return total,(total if runner else 0)
 

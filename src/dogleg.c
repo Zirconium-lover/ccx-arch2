@@ -593,14 +593,9 @@ void dogleg_configure(dogleg *d,rescue *r,const loadctl *c)
       d->lc_nit=atoi(e);
     if(d->lc_nit<1) d->lc_nit=1;
     /* the geometry of the step is proved before the first increment, on
-       a J whose dogleg is known in closed form.  A failure here is
-       arithmetic, so the run must not start. */
-    if(dogleg_selftest()!=0){
-      printf("*ERROR: the trust-region geometry self-test FAILED.  "
-             "Stopping rather than running a method whose step "
-             "construction is wrong.%s","\n");
-      fflush(stdout);FORTRAN(stop,());
-    }
+       a J whose dogleg is known in closed form.  A failure there is
+       arithmetic, so the run must not start - which selftest_gate() now
+       enforces from main(), before this function can be reached. */
     if(d->maxtrial<1) d->maxtrial=1;
     if(d->maxtrial>12) d->maxtrial=12;
     if(d->maxeval<1) d->maxeval=1;

@@ -424,12 +424,6 @@ void damcont_configure(damcont *k,dogleg *d,rescue *r,const loadctl *c)
            k->maxstep,k->maxcorr,k->maxfact,
            k->maxeval,"\n");
     fflush(stdout);
-    if(damcont_selftest()!=0){
-      printf("*ERROR: the continuation bordered-algebra self-test "
-             "FAILED.  Stopping rather than running a method whose "
-             "constraint row is wrong.%s","\n");
-      fflush(stdout);FORTRAN(stop,());
-    }
   }
 }
 

@@ -499,11 +499,6 @@ void opcheck_probe(opcheckdrv *o,const trialctx *t,const ITG *ndmat_,
     }
     if((o->fd_el<0)&&(o->fd_uel<0)){
       printf("[OPCHECK] no active element to probe\n");
-    }else if(opcheck_selftest()!=0){
-      printf("[OPCHECK] *ERROR: the classifier self test failed; "
-             "reporting nothing rather than reporting a verdict that may "
-             "be wrong.\n");
-      o->fd_el=-1;o->fd_uel=-1;
     }else{
       printf("[OPCHECK] inc=%" ITGFORMAT " iter=%" ITGFORMAT
   	   " step=%" ITGFORMAT " h=%.3e base=%s\n",iinc,iit,*istep,

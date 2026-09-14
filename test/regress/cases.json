@@ -7,6 +7,7 @@
   "quantities, so an A/B must fix OMP_NUM_THREADS and MKL_NUM_THREADS on",
   "both arms (runs are NOT reproducible across thread counts).",
   "required_lines: every run's log must contain these, so a report that silently stopped being emitted is caught.",
+  "selftests_required is EMPTY on purpose, not abandoned. The solver's self tests no longer run inside nonlingeo() and no longer print to a run log; they run in the preflight, from ccx_selftest, before any deck starts, and a failure there fails the whole gate rather than one case. Leaving names here would be worse than useless: selftests() SKIPS a name it cannot find in the log, so every one of them would have gone on reporting nothing at all. The per-run scans for '[X] reported N failure(s)' and '[X] *ERROR' stay - those catch failures during a solve, which is a different thing from a unit test.",
   "equal_to: the same relation as identical_sta_as but stated as a tolerance over named files rather than as byte identity, so an extraction that reorders a summation can be asserted correct instead of failing for the wrong reason. rtol=atol=0 means every printed digit must agree. tools/ccxdiff.py --selftest proves the comparison can go red.",
   "A case's env is passed to run_fast.sh as POSITIONAL NAME=VALUE overrides, not as environment: run_s3rad.sh exports twelve CCX_* names unconditionally and would clobber it. check_switches() verifies against the run's own [SWITCHES] banner that what the case asked for is what the binary got."
  ],
@@ -362,16 +363,8 @@
    }
   }
  ],
- "selftests_required": [
-  "CONVERGE",
-  "DAMAGE TR SELFTEST",
-  "DAMSTATE",
-  "EROSION",
-  "LOADCUT SELFTEST",
-  "LSLADDER"
- ],
+ "selftests_required": [],
  "required_lines": [
-  "[SWITCHES] this binary reads",
-  "[CONVERGE] self test PASSED"
+  "[SWITCHES] this binary reads"
  ]
 }
