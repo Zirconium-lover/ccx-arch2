@@ -584,7 +584,7 @@ void damstats_append(const char *jobnamec,ITG istep,ITG iinc,
                                     double dmax,double maxdelta);
 /* Sixteen arguments became three: thirteen of them were the mesh, the
    material map and the damage state, all of which trialctx holds. */
-void damstats_write_vtk(const char *jobnamec,const trialctx *m,
+void damstats_write_vtk(const char *jobnamec,const trialctx *mdl,
                         double steptime);
 
 /* ---- the path-following DRIVER's state (declared here, driven from
@@ -796,18 +796,12 @@ ITG damage_ray_census_diff(const ITG *cat,const double *xstate,
                            ITG ne0,ITG mi0,ITG nstate,
                            ITG *firste,ITG *firstip,
                            ITG *firsta,ITG *firstb);
-void damage_wall_where(const char *tag,const double *x,ITG neq1,
-                       const ITG *nactdof,ITG mt,ITG nk,ITG ntop,
-                       const ITG *ipkon,const ITG *kon,
-                       const char *lakon,const double *xstate,
-                       const double *stx,const double *dam,
-                       ITG ne,ITG ne0,ITG mi0,ITG nstate);
-void damage_wall_split(const char *tag,const double *x,ITG neq1,
-                       const ITG *nactdof,ITG mt,ITG nk,
-                       const ITG *ipkon,const ITG *kon,
-                       const char *lakon,const double *dam,
-                       const double *xstate,ITG ne,ITG ne0,ITG mi0,
-                       ITG nstate);
+/* Seventeen arguments became four: thirteen were the mesh and the state,
+   which trialctx holds, and mt is mi[1]+1. */
+void damage_wall_where(const char *tag,const double *x,const trialctx *mdl,
+                       ITG ntop);
+/* Fifteen arguments became three, for the same reason. */
+void damage_wall_split(const char *tag,const double *x,const trialctx *mdl);
 ITG damage_wall_setdiff(const ITG *cat,const double *xstate,
                         const double *xstateini,const double *dam,
                         const double *dambase,const double *visc,
@@ -1481,7 +1475,7 @@ void topodiag_report_zero(topodiag_report *r);
    mt is mi[1]+1, which the caller was computing by hand.  Only the assembled
    diagonal and off-diagonal are still loose, and they are the linear system,
    which has no object yet. */
-void topodiag_run(topodiag_report *r,ITG *comp,const trialctx *m,
+void topodiag_run(topodiag_report *r,ITG *comp,const trialctx *mdl,
                   const double *ad,const double *au);
 double topodiag_project(const double *v,const double *w,ITG neq);
 void topodiag_support(ITG node,const ITG *kon,const ITG *ipkon,
@@ -1507,12 +1501,12 @@ double crackcontrol_dir(const double *dl,double beta,double tol,double *m);
 double crackcontrol_dissrate(double kn,double tn0,double gc);
 ITG crackcontrol_selftest(void);
 void crackcontrol_census_zero(crackcontrol_census *s);
-ITG crackcontrol_build(double *c,ITG neq,ITG mode,
-                       const double *co,const ITG *kon,const ITG *ipkon,
-                       const char *lakon,ITG ne,
-                       const ITG *ielprop,const double *prop,
-                       const double *xstate,ITG nstate_,const ITG *mi,
-                       const double *v,const ITG *nactdof,ITG nk,ITG mt,
+/* Eighteen arguments became six.  xstate and v stay parameters on purpose:
+   the three call sites pass DIFFERENT arrays - the committed state and
+   vold at one, the increment-start xstateini and vini at the other two -
+   so they are the caller's choice, not the context's. */
+ITG crackcontrol_build(double *c,ITG mode,const trialctx *mdl,
+                       const double *xstate,const double *v,
                        crackcontrol_census *s);
 
 #endif /* CCX_FORK_H */

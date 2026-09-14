@@ -268,13 +268,25 @@ ITG damage_ray_census_diff(const ITG *cat,const double *xstate,
    share, so inverting it is what turns an equation index back into a node
    and a direction.  It is inverted here rather than assumed. */
 
-void damage_wall_where(const char *tag,const double *x,ITG neq1,
-                       const ITG *nactdof,ITG mt,ITG nk,ITG ntop,
-                       const ITG *ipkon,const ITG *kon,
-                       const char *lakon,const double *xstate,
-                       const double *stx,const double *dam,
-                       ITG ne,ITG ne0,ITG mi0,ITG nstate)
+void damage_wall_where(const char *tag,const double *x,const trialctx *mdl,
+                       ITG ntop)
 {
+  /* Unpacked once, so the body below is the body that was there.  The
+     expressions are indirect because every trialctx field holds the ADDRESS
+     of the caller's local - that is what lets the binding survive the
+     reallocations nonlingeo() does on every iteration. */
+  const ITG neq1=*(mdl->neq1),*nactdof=*(mdl->nactdof);
+  const ITG mt=(*(mdl->mi))[1]+1,nk=**(mdl->nk);
+  const ITG *ipkon=*(mdl->ipkon),*kon=*(mdl->kon);
+  const char *lakon=*(mdl->lakon);
+  /* dam was a parameter of this function and the body never touched it -
+     the second dead argument found by this conversion, after ndirboun in
+     topodiag_run().  Seventeen arguments is how one hides. */
+  const double *xstate=*(mdl->xstate);
+  const ITG ne=**(mdl->ne),ne0=*(mdl->ne0),mi0=(*(mdl->mi))[0];
+  const ITG nstate=**(mdl->nstate_);
+  const double *stx=*(mdl->stx);
+
   ITG *inode=NULL,*idir=NULL,i,j,k,t,ip,np,nb,nu,ncomp,ibest,idx;
   double gmn,gmx,dv,a;
 
@@ -336,13 +348,20 @@ void damage_wall_where(const char *tag,const double *x,ITG neq1,
    ordinary plastic bulk accuses the return map.  Shares of |x|_2^2, so they
    add to 1. */
 
-void damage_wall_split(const char *tag,const double *x,ITG neq1,
-                       const ITG *nactdof,ITG mt,ITG nk,
-                       const ITG *ipkon,const ITG *kon,
-                       const char *lakon,const double *dam,
-                       const double *xstate,ITG ne,ITG ne0,ITG mi0,
-                       ITG nstate)
+void damage_wall_split(const char *tag,const double *x,const trialctx *mdl)
 {
+  /* Unpacked once, so the body below is the body that was there.  The
+     expressions are indirect because every trialctx field holds the ADDRESS
+     of the caller's local - that is what lets the binding survive the
+     reallocations nonlingeo() does on every iteration. */
+  const ITG neq1=*(mdl->neq1),*nactdof=*(mdl->nactdof);
+  const ITG mt=(*(mdl->mi))[1]+1,nk=**(mdl->nk);
+  const ITG *ipkon=*(mdl->ipkon),*kon=*(mdl->kon);
+  const char *lakon=*(mdl->lakon);
+  const double *dam=*(mdl->dam),*xstate=*(mdl->xstate);
+  const ITG ne=**(mdl->ne),ne0=*(mdl->ne0),mi0=(*(mdl->mi))[0];
+  const ITG nstate=**(mdl->nstate_);
+
   ITG *touch=NULL,i,j,k,np,idx,nu=0,ns=0,np2=0;
   double tot=0.,su=0.,ss=0.,sp=0.,v;
 

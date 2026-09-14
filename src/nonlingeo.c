@@ -3309,9 +3309,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
              attempt, so using it as the scratch vector here costs
              nothing. */
 
-          crackcontrol_build(pf.cvec,neq[1],pf.ccmode,co,kon,ipkon,lakon,
-                             *ne,ielprop,prop,xstate,*nstate_,mi,vold,
-                             nactdof,*nk,mt,&pf.cs);
+          crackcontrol_build(pf.cvec,pf.ccmode,&nlgt,xstate,vold,&pf.cs);
           printf("[CRACKCTL] inc=%" ITGFORMAT " ACCEPTED lambda=%.8f "
                  "dphi=%.6e achieved=%.6e g=%.3e |R|=%.3e du=%.3e "
                  "zone=%" ITGFORMAT " load=%" ITGFORMAT " init=%"
@@ -3719,9 +3717,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
          control increment currently in force. */
 
       if(pf.codmode==2){
-        pf.ccnw=crackcontrol_build(pf.cvec,neq[1],pf.ccmode,co,kon,ipkon,
-                                   lakon,*ne,ielprop,prop,xstateini,
-                                   *nstate_,mi,vini,nactdof,*nk,mt,&pf.cs);
+        pf.ccnw=crackcontrol_build(pf.cvec,pf.ccmode,&nlgt,xstateini,vini,
+                                   &pf.cs);
 
         /* ZONE and DISS are supported on the process zone.  Before the
            first initiation, and again if every initiated point has
@@ -3730,9 +3727,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
            attempt rather than handing the bordered row a zero vector. */
 
         if((pf.ccnw==0)&&(pf.ccmode!=0)){
-          pf.ccnw=crackcontrol_build(pf.cvec,neq[1],0,co,kon,ipkon,
-                                     lakon,*ne,ielprop,prop,xstateini,
-                                     *nstate_,mi,vini,nactdof,*nk,mt,
+          pf.ccnw=crackcontrol_build(pf.cvec,0,&nlgt,xstateini,vini,
                                      &pf.cs);
         }
         pathfollow_cod_arm(pf.cvec,neq[1]);
@@ -7298,12 +7293,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                  "; |p_N|inf=%.6e |p_N|2=%.6e |R|2=%.6e%s",
                  iinc,iit,wnlive,wnadv,wpinf,sqrt(dog.npn2),
                  sqrt(dog.nb2),"\n");
-          damage_wall_where("residual",dog.r0,neq[1],nactdof,mt,*nk,5,
-                            ipkon,kon,lakon,xstate,stx,dam,*ne,ne0,mi[0],
-                            *nstate_);
-          damage_wall_where("correction",dog.pn,neq[1],nactdof,mt,*nk,
-                            5,ipkon,kon,lakon,xstate,stx,dam,*ne,ne0,mi[0],
-                            *nstate_);
+          damage_wall_where("residual",dog.r0,&nlgt,5);
+          damage_wall_where("correction",dog.pn,&nlgt,5);
           /* [WALLDIAG] STIFFNESS AT THE RESIDUAL PEAK.  The convergence test
              checkconvergence() applies is on max|R| over the mechanical
              block, not on |R|2, so the dof that decides the run is the peak
@@ -7557,18 +7548,10 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
               SFREE(e1ad);SFREE(e1au);SFREE(e1y);
             }
             if(lii==14){
-              damage_wall_split("linear-model defect",prb.wall_def,neq[1],
-                                nactdof,mt,*nk,ipkon,kon,lakon,dam,xstate,
-                                *ne,ne0,mi[0],*nstate_);
-              damage_wall_split("residual r0",dog.r0,neq[1],nactdof,mt,
-                                *nk,ipkon,kon,lakon,dam,xstate,*ne,ne0,mi[0],
-                                *nstate_);
-              damage_wall_split("Newton step p_N",dog.pn,neq[1],nactdof,
-                                mt,*nk,ipkon,kon,lakon,dam,xstate,*ne,ne0,
-                                mi[0],*nstate_);
-              damage_wall_where("defect",prb.wall_def,neq[1],nactdof,mt,
-                                *nk,5,ipkon,kon,lakon,xstate,stx,dam,*ne,ne0,
-                                mi[0],*nstate_);
+              damage_wall_split("linear-model defect",prb.wall_def,&nlgt);
+              damage_wall_split("residual r0",dog.r0,&nlgt);
+              damage_wall_split("Newton step p_N",dog.pn,&nlgt);
+              damage_wall_where("defect",prb.wall_def,&nlgt,5);
             }
             fflush(stdout);
           }

@@ -333,13 +333,26 @@ void crackcontrol_census_zero(crackcontrol_census *s){
   memset(s,0,sizeof(*s));
 }
 
-ITG crackcontrol_build(double *c,ITG neq,ITG mode,
-                       const double *co,const ITG *kon,const ITG *ipkon,
-                       const char *lakon,ITG ne,
-                       const ITG *ielprop,const double *prop,
-                       const double *xstate,ITG nstate_,const ITG *mi,
-                       const double *v,const ITG *nactdof,ITG nk,ITG mt,
+ITG crackcontrol_build(double *c,ITG mode,const trialctx *mdl,
+                       const double *xstate,const double *v,
                        crackcontrol_census *s){
+
+  /* Unpacked once, so the body below is the body that was there.  Every
+     trialctx field holds the ADDRESS of the caller's local, which is what
+     lets the binding survive nonlingeo()'s reallocations. */
+  const ITG neq=*(mdl->neq1);
+  const double *co=*(mdl->co);
+  const ITG *kon=*(mdl->kon),*ipkon=*(mdl->ipkon);
+  const char *lakon=*(mdl->lakon);
+  const ITG ne=**(mdl->ne);
+  const ITG *ielprop=*(mdl->ielprop);
+  const double *prop=*(mdl->prop);
+  const ITG nstate_=**(mdl->nstate_);
+  const ITG *mi=*(mdl->mi),*nactdof=*(mdl->nactdof);
+  /* nk was a parameter of this function and the body never touched it - the
+     third dead argument this conversion has turned up, after ndirboun in
+     topodiag_run() and dam in damage_wall_where(). */
+  const ITG mt=(*(mdl->mi))[1]+1;
 
   ITG e,ip,i,k,idx,nm,np,dof,nw=0,loading;
   double rmat[9],area,x[9],jump[3],dl[3],m[3],mg[3],sh[3];
