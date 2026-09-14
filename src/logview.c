@@ -53,6 +53,7 @@ static ITG    logview_armed=-1;     /* -1 not yet decided, 0 off, 1 on     */
 static ITG    logview_reported=0;   /* the FINAL report is printed once     */
 static double logview_t0=0.;        /* when the instrument was armed        */
 static double logview_every=600.;   /* seconds between interim reports      */
+static ITG    logview_intest=0;     /* the self test is running; see below  */
 static double logview_last=0.;      /* when the last interim report went out*/
 static ITG    logview_ninterim=0;
 static ITG    logview_nevent=0;
@@ -164,20 +165,44 @@ void logview_end(ITG id){
    in the module is bookkeeping around those two facts. */
 ITG logview_selftest(void){
   ITG bad=0,outer,inner,other,i,save_armed,save_nevent,save_depth,save_broken;
-  double t0,x=0.;
+  double t0,x=0.,save_last,save_every;
   ITG s_calls[LOGVIEW_MAXEVENT];
   double s_incl[LOGVIEW_MAXEVENT],s_self[LOGVIEW_MAXEVENT];
+
+  /* Re-entry guard.  logview_table() runs this test before it prints, and
+     this test drives logview_end(), which can itself reach logview_table()
+     through the interim-report trigger.  That is a cycle: the test would be
+     re-entered halfway through, with its counters deliberately zeroed and
+     one event still open, and would then fail on a state it had created
+     itself.  A self test that verifies a mechanism must not be reachable
+     FROM that mechanism while it is running.
+
+     OBSERVED, the first time the test was run outside a solver: two
+     '*ERROR: the caller of the inner event was not recorded' lines with a
+     'reporting nothing' between them, which is this cycle printed. */
+  if(logview_intest) return 0;
+  logview_intest=1;
 
   /* the test measures with the real machinery, so the run's own totals are
      saved and restored: a self test that pollutes what it certifies is not
      a self test */
   save_armed=logview_armed; save_nevent=logview_nevent;
   save_depth=logview_depth; save_broken=logview_broken;
+  save_last=logview_last;   save_every=logview_every;
   for(i=0;i<LOGVIEW_MAXEVENT;i++){
     s_calls[i]=logview_calls[i];s_incl[i]=logview_incl[i];
     s_self[i]=logview_self[i];
   }
   logview_armed=1; logview_depth=0; logview_broken=0;
+  /* Arming by assignment is not the same as arming: logview_enabled() also
+     sets logview_t0 and logview_last, and this path skips it.  Left at
+     zero, the interim trigger's `t-logview_last>=logview_every' compares a
+     monotonic clock reading against 600 and is true immediately, so the
+     test's own logview_end(outer) fired a report.  Inside a solver the real
+     arming had already happened and it never showed.  Suppress the interim
+     report outright for the duration - the test has nothing to say about
+     it, and a report in the middle of the measurement is noise either way. */
+  logview_last=logview_now(); logview_every=0.;
 
   outer=logview_event("selftest outer");
   inner=logview_event("selftest inner");
@@ -267,6 +292,8 @@ ITG logview_selftest(void){
   }
   logview_nevent=save_nevent; logview_armed=save_armed;
   logview_depth=save_depth;   logview_broken=save_broken;
+  logview_last=save_last;     logview_every=save_every;
+  logview_intest=0;
   return bad;
 }
 

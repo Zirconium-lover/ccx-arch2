@@ -1,13 +1,13 @@
 {
   "fork_locals": 142,
-  "header_fanout": 208,
+  "header_fanout": 209,
   "layer_violations": 0,
   "locals_in_longest": 631,
   "longest_function_lines": 11313,
   "nonlingeo_lines": 11482,
   "over_param_budget": 36,
   "public_api": 153,
-  "selftests_deckless": 0,
+  "selftests_deckless": -20,
   "sites": {
     "BATCHTRACE": 3,
     "CENSUS": 1,

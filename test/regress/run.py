@@ -265,6 +265,34 @@ def main():
     print("preflight  path-follower diagnostic: %s"%
           (pf.stdout.strip().splitlines()[-1] if pf.stdout.strip() else "no output"))
     if pf.returncode!=0: preflight_bad+=1
+
+    # Every C and Fortran self test in the solver, run OUT of the solver.
+    # They used to run only as a side effect of a real analysis, from inside
+    # nonlingeo(), which meant a forty-line classifier could not be proved
+    # without a mesh and every production job printed their output.  Here
+    # they cost about fifteen milliseconds and they fail BEFORE any deck
+    # runs rather than twenty minutes into one.
+    #
+    # --twice because each of these measures with the real machinery and
+    # then puts it back; running the table twice is the only thing that
+    # checks the restore, and a test that passes alone and fails after
+    # itself has left the solver's state dirty for whatever runs next.
+    st=os.environ.get('CCX_SELFTEST') or str(pathlib.Path(exe).parent/'ccx_selftest')
+    if os.access(st,os.X_OK):
+        r=sh('%s --twice'%st,base_env([]))
+        last=[l for l in r.stdout.splitlines() if l.startswith('[SELFTEST]')]
+        print("preflight  solver self tests: %s"%(last[-1] if last else
+              "no summary (exit %d)"%r.returncode))
+        if r.returncode!=0:
+            preflight_bad+=1
+            for l in r.stdout.splitlines():
+                if ('FAIL' in l) or ('*ERROR' in l): print("           %s"%l)
+    else:
+        # Not a silent skip: a missing runner means the tests are not being
+        # run at all, and that is exactly the state this replaced.
+        print("preflight  solver self tests: MISSING (%s); build it with "
+              "`make -f Makefile.ubuntu2404.mkl ccx_selftest'"%st)
+        preflight_bad+=1
     spec=json.load(open(HERE/'cases.json'))
     cases=[c for c in spec['cases'] if not a.k or a.k in c['name']]
     outroot=pathlib.Path(a.o or (HERE/'_runs'/time.strftime('%Y%m%d-%H%M%S'))).resolve()

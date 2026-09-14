@@ -85,7 +85,9 @@ SCCXMAIN = ccx_$(CCXVERSION).c
 OCCXF = $(SCCXF:.f=.o)
 OCCXC = $(SCCXC:.c=.o)
 
-all: $(EXE)
+SELFTEST = ccx_selftest
+
+all: $(EXE) $(SELFTEST)
 
 ccx_$(CCXVERSION).a: $(OCCXF) $(OCCXC)
 	ar rs $@ $?
@@ -95,9 +97,19 @@ $(EXE): ccx_$(CCXVERSION).a ccx_$(CCXVERSION).c
 	$(FC) $(FFLAGS) $(EXTRA_LDFLAGS) -o $@ ccx_$(CCXVERSION).o \
 	      ccx_$(CCXVERSION).a $(LIBS)
 
+# The self test runner links against the SAME archive the solver does, so
+# what it exercises is what ships - not a copy and not a subset built with
+# different flags.  It costs one extra object and one extra link, and it
+# buys a second-long answer to a question that used to cost a finite
+# element analysis.
+$(SELFTEST): ccx_$(CCXVERSION).a selftest_main.c
+	$(CC) $(CFLAGS) -c selftest_main.c -o selftest_main.o
+	$(FC) $(FFLAGS) $(EXTRA_LDFLAGS) -o $@ selftest_main.o \
+	      ccx_$(CCXVERSION).a $(LIBS)
+
 clean:
-	rm -f *.o *.d *.mod *.a $(EXE)
+	rm -f *.o *.d *.mod *.a $(EXE) $(SELFTEST)
 
 .PHONY: all clean
 
--include $(OCCXC:.o=.d) ccx_$(CCXVERSION).d
+-include $(OCCXC:.o=.d) ccx_$(CCXVERSION).d selftest_main.d
