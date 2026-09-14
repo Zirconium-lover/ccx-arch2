@@ -22,6 +22,8 @@
 #include <pthread.h>
 #include <string.h>
 #include "CalculiX.h"
+#include "ccxopt.h"
+#include "ccxfork.h"
 #ifdef SPOOLES
 #include "spooles.h"
 #endif

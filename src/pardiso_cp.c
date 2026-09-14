@@ -21,6 +21,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include "CalculiX.h"
+#include "ccxopt.h"
 #include "pardiso.h"
 
 /* next 3 lines are for the simulateous use of PARDISO and PaStiX */

@@ -45,6 +45,9 @@
 #include <math.h>
 #include "CalculiX.h"
 
+#include "ccxopt.h"
+#include "logview.h"
+#include "ccxfork.h"
 #define LOGVIEW_MAXEVENT 48
 #define LOGVIEW_MAXDEPTH 32
 #define LOGVIEW_ROOT     LOGVIEW_MAXEVENT   /* the caller of the outermost */

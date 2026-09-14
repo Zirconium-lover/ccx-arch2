@@ -22,6 +22,7 @@
 #include <pthread.h>
 #include "CalculiX.h"
 
+#include "ccxopt.h"
 static ITG *jq1,*irow1,num_cpus,*n1;
 
 static double *x1,*yy=NULL,*ad1,*au1,*yy1;

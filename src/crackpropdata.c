@@ -21,6 +21,7 @@
 #include <stdlib.h>
 #include "CalculiX.h"
 
+#include "ccxfork.h"
 void crackpropdata(char *jobnamec,ITG *nelcon,double *elcon,double **crconp,
 		   ITG *ncrconst,ITG *ncrtem,ITG *imat,char *matname,
 		   ITG *ntmat_,ITG *ncmat_,char **paramp,ITG *nparam,ITG *law){

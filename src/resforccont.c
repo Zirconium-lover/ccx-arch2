@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include "CalculiX.h"
 
+#include "ccxopt.h"
 static ITG *nk1,*nactdof1,num_cpus,mt1;
 
 static double *vold1,*volddof1;

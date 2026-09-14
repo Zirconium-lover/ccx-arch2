@@ -22,6 +22,7 @@
 #include <pthread.h>
 #include "CalculiX.h"
 
+#include "ccxopt.h"
 static char *objectset1;
 
 static ITG *nobject1,*nodedesiboun1,ndesiboun1,*nx1,*ny1,*nz1,

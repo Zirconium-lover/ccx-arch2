@@ -130,6 +130,8 @@
 #include <math.h>
 #include "CalculiX.h"
 
+#include "ccxopt.h"
+#include "ccxfork.h"
 /* ------------------------------------------------------------------ */
 /* Pure core.  No globals, no I/O, no solver: everything here is a     */
 /* function of its arguments so that it can be checked in isolation.   */

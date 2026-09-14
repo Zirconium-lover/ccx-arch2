@@ -27,6 +27,7 @@
 #include <pthread.h>
 #include "CalculiX.h"
 
+#include "ccxfork.h"
 #include <stdlib.h>
 #include <math.h>
 #include <stdio.h>

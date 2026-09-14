@@ -24,6 +24,7 @@
 #include <ctype.h>
 
 #include "CalculiX.h"
+#include "ccxfork.h"
 #include "readfrd.h"
 
 void getglobalresults (char *masterfile,ITG **integerglobp,double **doubleglobp,

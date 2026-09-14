@@ -49,6 +49,7 @@
 #include <string.h>
 #include "CalculiX.h"
 
+#include "ccxfork.h"
 static const glob_census *glob_active=NULL;
 static ITG glob_reported=0;
 

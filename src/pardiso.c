@@ -22,6 +22,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include "CalculiX.h"
+#include "ccxopt.h"
+#include "logview.h"
+#include "ccxfork.h"
 #include "pardiso.h"
 
 /* next line is for the simultaneous use of PARDISO and PaStiX */

@@ -21,6 +21,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include "CalculiX.h"
+#include "ccxfork.h"
 #ifdef SPOOLES
 #include "spooles.h"
 #endif

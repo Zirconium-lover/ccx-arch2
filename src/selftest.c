@@ -57,6 +57,9 @@
 #include <fcntl.h>
 #include "CalculiX.h"
 
+#include "ccxopt.h"
+#include "logview.h"
+#include "ccxfork.h"
 /* damrank1test is Fortran and returns its count through an argument, so it
    gets a shim rather than a special case in the loop. */
 static ITG damrank1_selftest(void)

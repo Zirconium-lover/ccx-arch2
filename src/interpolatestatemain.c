@@ -22,6 +22,7 @@
 #include <pthread.h>
 #include "CalculiX.h"
 
+#include "ccxopt.h"
 static ITG *nstate1_,*mi1,*islavsurf1,*ne01,*islavsurfold1,numstart,numfaces,
   num_cpus;
 

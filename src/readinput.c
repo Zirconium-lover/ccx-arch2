@@ -22,6 +22,7 @@
 #include <ctype.h>
 #include "CalculiX.h"
 
+#include "ccxfork.h"
 void readinput(char *jobnamec,char **inpcp,ITG *nline,ITG *nset,
 	       ITG *ipoinp,ITG **inpp,ITG **ipoinpcp,ITG *ithermal,
                ITG *nuel,ITG *inp_size){

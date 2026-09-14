@@ -21,6 +21,7 @@
 #include <string.h>
 #include "CalculiX.h"
 
+#include "ccxfork.h"
 void writenewmesh(ITG *nktet,ITG *netet_,double *cotet,ITG *iquad,
 		  ITG *kontet,ITG *iedgmid,ITG *iedtet,ITG *mi,
 		  char *matname,ITG *ithermal,char *jobnamec,

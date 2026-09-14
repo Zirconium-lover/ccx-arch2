@@ -150,6 +150,7 @@
 #include <math.h>
 #include "CalculiX.h"
 
+#include "ccxfork.h"
 /* ------------------------------------------------------------------ */
 /* Pure kinematics.  No model, no globals: everything is a function of  */
 /* its arguments so that it can be checked in isolation.                */

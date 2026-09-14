@@ -25,6 +25,8 @@
 #include <string.h>
 #include "CalculiX.h"
 
+#include "logview.h"
+#include "ccxfork.h"
 #ifdef CALCULIX_MPI
 ITG myid = 0,nproc = 0;
 #endif

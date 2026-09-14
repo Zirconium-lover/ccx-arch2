@@ -22,6 +22,7 @@
 #include <pthread.h>
 #include "CalculiX.h"
 
+#include "ccxopt.h"
 static char *lakon1,*matname1,*sideload1;
 
 static ITG *nk1,*kon1,*ipkon1,*ne1,*ipompc1,*nodempc1,

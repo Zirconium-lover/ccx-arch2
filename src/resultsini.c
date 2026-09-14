@@ -22,6 +22,7 @@
 #include <pthread.h>
 #include "CalculiX.h"
 
+#include "ccxfork.h"
 /* AUTOSPC mask, owned by nonlingeo.c.  NULL when the feature is off, which is
    the default, so this file is byte-identical in behaviour unless
    CCX_DAMAGE_AUTOSPC is set. */

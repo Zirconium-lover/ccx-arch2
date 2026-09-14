@@ -46,6 +46,8 @@
 #include <string.h>
 #include "CalculiX.h"
 
+#include "ccxopt.h"
+#include "ccxfork.h"
 /* The values the eighty-eight locals carried at their declarations. */
 void damcont_init(damcont *c)
 {

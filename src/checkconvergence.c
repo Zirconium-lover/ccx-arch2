@@ -20,6 +20,8 @@
 #include <stdlib.h>
 #include "CalculiX.h"
 
+#include "ccxopt.h"
+#include "ccxfork.h"
 /* [DAMAGE RESCUE] owned by nonlingeo.c.  All three are 0 unless
    CCX_DAMAGE_REEQ_RESCUE is set, so every other caller of this
    routine (electromagnetics.c) is untouched.

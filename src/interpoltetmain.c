@@ -22,6 +22,7 @@
 #include <pthread.h>
 #include "CalculiX.h"
 
+#include "ccxopt.h"
 static ITG num_cpus,*nx1,*ny1,*nz1,*ifatet1,*netet1,*kontet1,*konl1,*nkf1,
   *iparent1,*ikf1;
 

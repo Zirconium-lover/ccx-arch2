@@ -43,6 +43,7 @@
 #include <ctype.h>
 #include "CalculiX.h"
 
+#include "ccxfork.h"
 /* What counts as softening in the present trial.  Same 1.e-12 as before,
    under the name of the question it answers rather than of the one caller
    that happened to be written first (it was EROSION_SOFTENING_D_TOL). */

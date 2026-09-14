@@ -36,6 +36,7 @@
 #include <stdlib.h>
 #include "CalculiX.h"
 
+#include "ccxfork.h"
 /* A non-positive assembled diagonal is not a small number, it is a different
    object: the node sits on a descending branch.  Treating it as dead is a
    bigger step than treating a collapsed one as dead, so it is separate and

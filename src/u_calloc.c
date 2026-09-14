@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include "CalculiX.h"
 
+#include "ccxopt.h"
 int log_realloc=-1;
 
 /*

@@ -49,6 +49,8 @@
 #include <string.h>
 #include "CalculiX.h"
 
+#include "logview.h"
+#include "ccxfork.h"
 static ITG wanted(int argc,char **argv,const char *name)
 {
   int i,nsel=0;

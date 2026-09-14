@@ -58,6 +58,8 @@
 #include <string.h>
 #include "CalculiX.h"
 
+#include "ccxopt.h"
+#include "ccxfork.h"
 /* One coefficient of the assembled operator, out of CalculiX's own storage.
 
    Returns 0 for a structurally absent coefficient, which is the correct

@@ -38,6 +38,9 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include "CalculiX.h"
+#include "ccxopt.h"
+#include "logview.h"
+#include "ccxfork.h"
 #include "spooles.h"
 
 #if USE_MT

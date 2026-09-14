@@ -36,6 +36,7 @@
 #include <string.h>
 #include "CalculiX.h"
 
+#include "ccxfork.h"
 void slownewton_init(slownewton *s)
 {
   memset(s,0,sizeof(*s));

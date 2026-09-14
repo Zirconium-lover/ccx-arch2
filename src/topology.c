@@ -40,6 +40,7 @@
 #include <string.h>
 #include "CalculiX.h"
 
+#include "ccxfork.h"
 void topo_txn_init(topo_txn *t)
 {
   t->elem=NULL; t->mat=NULL; t->ip=NULL; t->value=NULL;

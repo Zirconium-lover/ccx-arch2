@@ -106,6 +106,7 @@
 #include <string.h>
 #include "CalculiX.h"
 
+#include "ccxfork.h"
 void trial_results(const trialctx *t)
 {
   results(*(t->co),*(t->nk),*(t->kon),*(t->ipkon),*(t->lakon),*(t->ne),

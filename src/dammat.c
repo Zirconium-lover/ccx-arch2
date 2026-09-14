@@ -42,6 +42,7 @@
 #include <stdio.h>
 #include "CalculiX.h"
 
+#include "ccxfork.h"
 /* Progressive damage material classifier shared by DE1 and DM2.0.
    Rice-Tracey + Evolution=Displacement keeps the historical four-constant
    signature.  DM2.0 is identified by model type 3 and a variable-length

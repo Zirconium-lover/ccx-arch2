@@ -36,6 +36,8 @@
 #include <string.h>
 #include "CalculiX.h"
 
+#include "ccxopt.h"
+#include "ccxfork.h"
 /* The handshake between the rescue ladder and the convergence verdict.
    checkconvergence.c SETS ccx_rescue_req when it is about to stop a run
    that a rescue could still save, and reads ccx_rescue_arm to know whether

@@ -24,6 +24,7 @@
 #include <ctype.h>
 
 #include "CalculiX.h"
+#include "ccxfork.h"
 #include "readfrd.h"
 
 void utempread (double *t1,ITG *istep,char *jobnamec)

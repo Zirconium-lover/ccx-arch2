@@ -83,6 +83,7 @@
 #include <math.h>
 #include "CalculiX.h"
 
+#include "ccxfork.h"
 #define LC_INF 1.e30
 
 /* ------------------------------------------------------------------ */

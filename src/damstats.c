@@ -29,6 +29,8 @@
 #include <string.h>
 #include "CalculiX.h"
 
+#include "ccxopt.h"
+#include "ccxfork.h"
 void damstats_init(damstats *d){ memset(d,0,sizeof(*d)); }
 
 /* Exact DE1 element statistics.

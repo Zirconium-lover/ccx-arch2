@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "CalculiX.h"
+#include "ccxopt.h"
 extern int log_realloc;
 
 /*

@@ -21,6 +21,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include "CalculiX.h"
+#include "ccxopt.h"
 #include "sgi.h"
 
 ITG *irowsgi=NULL;

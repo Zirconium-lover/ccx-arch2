@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include "CalculiX.h"
 
+#include "ccxfork.h"
 /* Take the census.  Pure: it reads three arrays and writes one struct.
    addok may be NULL, in which case every node is considered - which is what
    the three original copies did when damage_addok had not been allocated. */

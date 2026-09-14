@@ -24,6 +24,7 @@
 #include <ctype.h>
 
 #include "CalculiX.h"
+#include "ccxfork.h"
 #include "readfrd.h"
 
 #define max(a,b) ((a) >= (b) ? (a) : (b))

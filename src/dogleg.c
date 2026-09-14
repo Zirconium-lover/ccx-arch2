@@ -44,6 +44,8 @@
 #include <string.h>
 #include "CalculiX.h"
 
+#include "ccxopt.h"
+#include "ccxfork.h"
 /* The initial values the forty-nine locals used to carry at their
    declarations.  Written once, here, where the struct is. */
 void dogleg_init(dogleg *d)

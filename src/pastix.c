@@ -28,6 +28,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include "CalculiX.h"
+#include "ccxopt.h"
+#include "ccxfork.h"
 #include "pastix.h"
 
 /* next 3 lines are for the simulateous use of PARDISO and PaStiX */

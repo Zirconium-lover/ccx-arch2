@@ -21,6 +21,7 @@
 #include <string.h>
 #include "CalculiX.h"
 
+#include "ccxopt.h"
 void predgmres_struct_mt(double *ad, double **aup, double *adb, double *aub, 
 			 double *sigma,double *b,ITG *icol, ITG *irow, 
 			 ITG *neq, ITG *nzs, ITG *symmetryflag, ITG *inputformat,

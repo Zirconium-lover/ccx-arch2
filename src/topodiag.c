@@ -60,6 +60,7 @@
 #include <math.h>
 #include "CalculiX.h"
 
+#include "ccxfork.h"
 /* ------------------------------------------------------------------ */
 /* Union-find.  Pure, no model, so the self test can drive it directly. */
 /* ------------------------------------------------------------------ */

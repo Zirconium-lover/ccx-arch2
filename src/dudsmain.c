@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "CalculiX.h"
+#include "ccxopt.h"
 #ifdef SPOOLES
    #include "spooles.h"
 #endif

@@ -22,6 +22,8 @@
 #include <string.h>
 #include <pthread.h>
 #include "CalculiX.h"
+#include "ccxopt.h"
+#include "logview.h"
 #include "mortar.h"
 
 static char *lakon1,*matname1,*sideload1;

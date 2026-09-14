@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "CalculiX.h"
+#include "ccxfork.h"
 #ifdef SPOOLES
 #include "spooles.h"
 #endif

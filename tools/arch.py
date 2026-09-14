@@ -299,27 +299,71 @@ def layer_violations(deps):
                 bad.append((m,LAYERS[m],d,LAYERS[d]))
     return bad
 
-def public_api(own):
-    """(name, params) for every extension function DECLARED in the shared
-    header - i.e. every one whose signature the whole tree can see, and
-    therefore every one that costs a full rebuild to change."""
-    h=(SRC/'CalculiX.h').read_text(errors='replace')
-    h=re.sub(r'/\*.*?\*/','',h,flags=re.S)
+def fork_headers():
+    """The headers that declare this extension's interface.
+
+    Found by asking which headers declare a function some extension file
+    defines, rather than by keeping a list: the block is being split module
+    by module, and a list would go stale on the commit after the one that
+    wrote it."""
+    own=module_symbols()
     out=[]
-    for name,args in re.findall(
-            r'\n(?:[A-Za-z_][\w \t*]*?)\b([A-Za-z_]\w*)\s*\(([^;{}]*?)\)\s*;',h,re.S):
-        if name not in own: continue
-        a=args.strip()
-        out.append((name,0 if a in ('','void') else a.count(',')+1))
+    for h in sorted(SRC.glob('*.h')):
+        if h.name=='CalculiX.h': continue
+        txt=re.sub(r'/\*.*?\*/','',h.read_text(errors='replace'),flags=re.S)
+        if any(re.search(r'\b'+re.escape(n)+r'\s*\(',txt) for n in own):
+            out.append(h)
+    return out
+
+def public_api(own):
+    """(name, params) for every extension function DECLARED in a header -
+    i.e. every one whose signature is visible outside its own file, and
+    therefore every one that costs a rebuild to change."""
+    out=[]
+    for h in [SRC/'CalculiX.h']+fork_headers():
+        txt=re.sub(r'/\*.*?\*/','',h.read_text(errors='replace'),flags=re.S)
+        for name,args in re.findall(
+                r'\n(?:[A-Za-z_][\w \t*]*?)\b([A-Za-z_]\w*)\s*\(([^;{}]*?)\)\s*;',txt,re.S):
+            if name not in own: continue
+            a=args.strip()
+            out.append((name,0 if a in ('','void') else a.count(',')+1))
     return sorted(set(out),key=lambda x:(-x[1],x[0]))
 
+def includers():
+    """header name -> the .c files that reach it, following headers.
+
+    Transitive, because that is what make rebuilds: ccxfork.h includes
+    ccxopt.h, so touching ccxopt.h costs everything that reaches ccxfork.h
+    too.  Counting only direct includes would have flattered the split that
+    introduced this."""
+    inc={}
+    for f in list(SRC.glob('*.c'))+list(SRC.glob('*.h')):
+        inc[f.name]=set(re.findall(r'#\s*include\s*"([^"]+)"',
+                                   f.read_text(errors='replace')))
+    def reaches(start,target,seen=None):
+        if seen is None: seen=set()
+        if start in seen: return False
+        seen.add(start)
+        for h in inc.get(start,()):
+            if h==target or reaches(h,target,seen): return True
+        return False
+    out={}
+    for h in [SRC/'CalculiX.h']+fork_headers():
+        out[h.name]=sum(1 for c in SRC.glob('*.c') if reaches(c.name,h.name))
+    return out
+
 def header_fanout():
-    """How many .c files recompile when the shared header changes."""
-    n=0
-    for p in sorted(SRC.glob('*.c')):
-        if re.search(r'#\s*include\s*"CalculiX\.h"',p.read_text(errors='replace')):
-            n+=1
-    return n,len(list(SRC.glob('*.c')))
+    """The cost of changing an extension INTERFACE: how many .c files
+    recompile when the worst-placed extension header is touched.
+
+    Not CalculiX.h's fan-out any more.  That number is now about stock
+    CalculiX, which this work is not changing and whose 5,500 lines are not
+    edited in the course of it; what matters is what an extension change
+    costs, and that is the widest of the headers the extension owns."""
+    inc=includers()
+    fork={k:v for k,v in inc.items() if k!='CalculiX.h'}
+    worst=max(fork.values()) if fork else 0
+    return worst,len(list(SRC.glob('*.c')))
 
 def selftests():
     """(how many self tests exist, how many can be run without a deck).
@@ -417,6 +461,7 @@ def measure():
     m['over_param_budget']=sum(1 for _,n in api if n>PARAM_BUDGET)
     m['worst_signatures']=[{'name':n,'params':k} for n,k in api[:10] if k>PARAM_BUDGET]
     m['header_fanout']=fan
+    m['header_cost']=includers()
     m['c_files']=ncfile
     m['selftests']=ntest
     m['selftests_deckless']=ndeckless
@@ -454,8 +499,10 @@ def table(m):
                                  m['widest_signature'],m['widest_signature_name']))
     o.append("  %-46s %d"%("signatures over the %d-argument budget"%PARAM_BUDGET,
                            m['over_param_budget']))
-    o.append("  %-46s %d of %d"%("files recompiled by a header change",
+    o.append("  %-46s %d of %d"%("files recompiled by an interface change",
                                  m['header_fanout'],m['c_files']))
+    for h,n in sorted(m['header_cost'].items(),key=lambda kv:-kv[1]):
+        o.append("      %-42s %d"%(h,n))
     o.append("  %-46s %d of %d"%("self tests runnable without a deck",
                                  m['selftests_deckless'],m['selftests']))
     if m['worst_signatures']:

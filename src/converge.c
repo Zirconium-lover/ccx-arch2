@@ -47,6 +47,7 @@
 #include <string.h>
 #include "CalculiX.h"
 
+#include "ccxfork.h"
 void converge_init(converge *c,double qam_floor,ITG mask_force,
                    const ITG *mask,ITG mask_nk)
 {

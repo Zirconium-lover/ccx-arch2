@@ -58,6 +58,7 @@
 #include <math.h>
 #include "CalculiX.h"
 
+#include "ccxfork.h"
 /* alpha0 is the FIRST rung, and it is not 1: the caller computes a secant
    step sum1/(sum1-sum2) and clamps it into [floor, 0.80] before the ladder
    ever runs.  Overwriting it with 1 changes the search - measured, the

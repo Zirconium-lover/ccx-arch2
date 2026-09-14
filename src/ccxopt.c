@@ -40,6 +40,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include "CalculiX.h"
+#include "ccxopt.h"
+#include "ccxfork.h"
 #include "ccxopt_list.h"
 #include "ccxopt_decl.h"
 

@@ -41,6 +41,8 @@
 #include <string.h>
 #include "CalculiX.h"
 
+#include "ccxopt.h"
+#include "ccxfork.h"
 /* Number of active damage integration points for the standard 3-D
    continuum elements used by calcdamage.  For uncommon/composite
    formulations fall back to mi[0], i.e. the allocated damage stride. */

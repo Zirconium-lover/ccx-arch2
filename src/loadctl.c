@@ -37,6 +37,7 @@
 #include <string.h>
 #include "CalculiX.h"
 
+#include "ccxfork.h"
 void loadctl_init(loadctl *c)
 {
   memset(c,0,sizeof(*c));

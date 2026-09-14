@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include "CalculiX.h"
 
+#include "ccxfork.h"
 /*  One JSON object per line, prefixed so it can be grepped out of a log that
  *  also carries the solver's own chatter:
  *
