@@ -342,6 +342,24 @@
     "tangent_ratio": 1000000.0,
     "in_band": 6
    }
+  },
+  {
+   "name": "fast-plain-opcheck",
+   "what": "the operator check itself, which no case in this gate had ever run: CCX_STRUCT_FD_* is one of the switch families nothing sets, so the probe had the coverage of a switch that does not exist.  It arms at increment 3 iteration 2, compares the ASSEMBLED tangent column by column against a central difference of the internal force, and stops the run - so last_inc is 2, the last increment that completed.  MEASURED on the plain fast deck: 27 columns, 43200 coefficients, 0 wrong and 0 kink.  `wrong' is the only one of the four classes that accuses the operator; `kink' accuses the model of not being differentiable there, which on a deck whose cohesive plane has not yet opened it is not.  This case exists because the probe was moved out of nonlingeo() into opcheck.c and byte identity over the other sixteen cases says nothing about code none of them executes.",
+   "kind": "fast",
+   "variant": "plain",
+   "env": [
+    "CCX_STRUCT_FD_INC=3",
+    "CCX_STRUCT_FD_ITER=2"
+   ],
+   "expect": {
+    "rc": 0,
+    "last_inc": 2,
+    "theta": "0.200000E-02",
+    "opcheck_cols": 27,
+    "opcheck_wrong": 0,
+    "opcheck_kink": 0
+   }
   }
  ],
  "selftests_required": [

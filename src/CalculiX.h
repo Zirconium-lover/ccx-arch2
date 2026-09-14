@@ -5422,6 +5422,8 @@ typedef struct{
 }pathdrv;
 
 void pathdrv_init(pathdrv *p);
+/* the driver's switches, read beside the method they drive; it refuses
+   rather than degrades.  Declared after trialctx exists. */
 double pathfollow_dot(const double *a,const double *b,ITG n);
 double pathfollow_project(const double *fh,const double *a,const double *c,
                           const ITG *nactdof,ITG nk,ITG mt);
@@ -5997,11 +5999,27 @@ typedef struct{
   (T).ne1d2d=&ne1d2d; \
   }while(0)
 
+/* WHICH OF THESE MOVES THE SCRATCH ARRAYS.  A caller that binds a local
+   alias to *(t->v), *(t->stx), *(t->fn) or *(t->inum) needs to know, and
+   the answer is: trial_results() and trial_reduce() do NOT - they read and
+   write through the arrays that are there.  trial_evaluate() and
+   trial_residual() free and reallocate all four, so an alias taken before
+   one of them is dangling after it.  opcheck_probe() aliases v and fn and
+   is correct because it only ever calls trial_results(); rescue_backtrack()
+   reads stx through the context at each use because it does not have that
+   luxury. */
 void trial_results(const trialctx *t);          /* evaluate the model   */
-void trial_evaluate(const trialctx *t);         /* ...with its scratch  */
+void trial_evaluate(const trialctx *t);         /* ...with its scratch: REALLOCATES v,stx,fn,inum */
 void trial_reduce(const trialctx *t,double *dst);/* ...reduce to a residual */
-void trial_residual(const trialctx *t,double *dst);/* scratch + both halves */
+void trial_residual(const trialctx *t,double *dst);/* scratch + both halves: REALLOCATES */
 ITG  trial_check(const trialctx *t);
+/* the operator check's measurement: the assembled tangent against a
+   central difference, split by population.  A diagnostic that ends the
+   run; the caller keeps the guard. */
+void opcheck_probe(opcheckdrv *o,const trialctx *t,const ITG *ndmat_,
+                   const ITG *damcat,ITG iit);
+void pathdrv_configure(pathdrv *p,const loadctl *c,const trialctx *t,
+                       const ITG *isolver,ITG ncont);
 
 /* The trust-region LOOP.  239 lines that could not be moved before
    trialctx and the dogleg object existed, because there was no signature

@@ -279,6 +279,17 @@ matter of opinion.
    worse than `tools/arch_budget.json`. A number allowed to drift back up
    is not a measurement.
 
+There is a limit to what check 2 can say, and it has to be said out loud:
+**byte identity over the gate proves nothing about code the gate does not
+execute.** 133 of the 153 switches are set by no case, so every mechanism
+behind one of them is moved on the strength of the compiler and of reading.
+When a mechanism like that is moved, run it directly, before and after, and
+diff its own output — that is how the operator check was verified (47
+`[OPCHECK]` lines identical across the move) — and then, if the mechanism
+is worth keeping, give it a case so the next person does not have to. The
+operator check has one now: `fast-plain-opcheck`, asserting 27 columns, 0
+wrong and 0 kink, and observed going red when the expectation is moved.
+
 For a new object, two more:
 
 - **The field set must match exactly.** When a cluster of locals becomes a

@@ -57,6 +57,29 @@ def census(log):
         if worst is None or v<worst: worst=v
     return mx,worst
 
+def opcheck(log):
+    """What the operator check measured, as three integers.
+
+    The probe compares the assembled tangent column by column against a
+    central difference and classifies every coefficient: ok, kink (the two
+    one-sided differences disagree, so the function is not smooth there),
+    wrong (both sides agree with each other and not with the matrix), or
+    both.  Only `wrong' is an accusation against the operator; `kink' is an
+    accusation against the model being differentiable, which on a deck with
+    a cohesive law it need not be.
+
+    None of this was ever checked by a test.  CCX_STRUCT_FD_* is one of the
+    switch families no case in this gate ever set, so the whole probe -
+    every line of it - had exactly as much coverage as the switches that do
+    not exist."""
+    try: txt=open(log,errors='replace').read()
+    except OSError: return None,None,None
+    rows=re.findall(r'^\[OPCHECK\] node .*?ok=(\d+)\s+kink=(\d+)\s+wrong=(\d+)\s+both=(\d+)',
+                    txt,re.M)
+    if not rows: return 0,None,None
+    tot=lambda i: sum(int(r[i]) for r in rows)
+    return len(rows),tot(2)+tot(3),tot(1)
+
 def check_switches(log,want):
     """Did the switches the case asked for actually reach the binary?
 
@@ -146,6 +169,8 @@ def one(case,outroot,exe,required,lines):
     exp=case['expect']
     if 'masked_max' in exp or 'worst_ratio' in exp:
         got['masked_max'],got['worst_ratio']=census(log)
+    if 'opcheck_cols' in exp or 'opcheck_wrong' in exp:
+        got['opcheck_cols'],got['opcheck_wrong'],got['opcheck_kink']=opcheck(log)
     if 'check_close' in exp:
         r=sh('python3 %s/test/pathfollow/check_close.py %s --zeta %s'
              %(ROOT,rundir,case.get('zeta','0')),base_env([]))

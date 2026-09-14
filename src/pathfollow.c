@@ -992,3 +992,245 @@ void pathdrv_init(pathdrv *p)
   p->dtheta_eng=1.e-3;
   p->ccgrow=1.1;
 }
+
+/* ---- arming ------------------------------------------------------------
+
+   The driver's own switches, read beside the method they drive.  It
+   refuses rather than degrades, and every refusal here is a REASON rather
+   than a fallback: a positive tau, nothing else already driving the load
+   factor, and a domain in which the bordered system is exactly the one
+   this file verifies.  A path follower that silently ran the stock control
+   instead would be worse than none, because the run would look like a
+   measurement of path following.
+
+   Crack control rides on the same machinery and arms in the same block, so
+   it is configured here too; the two share pathdrv and are mutually
+   exclusive with each other as well.
+
+   Everything the mesh side needs comes through trialctx.  isolver and
+   ncont are passed because they are neither results() arguments nor state
+   of this object - they are facts about the run this mechanism refuses
+   on. */
+
+void pathdrv_configure(pathdrv *p,const loadctl *c,const trialctx *t,
+                       const ITG *isolver,ITG ncont)
+{
+  const char *e;
+    double *co=*(t->co),*vold=*(t->vold);
+    ITG *ipkon=*(t->ipkon),*kon=*(t->kon),*nactdof=*(t->nactdof);
+    ITG *ne=*(t->ne),*nk=*(t->nk),*neq=*(t->neq),*nboun=*(t->nboun);
+    ITG *nmethod=*(t->nmethod),*ithermal=*(t->ithermal),*mortar=*(t->mortar);
+    ITG *iexpl=*(t->iexpl),*mi=*(t->mi);
+    char *lakon=*(t->lakon);
+    ITG num_cpus=*(t->num_cpus),mt=mi[1]+1,isiz;
+
+  p->env=ccxopt_getenv("CCX_PATHFOLLOW");
+  if(p->env!=NULL){
+    p->tauv=atof(p->env);
+    if(!(p->tauv>0.)){
+      printf("[PATHFOLLOW] *ERROR: CCX_PATHFOLLOW must be a positive "
+             "dissipation increment; got \"%s\".  Not armed.\n",p->env);
+    }else if(c->diss_ctrl>=1){
+      printf("[PATHFOLLOW] *ERROR: CCX_PATHFOLLOW and "
+             "CCX_DISSIPATION_CONTROL both drive the load factor; "
+             "set only one.  Not armed.\n");
+    }else if((*nmethod!=1)||(*ithermal>=2)||(*mortar>1)||(ncont!=0)||
+             (*iexpl>1)||(*nboun<=0)||
+             ((*isolver!=0)&&(*isolver!=7))){
+      printf("[PATHFOLLOW] not armed: outside the verified domain "
+             "(nmethod=%" ITGFORMAT " ithermal=%" ITGFORMAT " mortar=%"
+             ITGFORMAT " ncont=%" ITGFORMAT " iexpl=%" ITGFORMAT
+             " nboun=%" ITGFORMAT " isolver=%" ITGFORMAT
+             "; needs static, ithermal<2, no contact, implicit, "
+             "prescribed dofs, SPOOLES or PARDISO)\n",
+             *nmethod,*ithermal,*mortar,ncont,*iexpl,*nboun,*isolver);
+    }else if(pathfollow_selftest()!=0){
+      printf("[PATHFOLLOW] *ERROR: the bordered-algebra self test "
+             "failed; refusing to arm.\n");
+    }else if(pathfollow_arm(p->tauv,neq[1])==0){
+      printf("[PATHFOLLOW] *ERROR: could not allocate; not armed.\n");
+    }else{
+      NNEW(p->uf,double,neq[1]);
+      NNEW(p->uref,double,mt**nk);
+      isiz=mt**nk;cpypardou(p->uref,vold,&isiz,&num_cpus);
+      p->neqarm=neq[1];
+      p->taucur=p->tauv;
+      p->on=1;
+      if(ccxopt_getenv("CCX_PATHFOLLOW_CLIP")!=NULL)
+        p->clip=atof(ccxopt_getenv("CCX_PATHFOLLOW_CLIP"));
+      if(!(p->clip>0.)) p->clip=0.05;
+      if(ccxopt_getenv("CCX_PATHFOLLOW_LINCHECK")!=NULL)
+        p->lincheck=atoi(ccxopt_getenv("CCX_PATHFOLLOW_LINCHECK"));
+      if(ccxopt_getenv("CCX_PATHFOLLOW_DTHETA")!=NULL)
+        p->dtheta_eng=atof(ccxopt_getenv("CCX_PATHFOLLOW_DTHETA"));
+      if(!(p->dtheta_eng>0.)) p->dtheta_eng=1.e-3;
+      printf("[PATHFOLLOW] armed: tau=%.6e per increment, "
+             "|dlambda| clipped at %.3e per iteration.\n",
+             p->tauv,p->clip);
+      printf("[PATHFOLLOW] lambda is decoupled from the step time and "
+             "MAY DECREASE; theta stays monotone so dtime>0.\n");
+      printf("[PATHFOLLOW] ordinary control until the measured "
+             "dissipation of an accepted increment reaches 0.2*tau, "
+             "then the constraint takes over.\n");
+
+      /* ---- crack-opening control ---------------------------------
+         Build the control functional c once from the REFERENCE geometry
+         of the UC6 facets: phi(u)=c^T u is the mean normal separation, a
+         linear functional, so dg/du=c and dg/dlambda=0 are exact by
+         construction.  See the block comment in pathfollow.c for why this
+         replaces the dissipation constraint on a localised cohesive
+         crack. */
+
+      /* ---- mixed-mode crack control ------------------------------
+         CCX_CRACK_CONTROL=<dphi> arms the generalisation of the above:
+         the control coordinate is the effective separation the UC6 law
+         itself advances along, deff^2 = max(dn,0)^2+beta*|ds|^2, frozen
+         into an affine functional once per attempt.  The two are
+         mutually exclusive; CCX_PATHFOLLOW_COD is kept unchanged so that
+         the Mode-I result stays a regression test. */
+
+      if((ccxopt_getenv("CCX_CRACK_CONTROL")!=NULL)&&
+         (ccxopt_getenv("CCX_PATHFOLLOW_COD")!=NULL)){
+        printf("[CRACKCTL] *ERROR: CCX_CRACK_CONTROL and "
+               "CCX_PATHFOLLOW_COD both define the control coordinate; "
+               "set only one.  Not armed.\n");
+      }else if(ccxopt_getenv("CCX_CRACK_CONTROL")!=NULL){
+        char *cce;
+        ITG ce,ncoh=0;
+        for(ce=0;ce<*ne;ce++){
+          if((lakon[8*ce]!='U')||(lakon[8*ce+1]!='C')||
+             (lakon[8*ce+2]!='6')) continue;
+          ncoh++;
+        }
+        if(ncoh==0){
+          printf("[CRACKCTL] *ERROR: CCX_CRACK_CONTROL needs UC6 "
+                 "cohesive elements; none found.  Not armed.\n");
+        }else if(crackcontrol_selftest()!=0){
+          printf("[CRACKCTL] *ERROR: the kinematics self test failed; "
+                 "refusing to arm.\n");
+        }else{
+          p->dphi=atof(ccxopt_getenv("CCX_CRACK_CONTROL"));
+          if(!(p->dphi>0.)){
+            printf("[CRACKCTL] *ERROR: CCX_CRACK_CONTROL must be a "
+                   "positive control increment.  Not armed.\n");
+          }else{
+            /* Default DISS: the process zone restricted to where it is
+               LOADING.  Measured on the target, the unrestricted zone
+               mean runs backwards while the loading mean advances
+               monotonically - see crackcontrol.c. */
+            p->ccmode=2;
+            cce=ccxopt_getenv("CCX_CRACK_CONTROL_MODE");
+            if(cce!=NULL){
+              if((strcmp(cce,"MEAN")==0)||(strcmp(cce,"0")==0)) p->ccmode=0;
+              else if((strcmp(cce,"ZONE")==0)||(strcmp(cce,"1")==0)) p->ccmode=1;
+              else if((strcmp(cce,"DISS")==0)||(strcmp(cce,"2")==0)) p->ccmode=2;
+              else printf("[CRACKCTL] unknown CCX_CRACK_CONTROL_MODE "
+                          "\"%s\"; keeping DISS\n",cce);
+            }
+            cce=ccxopt_getenv("CCX_CRACK_CONTROL_ENGAGE");
+            if(cce!=NULL) p->ccengage=atoi(cce);
+            cce=ccxopt_getenv("CCX_CRACK_CONTROL_EPS");
+            if(cce!=NULL) p->eps=atof(cce);
+            if(!(p->eps>0.)) p->eps=1.e-5;
+            cce=ccxopt_getenv("CCX_CRACK_CONTROL_GROW");
+            if(cce!=NULL) p->ccgrow=atof(cce);
+            if(!(p->ccgrow>=1.)) p->ccgrow=1.1;
+            NNEW(p->cvec,double,neq[1]);
+            if(pathfollow_cod_arm(p->cvec,neq[1])==1){
+              p->codmode=2;
+              p->ccarmed=1;
+              p->dphicur=p->dphi;
+              p->engaged=0;      /* ordinary control until the crack has
+                                    a process zone to control          */
+              printf("[CRACKCTL] armed on %" ITGFORMAT " UC6 facet(s): "
+                     "mode=%s, control increment dphi=%.6e per "
+                     "increment.\n",ncoh,
+                     (p->ccmode==0)?"MEAN (all facets)":
+                     ((p->ccmode==1)?"ZONE (process zone)":
+                      "DISS (cohesive dissipation)"),p->dphi);
+              printf("[CRACKCTL] the functional is refrozen from the "
+                     "committed state at every attempt and the "
+                     "constraint is incremental: g = c^T(u-u_n) - "
+                     "dphi.\n");
+              if(p->ccengage>0)
+                printf("[CRACKCTL] engagement deferred to increment %"
+                       ITGFORMAT ".\n",p->ccengage);
+              else
+                printf("[CRACKCTL] engages as soon as the process zone "
+                       "is non-empty.\n");
+            }else{
+              printf("[CRACKCTL] *ERROR: could not arm.\n");
+            }
+          }
+        }
+      }
+
+      if(ccxopt_getenv("CCX_PATHFOLLOW_COD")!=NULL){
+        ITG ce,ci,ck,cip,cn,cnp,cdof,ncoh=0;
+        double ca[3],cb[3],cnv[3],cnorm,csh[3],cw;
+        for(ce=0;ce<*ne;ce++){
+          if(ipkon[ce]<0) continue;
+          if((lakon[8*ce]!='U')||(lakon[8*ce+1]!='C')||
+             (lakon[8*ce+2]!='6')) continue;
+          ncoh++;
+        }
+        if(ncoh==0){
+          printf("[PATHFOLLOW] *ERROR: CCX_PATHFOLLOW_COD needs UC6 "
+                 "cohesive elements; none found.  Not armed.\n");
+        }else{
+          NNEW(p->cvec,double,neq[1]);
+          cw=1./(3.*(double)ncoh);
+          for(ce=0;ce<*ne;ce++){
+            if(ipkon[ce]<0) continue;
+            if((lakon[8*ce]!='U')||(lakon[8*ce+1]!='C')||
+               (lakon[8*ce+2]!='6')) continue;
+            for(ck=0;ck<3;ck++){
+              ca[ck]=co[3*(kon[ipkon[ce]+1]-1)+ck]
+                    -co[3*(kon[ipkon[ce]+0]-1)+ck];
+              cb[ck]=co[3*(kon[ipkon[ce]+2]-1)+ck]
+                    -co[3*(kon[ipkon[ce]+0]-1)+ck];
+            }
+            cnv[0]=ca[1]*cb[2]-ca[2]*cb[1];
+            cnv[1]=ca[2]*cb[0]-ca[0]*cb[2];
+            cnv[2]=ca[0]*cb[1]-ca[1]*cb[0];
+            cnorm=sqrt(cnv[0]*cnv[0]+cnv[1]*cnv[1]+cnv[2]*cnv[2]);
+            if(!(cnorm>1.e-30)) continue;
+            for(ck=0;ck<3;ck++) cnv[ck]/=cnorm;
+            for(cip=0;cip<3;cip++){
+              for(ci=0;ci<3;ci++) csh[ci]=1./6.;
+              csh[cip]=2./3.;
+              for(ci=0;ci<3;ci++){
+                cn =kon[ipkon[ce]+ci];      /* minus side */
+                cnp=kon[ipkon[ce]+ci+3];    /* plus side  */
+                for(ck=1;ck<mt;ck++){
+                  cdof=nactdof[mt*(cnp-1)+ck];
+                  if(cdof>0) p->cvec[cdof-1]+=cw*csh[ci]*cnv[ck-1];
+                  cdof=nactdof[mt*(cn-1)+ck];
+                  if(cdof>0) p->cvec[cdof-1]-=cw*csh[ci]*cnv[ck-1];
+                }
+              }
+            }
+          }
+          p->dphi=atof(ccxopt_getenv("CCX_PATHFOLLOW_COD"));
+          if(!(p->dphi>0.)) p->dphi=5.e-5;
+          if(pathfollow_cod_arm(p->cvec,neq[1])==1){
+            p->codmode=1;
+            p->engaged=1;     /* no warm-up: phi is meaningful at once */
+            printf("[PATHFOLLOW] crack-opening control armed on %"
+                   ITGFORMAT " UC6 facet(s); mean normal separation "
+                   "advances by %.6e per increment.\n",ncoh,p->dphi);
+            {ITG cnz=0; double cnn=0.;
+             for(ce=0;ce<neq[1];ce++){
+               cnn+=p->cvec[ce]*p->cvec[ce];
+               if(p->cvec[ce]!=0.) cnz++;}
+             printf("[PATHFOLLOW] control functional: |c|=%.6e, %"
+                    ITGFORMAT " non-zero of %" ITGFORMAT " equations\n",
+                    sqrt(cnn),cnz,neq[1]);}
+            printf("[PATHFOLLOW] the control is monotone through a "
+                   "snap-back by construction; lambda is free.\n");
+          }
+        }
+      }
+    }
+  }
+}
