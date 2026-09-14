@@ -6119,6 +6119,7 @@ ITG  erosion_selftest(void);
 /* Whether a material's damage is progressive is a Material question and
    that object does not exist yet; erosion.c owns the answer meanwhile and
    topology.c calls it directly rather than inventing a dependency. */
+ITG dammat_selftest(void);
 ITG damage_progressive_material(ITG imat,const ITG *ndmcon,
                                 const double *dmcon,ITG ndmat,ITG ntmat);
 

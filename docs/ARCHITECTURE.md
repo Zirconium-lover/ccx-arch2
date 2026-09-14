@@ -88,6 +88,82 @@ long, and that some lines look alike. Duplication is evidence, not a
 verdict; the forty-line deletion block appearing twice mattered because
 both copies were one decision, not because they were identical.
 
+## The other half of the rule
+
+Everything above is bottom-up: it says what may be pulled out of a long
+function. It was enough to get twenty-three files out of `nonlingeo()` and
+it is not enough to keep them worth having. A tree can satisfy all four
+criteria on every file and still be miserable to work in, because the four
+say nothing about what it COSTS to change one. Four more, and each is a cost
+somebody pays on every change rather than a matter of taste:
+
+5. **A signature is an interface, or it is a copy of the caller's locals.**
+   A function taking twenty-two arguments has no boundary: every local the
+   caller adds is an argument it grows. The budget is six, and when a
+   signature will not fit, the thing to look for is the missing object, not
+   a shorter name. Measured here, the lists got long for three separable
+   reasons, with three different fixes: scalars DERIVED from the model and
+   passed by hand (`mi[0]`, `mi[1]+1` — thirty-three hand-offs across the
+   worst twenty-seven), iteration state that no object owns (`ram`, `uam`,
+   `qam`, `iit`), and model state the evaluator's context never learned
+   about (`dambase`, `dmcon`). None of the three is fixed by editing a
+   signature.
+
+6. **Dependencies go one way, and the way is written down.** Six layers,
+   listed in `tools/arch.py`; a module may call strictly down. The table was
+   not designed — it was derived from the call graph that already existed,
+   and it is checked rather than believed. This matters most for the files
+   that are meant to be harmless: an observer that can only call downward
+   cannot change an answer, and that is a stronger statement than
+   `damdiag.c`'s promise not to.
+
+   The rule earned its keep the hour it was written. `topology.c`, which
+   says what the model IS, was calling `damage_progressive_material()` in
+   `erosion.c`, which decides what LEAVES the model — a question about a
+   material card, answered inside a deletion policy because deletion was the
+   caller that got written first. `erosion.c` had already had the right
+   instinct and applied it to the wrong thing: the constant beside that
+   function carries a comment saying it was renamed "under the name of the
+   question it answers rather than of the one caller that happened to be
+   written first". The name moved; the file did not. It lives in
+   `dammat.c` now, below both callers.
+
+7. **A test that needs a deck is a test that runs once a day.** All
+   nineteen self tests in this tree are compiled into the solver and reached
+   only from inside `nonlingeo()`, so proving a forty-line classifier costs
+   a finite element analysis — and every production job pays for it too,
+   printing between 56 and 82 lines of self test output, depending on which
+   switches arm, before it reaches increment 1. Criterion 4 above says an
+   object must be able to fail a test; this one says the test has to be
+   cheap enough that it actually got run. `dammat_selftest()` found two
+   bugs in its own first hour — an offset that made three assertions
+   unfailable, and a missing case that let `nconst==4` relax to `nconst>=4`
+   unnoticed — because it could be compiled and run in a second.
+
+8. **The rebuild is part of the interface.** Changing any of the 153
+   extension declarations recompiles 208 of 208 `.c` files, because they all
+   live in `CalculiX.h`. That is the price of every experiment, paid by
+   whoever tries anything, and it is not a question of style.
+
+Where these come from, in the same spirit as the shapes above: the layering
+rule is the ordinary package-dependency discipline (Martin's stable-
+dependencies principle, stated as a table rather than as advice); the
+signature budget is why PETSc passes one `ctx` instead of an argument list
+and why deal.II's `WorkStream` passes `ScratchData`; and the separate test
+binary is the arrangement every one of those libraries already has and this
+tree does not.
+
+### Why these four and not others
+
+Each has a direction that is not arguable. Nobody wants a wider signature, a
+dependency cycle, a slower test or a bigger rebuild, so each can be a
+ratchet — `tools/arch.py --check` fails when any of them drifts up. Numbers
+that trade off against each other cannot be ratcheted, and a number that is
+allowed to drift back up is not a measurement, it is a mood.
+
+The layering entry is a floor rather than a ratchet: the table was adopted on
+a tree with zero violations, so any violation at all is new.
+
 ## The objects
 
 Each file answers the question in its own first paragraph. Sizes are

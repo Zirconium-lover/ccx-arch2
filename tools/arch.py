@@ -162,8 +162,171 @@ def ext_modules():
            'lsladder.c','crackcontrol.c','pathfollow.c','ccxopt.c','logview.c',
            'damstate.c','stiffcensus.c','loadcut.c','opcheck.c',
            'damdiag.c','erosion.c','dogleg.c','damcont.c','damstats.c',
-           'slownewton.c','rescue.c','trial.c','loadctl.c']
+           'slownewton.c','rescue.c','trial.c','loadctl.c','dammat.c',
+           'census.c','monitor.c']
     return [SRC/n for n in names if (SRC/n).exists()]
+
+# ---------------------------------------------------------------------------
+# The second half of the measurement: THE INTERFACE.
+#
+# Everything above measures locality - how far apart the pieces of one
+# decision sit.  That was the complaint as it was handed over, and it is only
+# half of the thing.  A tree can have every decision in its own file and
+# still be miserable to work in, and the numbers that say so are different
+# ones:
+#
+#   4. the WIDEST PUBLIC SIGNATURE.  A function taking twenty-two arguments
+#      does not have an interface; it has a copy of its caller's locals, and
+#      every change to the caller is a change to it.  Measured here: the
+#      worst signature, and how many are over the budget.  The three reasons
+#      the lists got long are worth naming because they have three different
+#      fixes: derived scalars passed by hand (mi[0], mi[1]+1 - thirty-three
+#      hand-offs), iteration state that no object owns (ram, uam, qam, iit),
+#      and model state the evaluator context never learned about (dambase,
+#      dmcon);
+#
+#   5. LAYERS - which module may call which.  Stated and checked, a cycle
+#      cannot appear by accident.  Unstated, the first one appears the day
+#      somebody needs a number and reaches for it, and after that no piece
+#      can be understood or tested alone.  The table below is not an
+#      aspiration: it was derived from the call graph as it already is, and
+#      it has zero violations on the tree that introduced it.  That is the
+#      point - a rule adopted while it is free stays cheap; one adopted after
+#      the cycles exist never gets adopted;
+#
+#   6. the REBUILD FAN-OUT: how many translation units recompile when one
+#      extension interface changes.  This is the cost of an experiment, paid
+#      every time anybody tries anything, and it is why a seven-thousand-line
+#      shared header is not a question of taste;
+#
+#   7. how many self tests can run WITHOUT a finite-element deck.  A test
+#      that needs a full analysis to run is a test that runs once a day, and
+#      a test that runs once a day does not catch the mistake while the hand
+#      is still on it.
+#
+# WHY THESE AND NOT OTHERS.  Each is a cost somebody pays on every change,
+# and each has a direction that is not arguable: nobody wants a wider
+# signature, a cycle, a bigger rebuild or a slower test.  Numbers that only
+# go one way can be a ratchet; numbers that trade off cannot.
+
+# Which layer each extension file sits in.  A module may call strictly DOWN
+# and never sideways or up.
+#
+# Read the layers as answers to "what does this need in order to be true":
+#   L0  the switch registry - depends on nothing, everything depends on it
+#   L1  things that need nothing but the platform: instrumentation, and
+#       plain statements about what the deck declared
+#   L2  the model and its topology: what IS, before anybody has an opinion
+#   L3  measurement of the model - observers, and the shared question of who
+#       is driving the load factor.  These take their inputs const and cannot
+#       change an answer
+#   L4  mechanisms: single decisions taken about the model
+#   L5  strategies that COMPOSE mechanisms - rescue ladders, continuation
+#
+# loadctl sits at L3 rather than among the mechanisms deliberately.  It does
+# not decide anything; it answers "who owns the load factor this increment",
+# which is the question every mechanism's arming block asks first.  Shared
+# state read by many is not a mechanism, and putting it at L4 is what would
+# force the sideways edges.
+LAYERS={'ccxopt':0,
+        'census':1,'dammat':1,'logview':1,'monitor':1,
+        'damstate':2,'topology':2,'trial':2,
+        'damdiag':3,'damstats':3,'loadctl':3,'opcheck':3,'topodiag':3,
+        'converge':4,'crackcontrol':4,'damcont':4,'erosion':4,'globalize':4,
+        'loadcut':4,'lsladder':4,
+        'dogleg':5,'pathfollow':5,'rescue':5,'slownewton':5}
+
+# The budget a public signature has to fit in.  Six is not a round number
+# chosen to flatter: with the evaluator context, the iteration state and the
+# derived-scalar accessors in place, the widest honest signature in this
+# solver is an object, a context, a destination and a couple of scalars.
+# Anything past that is a parameter list standing in for a missing object.
+PARAM_BUDGET=6
+
+def module_symbols():
+    """name -> module, for every function an extension file DEFINES at file
+    scope and does not mark static.
+
+    Derived rather than listed, for the same reason typedef_names() is: a
+    prefix table has to be maintained, and on the day a module gains a
+    function that does not begin with the module's own name, every edge that
+    function creates silently stops being counted.  Statics are excluded
+    because they cannot be called across a file boundary - counting them
+    would invent an edge out of two files that happen to name a helper the
+    same thing."""
+    own={}
+    for p in ext_modules():
+        if p.name=='nonlingeo.c': continue
+        txt=p.read_text(errors='replace').split('\n')
+        for name,first,_,_ in functions(p):
+            if txt[first-1].lstrip().startswith('static'): continue
+            own.setdefault(name,p.stem)
+    return own
+
+def module_deps(own):
+    """module -> set of other modules it calls into."""
+    deps={}
+    for p in ext_modules():
+        if p.name=='nonlingeo.c': continue
+        src=p.read_text(errors='replace')
+        src=re.sub(r'/\*.*?\*/','',src,flags=re.S)
+        src=re.sub(r'"(\\.|[^"\\])*"','""',src)
+        d=set()
+        for call in set(re.findall(r'\b([A-Za-z_]\w*)\s*\(',src)):
+            o=own.get(call)
+            if o and o!=p.stem: d.add(o)
+        deps[p.stem]=d
+    return deps
+
+def layer_violations(deps):
+    """Every call that does not go strictly down.  Unknown modules are
+    skipped rather than guessed: a file nobody has placed yet is a gap in
+    the table, and reporting it as a violation would teach people to ignore
+    the check."""
+    bad=[]
+    for m,ds in sorted(deps.items()):
+        if m not in LAYERS: continue
+        for d in sorted(ds):
+            if d in LAYERS and LAYERS[d]>=LAYERS[m]:
+                bad.append((m,LAYERS[m],d,LAYERS[d]))
+    return bad
+
+def public_api(own):
+    """(name, params) for every extension function DECLARED in the shared
+    header - i.e. every one whose signature the whole tree can see, and
+    therefore every one that costs a full rebuild to change."""
+    h=(SRC/'CalculiX.h').read_text(errors='replace')
+    h=re.sub(r'/\*.*?\*/','',h,flags=re.S)
+    out=[]
+    for name,args in re.findall(
+            r'\n(?:[A-Za-z_][\w \t*]*?)\b([A-Za-z_]\w*)\s*\(([^;{}]*?)\)\s*;',h,re.S):
+        if name not in own: continue
+        a=args.strip()
+        out.append((name,0 if a in ('','void') else a.count(',')+1))
+    return sorted(set(out),key=lambda x:(-x[1],x[0]))
+
+def header_fanout():
+    """How many .c files recompile when the shared header changes."""
+    n=0
+    for p in sorted(SRC.glob('*.c')):
+        if re.search(r'#\s*include\s*"CalculiX\.h"',p.read_text(errors='replace')):
+            n+=1
+    return n,len(list(SRC.glob('*.c')))
+
+def selftests():
+    """(how many self tests exist, how many can be run without a deck).
+
+    The second number is the one that matters.  Today every self test is
+    compiled into the solver and reached only from inside nonlingeo(), so a
+    test costs a full analysis to run; the count of deck-free ones is
+    therefore whatever a standalone runner can reach, and zero until one
+    exists."""
+    total=0
+    for p in sorted(SRC.glob('*.c')):
+        for name,first,_,_ in functions(p):
+            if 'selftest' in name or name.endswith('_legacycheck'): total+=1
+    runner=(SRC/'selftest_main.c').exists()
+    return total,(total if runner else 0)
 
 def measure():
     ng=SRC/'nonlingeo.c'
@@ -223,6 +386,25 @@ def measure():
         m['subsystems'][t]={'sites_in_nonlingeo':len(reg),'span_lines':span,
                             'files':owner}
     m['extension_files']=len(ext_modules())
+
+    own=module_symbols()
+    deps=module_deps(own)
+    api=public_api(own)
+    fan,ncfile=header_fanout()
+    ntest,ndeckless=selftests()
+    m['layers']={k:sorted(v) for k,v in deps.items()}
+    m['layer_violations']=[{'from':a,'from_layer':b,'to':c,'to_layer':d}
+                           for a,b,c,d in layer_violations(deps)]
+    m['unplaced_modules']=sorted(k for k in deps if k not in LAYERS)
+    m['public_api']=len(api)
+    m['widest_signature']=api[0][1] if api else 0
+    m['widest_signature_name']=api[0][0] if api else '-'
+    m['over_param_budget']=sum(1 for _,n in api if n>PARAM_BUDGET)
+    m['worst_signatures']=[{'name':n,'params':k} for n,k in api[:10] if k>PARAM_BUDGET]
+    m['header_fanout']=fan
+    m['c_files']=ncfile
+    m['selftests']=ntest
+    m['selftests_deckless']=ndeckless
     return m
 
 def table(m):
@@ -250,6 +432,35 @@ def table(m):
                       key=lambda kv:(-kv[1]['sites_in_nonlingeo'],kv[0])):
         own=",".join(s['files']) if s['files'] else "-"
         o.append("  %-18s %6d %8d  %s"%(t,s['sites_in_nonlingeo'],s['span_lines'],own))
+    o.append("")
+    o.append("THE INTERFACE  (what a change costs, rather than where it sits)")
+    o.append("  %-46s %d"%("extension functions in the shared header",m['public_api']))
+    o.append("  %-46s %d  (%s)"%("widest public signature, arguments",
+                                 m['widest_signature'],m['widest_signature_name']))
+    o.append("  %-46s %d"%("signatures over the %d-argument budget"%PARAM_BUDGET,
+                           m['over_param_budget']))
+    o.append("  %-46s %d of %d"%("files recompiled by a header change",
+                                 m['header_fanout'],m['c_files']))
+    o.append("  %-46s %d of %d"%("self tests runnable without a deck",
+                                 m['selftests_deckless'],m['selftests']))
+    if m['worst_signatures']:
+        o.append("")
+        o.append("  the widest, which are the missing objects named:")
+        for w in m['worst_signatures']:
+            o.append("    %-26s %2d"%(w['name'],w['params']))
+    o.append("")
+    o.append("LAYERS  (a module may call strictly DOWN, never sideways or up)")
+    for L in sorted(set(LAYERS.values())):
+        o.append("  L%d  %s"%(L,"  ".join(sorted(k for k,v in LAYERS.items() if v==L))))
+    if m['unplaced_modules']:
+        o.append("  not placed in the table: %s"%", ".join(m['unplaced_modules']))
+    if m['layer_violations']:
+        o.append("")
+        for v in m['layer_violations']:
+            o.append("  VIOLATION  %s(L%d) -> %s(L%d)"
+                     %(v['from'],v['from_layer'],v['to'],v['to_layer']))
+    else:
+        o.append("  violations: 0")
     return "\n".join(o)
 
 def main():
@@ -267,6 +478,12 @@ def main():
              'longest_function_lines':m['longest_function_lines'],
              'locals_in_longest':m['locals_in_longest'],
              'fork_locals':m['fork_locals'],
+             'public_api':m['public_api'],
+             'widest_signature':m['widest_signature'],
+             'over_param_budget':m['over_param_budget'],
+             'header_fanout':m['header_fanout'],
+             'layer_violations':len(m['layer_violations']),
+             'selftests_deckless':-m['selftests_deckless'],
              'sites':{t:s['sites_in_nonlingeo'] for t,s in m['subsystems'].items()}},
             indent=2,sort_keys=True)+"\n")
         print("recorded %s"%BUDGET)
@@ -277,8 +494,20 @@ def main():
             print("\nno budget recorded; run --record"); return 1
         b=json.loads(BUDGET.read_text());bad=[]
         for k in ('nonlingeo_lines','longest_function_lines','locals_in_longest',
-                  'fork_locals'):
-            if m[k]>b[k]: bad.append("%s: %d, budget %d"%(k,m[k],b[k]))
+                  'fork_locals','public_api','widest_signature',
+                  'over_param_budget','header_fanout'):
+            if k in b and m[k]>b[k]: bad.append("%s: %d, budget %d"%(k,m[k],b[k]))
+        # Layering is not a ratchet, it is a floor: the table was adopted on a
+        # tree with zero violations, so any violation at all is new.
+        if len(m['layer_violations'])>b.get('layer_violations',0):
+            for v in m['layer_violations']:
+                bad.append("layer violation %s(L%d) -> %s(L%d)"
+                           %(v['from'],v['from_layer'],v['to'],v['to_layer']))
+        # Stored negated, so the same "must not go up" rule makes deck-free
+        # tests a number that must not go DOWN.
+        if -m['selftests_deckless']>b.get('selftests_deckless',0):
+            bad.append("self tests runnable without a deck: %d, budget %d"
+                       %(m['selftests_deckless'],-b['selftests_deckless']))
         for t,n in b.get('sites',{}).items():
             got=m['subsystems'].get(t,{}).get('sites_in_nonlingeo',0)
             if got>n: bad.append("%s: %d sites, budget %d"%(t,got,n))

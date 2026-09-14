@@ -48,27 +48,11 @@
    that happened to be written first (it was EROSION_SOFTENING_D_TOL). */
 #define EROSION_SOFTENING_D_TOL 1.e-12
 
-/* Progressive damage material classifier shared by DE1 and DM2.0.
-   Rice-Tracey + Evolution=Displacement keeps the historical four-constant
-   signature.  DM2.0 is identified by model type 3 and a variable-length
-   constant count 3+2*NPOINTS (NPOINTS>=2). */
-ITG damage_progressive_material(ITG imat,const ITG *ndmcon,
-                                const double *dmcon,ITG ndmat,
-                                ITG ntmat)
-{
-  ITG nconst,type,off;
-
-  if(imat<1) return 0;
-  nconst=ndmcon[2*(imat-1)];
-  if((dmcon==NULL)||(ndmat<1)||(ntmat<1)) return 0;
-
-  off=1+(ndmat+1)*ntmat*(imat-1);
-  type=(ITG)dmcon[off];
-  if((type==1)&&(nconst==4)) return 1;
-  if((type==3)&&(nconst>=7)&&(((nconst-3)%2)==0)) return 1;
-
-  return 0;
-}
+/* damage_progressive_material() used to be defined here, because erosion was
+   the first caller to need it.  It is a statement about a material card, not
+   about deletion, and topology.c needs the same answer - which made the
+   model reach up into a policy for it.  It now lives in dammat.c, below both
+   callers.  See the note at the top of that file.                       */
 
 /* Detect actual progressive softening in the present Newton trial.  Merely
    having a DE1/DM2.0 material in the model is not enough: at least one active
@@ -606,10 +590,11 @@ ITG erosion_selftest(void)
   dmcon[1]=1.;                        /* material 1: Rice-Tracey, type 1 */
   dmcon[6]=1.;                        /* material 2: same              */
 
-  erosion_chki("progressive material is recognised",
-               damage_progressive_material(1,ndmcon,dmcon,4,1),1,&nbad);
-  erosion_chki("a material with no damage record is not",
-               damage_progressive_material(3,ndmcon,dmcon,4,1),0,&nbad);
+  /* The material classifier moved to dammat.c and its two checks went with
+     it, joined by the DM2.0 shapes nothing had been asking about.  Called
+     from here rather than from nonlingeo() so that the arming site stays a
+     single line: erosion is the consumer that cannot work without it. */
+  nbad+=dammat_selftest();
 
   /* 1. the filter.  "Zr" must take material 2 and leave material 1. */
   erosion_chki("filter unset takes every material",
