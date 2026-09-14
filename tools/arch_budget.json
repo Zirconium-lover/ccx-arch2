@@ -1,12 +1,12 @@
 {
-  "duplicated_params": 143,
+  "duplicated_params": 86,
   "fork_locals": 117,
   "header_fanout": 49,
   "layer_violations": 0,
   "locals_in_longest": 593,
-  "longest_function_lines": 11228,
-  "nonlingeo_lines": 11399,
-  "over_param_budget": 29,
+  "longest_function_lines": 11220,
+  "nonlingeo_lines": 11391,
+  "over_param_budget": 24,
   "public_api": 173,
   "selftests_deckless": -19,
   "sites": {

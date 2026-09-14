@@ -96,8 +96,7 @@ void rescue_backtrack(rescue *r,const trialctx *mdl,glob_census *g,
 {
   double *b=*(mdl->b),*dam=*(mdl->dam),*xstate=*(mdl->xstate);
   ITG *neq=*(mdl->neq),*mi=*(mdl->mi),*ne=*(mdl->ne);
-  ITG *nstate_=*(mdl->nstate_),*ipkon=*(mdl->ipkon);
-  char *lakon=*(mdl->lakon);
+  ITG *nstate_=*(mdl->nstate_);
   ITG ne0=*(mdl->ne0),iinc=*(mdl->iinc),num_cpus=*(mdl->num_cpus),isiz;
 
   /* gcc warns that bref `may be used uninitialized' here and did NOT warn
@@ -159,13 +158,12 @@ void rescue_backtrack(rescue *r,const trialctx *mdl,glob_census *g,
 
     if((p->evt_on==1)&&(bii==0)){
       if(p->evt_sgn==NULL) NNEW(p->evt_sgn,ITG,mi[0]*ne0);
-      damage_evt_sign((*(mdl->stx)),ipkon,lakon,ne0,mi[0],p->evt_sgn);
+      damage_evt_sign(mdl,p->evt_sgn);
       for(bjj=0;bjj<8;bjj++){
         p->evt_nsw[bjj]=0;p->evt_fe[bjj]=0;p->evt_fp[bjj]=0;
       }
     }else if((p->evt_on==1)&&(bii<8)){
-      p->evt_nsw[bii]=damage_evt_flips((*(mdl->stx)),ipkon,lakon,ne0,mi[0],
-                                           p->evt_sgn,
+      p->evt_nsw[bii]=damage_evt_flips(mdl,p->evt_sgn,
                                            &p->evt_fe[bii],
                                            &p->evt_fp[bii]);
     }

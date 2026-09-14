@@ -471,14 +471,13 @@ void damcont_corrector(damcont *k,const trialctx *mdl,
                        const double *damjac,const double *damvisc,
                        ITG inputformat,ITG nrhs,ITG symmetryflag)
 {
-  double *b=*(mdl->b),*co=*(mdl->co),*vold=*(mdl->vold),*stx=*(mdl->stx);
+  double *b=*(mdl->b),*co=*(mdl->co),*vold=*(mdl->vold);
   double *qa=mdl->qa,*cam=mdl->cam;
   double *xbounact=*(mdl->xbounact),*dam=*(mdl->dam),*xstate=*(mdl->xstate);
-  ITG *neq=*(mdl->neq),*mi=*(mdl->mi),*ne=*(mdl->ne),*nk=*(mdl->nk);
-  ITG *kon=*(mdl->kon),*ipkon=*(mdl->ipkon),*nactdof=*(mdl->nactdof);
+  ITG *neq=*(mdl->neq),*mi=*(mdl->mi),*ne=*(mdl->ne);
+  ITG *kon=*(mdl->kon),*ipkon=*(mdl->ipkon);
   ITG *nboun=*(mdl->nboun),*nstate_=*(mdl->nstate_);
-  char *lakon=*(mdl->lakon);
-  ITG num_cpus=*(mdl->num_cpus),iinc=*(mdl->iinc),ne0=*(mdl->ne0);
+  ITG num_cpus=*(mdl->num_cpus),iinc=*(mdl->iinc);
   ITG mt=mi[1]+1,isiz;
 
   ITG ctj,ctk,ctnst,ctbad=0,ctnsw=0;
@@ -528,7 +527,7 @@ void damcont_corrector(damcont *k,const trialctx *mdl,
       xbounact[ctj]=xbounold[ctj]+(xboun[ctj]-xbounold[ctj])*ctlam;
     trial_residual(mdl,k->beps);
     k->neval++;
-    damage_evt_sign(stx,ipkon,lakon,ne0,mi[0],k->sgn);
+    damage_evt_sign(mdl,k->sgn);
     ctbase=0.;
     for(ctj=0;ctj<neq[1];ctj++)
       if(fabs(k->beps[ctj]-k->r0[ctj])>ctbase)
@@ -565,8 +564,7 @@ void damcont_corrector(damcont *k,const trialctx *mdl,
     trial_residual(mdl,k->beps);
     k->neval++;
 
-      ctnsw=damage_evt_flips(stx,ipkon,lakon,ne0,mi[0],k->sgn,
-                             &cte,&ctp);
+      ctnsw=damage_evt_flips(mdl,k->sgn,&cte,&ctp);
       for(ctj=0;ctj<neq[1];ctj++)
         k->y[ctj]=(k->beps[ctj]-k->r0[ctj])/cteps;
       if(ctnsw!=0){

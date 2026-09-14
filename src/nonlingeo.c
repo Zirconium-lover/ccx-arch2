@@ -5960,7 +5960,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	          }
 	        }
 	      }
-	      topodiag_support(td_bn,kon,ipkon,lakon,*ne,&tb,&tf);
+	      topodiag_support(td_bn,&nlgt,&tb,&tf);
 	      printf("[TOPODIAG]   soft mode %" ITGFORMAT
 	             ": 1/sigma_min >= %.6e, peaks at node %" ITGFORMAT
 	             " dir %" ITGFORMAT " (component %" ITGFORMAT
@@ -5993,7 +5993,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	         td_nm,td_pr,topodiag_project(td_r0,td_x,neq[1]));
 	  {
 	    ITG tb,tf;
-	    topodiag_support(td_rep.resmaxnode,kon,ipkon,lakon,*ne,&tb,&tf);
+	    topodiag_support(td_rep.resmaxnode,&nlgt,&tb,&tf);
 	    printf("[TOPODIAG]   residual peak node %" ITGFORMAT
 	           " has %" ITGFORMAT " live bulk element(s), %" ITGFORMAT
 	           " live facet(s)\n",td_rep.resmaxnode,tb,tf);
@@ -7275,8 +7275,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
            number of integration points the step moved across a branch. */
 
         if(prb.wall_cat==NULL) NNEW(prb.wall_cat,ITG,mi[0]**ne);
-        damage_ray_census(prb.wall_cat,xstate,xstateini,dam,damdamageini,
-                          damage_damvisc,stx,ipkon,lakon,ne0,mi[0],*nstate_);
+        damage_ray_census(prb.wall_cat,&nlgt,damdamageini,damage_damvisc);
         {
           ITG wj,wnadv=0,wnlive=0;
           double wpinf=0.;
@@ -7448,10 +7447,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                      "\n");
             {
               ITG wtot;
-              wtot=damage_wall_setdiff(prb.wall_cat,xstate,xstateini,dam,
-                                       damdamageini,damage_damvisc,stx,
-                                       ipkon,lakon,ne0,mi[0],*nstate_,
-                                       prb.wall_nb);
+              wtot=damage_wall_setdiff(prb.wall_cat,&nlgt,damdamageini,
+                                       damage_damvisc,prb.wall_nb);
               printf("[WALLDIAG] pass %" ITGFORMAT " eps=%.9f  active-set "
                      "transitions %" ITGFORMAT " = UC6 loading/unloading %"
                      ITGFORMAT " + UC6 initiation %" ITGFORMAT
@@ -7688,9 +7685,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
            (rsc.linesearch_fullnorm>
               DAMAGE_LINESEARCH_GROWTH*rsc.linesearch_oldnorm)){
           rsc.linesearch_active=erosion_softening(
-              dam,damdamageini,ipkon,lakon,ielmat,mi[2],ndmcon,dmcon,
-              *ndmat_,*ntmat_,ne0,mi[0],&rsc.linesearch_nsoft,
-              &rsc.linesearch_maxdd);
+              &nlgt,damdamageini,ndmcon,dmcon,*ndmat_,*ntmat_,
+              &rsc.linesearch_nsoft,&rsc.linesearch_maxdd);
         }
 
         if(rsc.linesearch_active){
@@ -7889,8 +7885,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           }
           rn2[rii]=sqrt(rl2[rii]);
           rl2[rii]=rn2[rii]/rs;
-          damage_ray_tally(xstate,xstateini,dam,damdamageini,damage_damvisc,
-                           stx,ipkon,lakon,ne0,mi[0],*nstate_,
+          damage_ray_tally(&nlgt,damdamageini,damage_damvisc,
                            &rnpl[rii],&rnuc[rii]);
 
           /* alpha=0 is the reference: keep the WHOLE residual vector and the
@@ -7902,9 +7897,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
             if(prb.ray_r0==NULL) NNEW(prb.ray_r0,double,neq[1]);
             isiz=neq[1];cpypardou(prb.ray_r0,prb.ray_res,&isiz,&num_cpus);
             if(prb.ray_cat==NULL) NNEW(prb.ray_cat,ITG,mi[0]*ne0);
-            damage_ray_census(prb.ray_cat,xstate,xstateini,dam,
-                              damdamageini,damage_damvisc,stx,ipkon,lakon,
-                              ne0,mi[0],*nstate_);
+            damage_ray_census(prb.ray_cat,&nlgt,damdamageini,
+                              damage_damvisc);
           }
 
           /* The fatal signature is decided on the RESIDUAL ALONE.  The
@@ -7976,9 +7970,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                 }
               }
               dn2=sqrt(dn2);
-              dncat=damage_ray_census_diff(prb.ray_cat,xstate,xstateini,
-                        dam,damdamageini,damage_damvisc,stx,ipkon,lakon,ne0,
-                        mi[0],*nstate_,&dfirste,&dfirstip,&dfirsta,&dfirstb);
+              dncat=damage_ray_census_diff(prb.ray_cat,&nlgt,damdamageini,
+                        damage_damvisc,&dfirste,&dfirstip,&dfirsta,&dfirstb);
               printf("   DEFECT a=%.6f |E|2/|R0|2=%.6e |E|inf/|R0|inf=%.6e"
                      " worstdof=%" ITGFORMAT " R=%.6e lin=%.6e E=%.6e"
                      "  switched_ip=%" ITGFORMAT,
@@ -8259,9 +8252,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
             slow.nsoft=dtxn.count;
           }else{
             slow.active=erosion_softening(
-                dam,damdamageini,ipkon,lakon,ielmat,mi[2],ndmcon,dmcon,
-                *ndmat_,*ntmat_,ne0,mi[0],&slow.nsoft,
-                &slow.maxdd);
+                &nlgt,damdamageini,ndmcon,dmcon,*ndmat_,*ntmat_,
+                &slow.nsoft,&slow.maxdd);
           }
         }
 

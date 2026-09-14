@@ -123,13 +123,19 @@ static ITG damage_ray_catof(const double *xstate,const double *xstateini,
   return c;
 }
 
-void damage_ray_census(ITG *cat,const double *xstate,
-                       const double *xstateini,const double *dam,
-                       const double *dambase,const double *visc,
-                       const double *stx,
-                       const ITG *ipkon,const char *lakon,
-                       ITG ne0,ITG mi0,ITG nstate)
+void damage_ray_census(ITG *cat,const trialctx *mdl,
+                       const double *dambase,const double *visc)
 {
+  /* Unpacked once, so the body below is the body that was there.  dambase
+     and visc stay parameters: they are this fork's damage baseline and
+     viscous state, which trialctx does not hold - it is a transcription of
+     results()'s argument list and neither is one of those arguments. */
+  const double *xstate=*(mdl->xstate),*xstateini=*(mdl->xstateini);
+  const double *dam=*(mdl->dam),*stx=*(mdl->stx);
+  const ITG *ipkon=*(mdl->ipkon);
+  const char *lakon=*(mdl->lakon);
+  const ITG ne0=*(mdl->ne0),mi0=(*(mdl->mi))[0],nstate=**(mdl->nstate_);
+
   ITG i,j,nip;
   for(i=0;i<ne0;i++){
     nip=topo_element_nip(&lakon[8*i],mi0);
@@ -147,13 +153,19 @@ void damage_ray_census(ITG *cat,const double *xstate,
    whatever state the caller has just built.  Same iteration as the census
    above, so the two always speak about the same integration points. */
 
-void damage_ray_tally(const double *xstate,const double *xstateini,
-                      const double *dam,const double *dambase,
-                      const double *visc,const double *stx,
-                      const ITG *ipkon,const char *lakon,
-                      ITG ne0,ITG mi0,ITG nstate,
-                      ITG *nplast,ITG *nucomp)
+void damage_ray_tally(const trialctx *mdl,const double *dambase,
+                      const double *visc,ITG *nplast,ITG *nucomp)
 {
+  /* Unpacked once, so the body below is the body that was there.  dambase
+     and visc stay parameters: they are this fork's damage baseline and
+     viscous state, which trialctx does not hold - it is a transcription of
+     results()'s argument list and neither is one of those arguments. */
+  const double *xstate=*(mdl->xstate),*xstateini=*(mdl->xstateini);
+  const double *dam=*(mdl->dam),*stx=*(mdl->stx);
+  const ITG *ipkon=*(mdl->ipkon);
+  const char *lakon=*(mdl->lakon);
+  const ITG ne0=*(mdl->ne0),mi0=(*(mdl->mi))[0],nstate=**(mdl->nstate_);
+
   ITG i,j,nip,c;
   *nplast=0;*nucomp=0;
   for(i=0;i<ne0;i++){
@@ -176,9 +188,13 @@ void damage_ray_tally(const double *xstate,const double *xstateini,
    without storing deltal anywhere.  UC6 carries exactly three integration
    points. */
 
-void damage_evt_sign(const double *stx,const ITG *ipkon,
-                     const char *lakon,ITG ne0,ITG mi0,ITG *sgn)
+void damage_evt_sign(const trialctx *mdl,ITG *sgn)
 {
+  const double *stx=*(mdl->stx);
+  const ITG *ipkon=*(mdl->ipkon);
+  const char *lakon=*(mdl->lakon);
+  const ITG ne0=*(mdl->ne0),mi0=(*(mdl->mi))[0];
+
   ITG i,j,np;
   np=(mi0<3)?mi0:3;
   for(i=0;i<ne0;i++){
@@ -194,10 +210,14 @@ void damage_evt_sign(const double *stx,const ITG *ipkon,
   }
 }
 
-ITG damage_evt_flips(const double *stx,const ITG *ipkon,
-                     const char *lakon,ITG ne0,ITG mi0,const ITG *sgn,
+ITG damage_evt_flips(const trialctx *mdl,const ITG *sgn,
                      ITG *firste,ITG *firstip)
 {
+  const double *stx=*(mdl->stx);
+  const ITG *ipkon=*(mdl->ipkon);
+  const char *lakon=*(mdl->lakon);
+  const ITG ne0=*(mdl->ne0),mi0=(*(mdl->mi))[0];
+
   ITG i,j,np,n=0,sg;
   np=(mi0<3)?mi0:3;
   *firste=0;*firstip=0;
@@ -216,15 +236,21 @@ ITG damage_evt_flips(const double *stx,const ITG *ipkon,
   return n;
 }
 
-ITG damage_ray_census_diff(const ITG *cat,const double *xstate,
-                           const double *xstateini,const double *dam,
+ITG damage_ray_census_diff(const ITG *cat,const trialctx *mdl,
                            const double *dambase,const double *visc,
-                           const double *stx,
-                           const ITG *ipkon,const char *lakon,
-                           ITG ne0,ITG mi0,ITG nstate,
                            ITG *firste,ITG *firstip,
                            ITG *firsta,ITG *firstb)
 {
+  /* Unpacked once, so the body below is the body that was there.  dambase
+     and visc stay parameters: they are this fork's damage baseline and
+     viscous state, which trialctx does not hold - it is a transcription of
+     results()'s argument list and neither is one of those arguments. */
+  const double *xstate=*(mdl->xstate),*xstateini=*(mdl->xstateini);
+  const double *dam=*(mdl->dam),*stx=*(mdl->stx);
+  const ITG *ipkon=*(mdl->ipkon);
+  const char *lakon=*(mdl->lakon);
+  const ITG ne0=*(mdl->ne0),mi0=(*(mdl->mi))[0],nstate=**(mdl->nstate_);
+
   ITG i,j,nip,c,n=0;
   *firste=-1;*firstip=-1;*firsta=0;*firstb=0;
   for(i=0;i<ne0;i++){
@@ -415,13 +441,19 @@ void damage_wall_split(const char *tag,const double *x,const trialctx *mdl)
   SFREE(touch);
 }
 
-ITG damage_wall_setdiff(const ITG *cat,const double *xstate,
-                        const double *xstateini,const double *dam,
-                        const double *dambase,const double *visc,
-                        const double *stx,
-                        const ITG *ipkon,const char *lakon,
-                        ITG ne0,ITG mi0,ITG nstate,ITG *nb)
+ITG damage_wall_setdiff(const ITG *cat,const trialctx *mdl,
+                        const double *dambase,const double *visc,ITG *nb)
 {
+  /* Unpacked once, so the body below is the body that was there.  dambase
+     and visc stay parameters: they are this fork's damage baseline and
+     viscous state, which trialctx does not hold - it is a transcription of
+     results()'s argument list and neither is one of those arguments. */
+  const double *xstate=*(mdl->xstate),*xstateini=*(mdl->xstateini);
+  const double *dam=*(mdl->dam),*stx=*(mdl->stx);
+  const ITG *ipkon=*(mdl->ipkon);
+  const char *lakon=*(mdl->lakon);
+  const ITG ne0=*(mdl->ne0),mi0=(*(mdl->mi))[0],nstate=**(mdl->nstate_);
+
   ITG i,j,nip,c,d,k,n=0;
 
   for(k=0;k<8;k++) nb[k]=0;

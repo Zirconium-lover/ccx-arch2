@@ -368,8 +368,11 @@ void topodiag_run(topodiag_report *r,ITG *comp,const trialctx *mdl,
    conditioning problem, a node held by two nearly dead tets is another,
    and they are not the same defect. */
 
-void topodiag_support(ITG node,const ITG *kon,const ITG *ipkon,
-                      const char *lakon,ITG ne,ITG *nbulk,ITG *nfac){
+void topodiag_support(ITG node,const trialctx *mdl,ITG *nbulk,ITG *nfac){
+
+  const ITG *kon=*(mdl->kon),*ipkon=*(mdl->ipkon);
+  const char *lakon=*(mdl->lakon);
+  const ITG ne=**(mdl->ne);
 
   ITG i,j,nope,idx;
 

@@ -771,29 +771,18 @@ void damcont_configure(damcont *k,dogleg *d,rescue *r,
 
 void damage_aba_cmp(const char *name,const double *a,
                     const double *b,ITG n,ITG *nbad);
-void damage_ray_census(ITG *cat,const double *xstate,
-                       const double *xstateini,const double *dam,
-                       const double *dambase,const double *visc,
-                       const double *stx,
-                       const ITG *ipkon,const char *lakon,
-                       ITG ne0,ITG mi0,ITG nstate);
-void damage_ray_tally(const double *xstate,const double *xstateini,
-                      const double *dam,const double *dambase,
-                      const double *visc,const double *stx,
-                      const ITG *ipkon,const char *lakon,
-                      ITG ne0,ITG mi0,ITG nstate,
-                      ITG *nplast,ITG *nucomp);
-void damage_evt_sign(const double *stx,const ITG *ipkon,
-                     const char *lakon,ITG ne0,ITG mi0,ITG *sgn);
-ITG damage_evt_flips(const double *stx,const ITG *ipkon,
-                     const char *lakon,ITG ne0,ITG mi0,const ITG *sgn,
+/* Four functions in this file shared an identical eleven-parameter prefix -
+   the state arrays, the mesh and the sizes.  All of it is trialctx's except
+   dambase and visc. */
+void damage_ray_census(ITG *cat,const trialctx *mdl,
+                       const double *dambase,const double *visc);
+void damage_ray_tally(const trialctx *mdl,const double *dambase,
+                      const double *visc,ITG *nplast,ITG *nucomp);
+void damage_evt_sign(const trialctx *mdl,ITG *sgn);
+ITG damage_evt_flips(const trialctx *mdl,const ITG *sgn,
                      ITG *firste,ITG *firstip);
-ITG damage_ray_census_diff(const ITG *cat,const double *xstate,
-                           const double *xstateini,const double *dam,
+ITG damage_ray_census_diff(const ITG *cat,const trialctx *mdl,
                            const double *dambase,const double *visc,
-                           const double *stx,
-                           const ITG *ipkon,const char *lakon,
-                           ITG ne0,ITG mi0,ITG nstate,
                            ITG *firste,ITG *firstip,
                            ITG *firsta,ITG *firstb);
 /* Seventeen arguments became four: thirteen were the mesh and the state,
@@ -802,12 +791,8 @@ void damage_wall_where(const char *tag,const double *x,const trialctx *mdl,
                        ITG ntop);
 /* Fifteen arguments became three, for the same reason. */
 void damage_wall_split(const char *tag,const double *x,const trialctx *mdl);
-ITG damage_wall_setdiff(const ITG *cat,const double *xstate,
-                        const double *xstateini,const double *dam,
-                        const double *dambase,const double *visc,
-                        const double *stx,
-                        const ITG *ipkon,const char *lakon,
-                        ITG ne0,ITG mi0,ITG nstate,ITG *nb);
+ITG damage_wall_setdiff(const ITG *cat,const trialctx *mdl,
+                        const double *dambase,const double *visc,ITG *nb);
 
 /* ---- evaluating the residual at a trial state (trial.c) ---------------
 
@@ -1310,11 +1295,12 @@ ITG  erosion_mark(const erosion_policy *p,erosion_batch *b,
 /* Is anything actually softening in the present Newton trial?  The line
    search and the iteration budget both ask; having a DE1/DM2.0 material in
    the model is not an answer. */
-ITG  erosion_softening(const double *dam,const double *dambase,
-                       const ITG *ipkon,const char *lakon,
-                       const ITG *ielmat,ITG mi2,
+/* The material table - ndmcon, dmcon, ndmat, ntmat - stays loose.  It is
+   not trialctx's: trialctx transcribes results()'s argument list, and the
+   damage constants are not among them. */
+ITG  erosion_softening(const trialctx *mdl,const double *dambase,
                        const ITG *ndmcon,const double *dmcon,
-                       ITG ndmat,ITG ntmat,ITG ne0,ITG mi0,
+                       ITG ndmat,ITG ntmat,
                        ITG *nsoft,double *maxdd);
 ITG  erosion_selftest(void);
 
@@ -1478,8 +1464,7 @@ void topodiag_report_zero(topodiag_report *r);
 void topodiag_run(topodiag_report *r,ITG *comp,const trialctx *mdl,
                   const double *ad,const double *au);
 double topodiag_project(const double *v,const double *w,ITG neq);
-void topodiag_support(ITG node,const ITG *kon,const ITG *ipkon,
-                      const char *lakon,ITG ne,ITG *nbulk,ITG *nfac);
+void topodiag_support(ITG node,const trialctx *mdl,ITG *nbulk,ITG *nfac);
 ITG topodiag_deflate(double *w,const double *q,ITG k,ITG neq);
 double topodiag_project_span(const double *v,const double *q,ITG k,
                              ITG neq);

@@ -60,14 +60,17 @@
    integration point must have D_trial>D_committed.  Comparing degradation D
    rather than the overloaded raw dam value also handles initiation crossing
    (omega<1 -> dam=1+D) without a false large jump. */
-ITG erosion_softening(const double *dam,
-                                      const double *dambase,
-                                      const ITG *ipkon,const char *lakon,
-                                      const ITG *ielmat,ITG mi2,
-                                      const ITG *ndmcon,const double *dmcon,
-                                      ITG ndmat,ITG ntmat,ITG ne0,ITG mi0,
-                                      ITG *nsoft,double *maxdd)
+ITG erosion_softening(const trialctx *mdl,const double *dambase,
+                      const ITG *ndmcon,const double *dmcon,
+                      ITG ndmat,ITG ntmat,
+                      ITG *nsoft,double *maxdd)
 {
+  const double *dam=*(mdl->dam);
+  const ITG *ipkon=*(mdl->ipkon);
+  const char *lakon=*(mdl->lakon);
+  const ITG *ielmat=*(mdl->ielmat);
+  const ITG mi2=(*(mdl->mi))[2],ne0=*(mdl->ne0),mi0=(*(mdl->mi))[0];
+
   ITG i,j,nip,imat,elementsoft;
   double dtrial,dbase,dd;
 
