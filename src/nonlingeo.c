@@ -130,7 +130,8 @@ damstate damage_dstate={0,NULL,NULL,NULL,NULL,0,0.,0};
 
 
 
-ITG ccx_rescue_active=0,ccx_rescue_arm=0,ccx_rescue_req=0;
+/* the three rescue flags are defined in rescue.c now, beside the state
+   they belong to; CalculiX.h declares them. */
 
 
 
@@ -222,7 +223,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     damagefilename[160]="",*sideloadf=NULL,cflag[1]=" ",
     *damage_tangent_env=NULL,*damage_topology_env=NULL,
     *damage_de13_env=NULL,
-    *damage_visc_env=NULL,*damage_diss_env=NULL,
+    *damage_visc_env=NULL,
     *damage_fracture_env=NULL,
     *damage_fracture_seta=NULL,*damage_fracture_setb=NULL;
   char damage_fracture_a[81],damage_fracture_b[81]; 
@@ -274,11 +275,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     intpointvart,*jqbi=NULL,*irowbi=NULL,*jqib=NULL,*irowib=NULL,
     idispfrdonly,*inumcp=NULL,nmethodold=*nmethod,
     idamage=0,iitsav=0,idamagereeq=0,ilocalsubstep=0,*ipkondamageini=NULL,
-    *damage_de13_trigger_ip=NULL,*damage_ract=NULL,
-    damage_reg_on=0,damage_reg_nlam=0,damage_reg_napply=0,
-    damage_reg_level=0,damage_rec_window=5,damage_rec_maxunrec=3,damage_dth_n=0,damage_dth_i=0,
-    damage_rec_healthy=0,damage_rec_unrec=0,damage_rec_used_in_inc=0,
-    damage_rec_disarmed=0,
+    *damage_de13_trigger_ip=NULL,*damage_ract=NULL,damage_dth_n=0,damage_dth_i=0,
     damage_release_probe=0,damage_release_armed=0,damage_release_pass=0,
     damage_release_rebuild=0,
     damage_release_nterm=0,damage_release_nother=0,
@@ -292,10 +289,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     damage_cut_on=0,damage_cut_bad=0,damage_cut_narrow=0,
     damage_cut_exact=0,
     damage_topology_deferred_mode=0,damage_topology_rebuild=1,*damage_damcat=NULL,
-    damage_snap_elem=0,damage_snap_bad=0,
-    damage_diss_report=0,damage_diss_init=0,damage_diss_ctrl=0,
-    damage_diss_have=0,damage_diss_ok=0,damage_diss_engaged=0,
-    damage_diss_probe=0,damage_batch_list=0,
+    damage_snap_elem=0,damage_snap_bad=0,damage_batch_list=0,
     damage_float_new=0,damage_float_reach=0,damage_float_total=0,
     damage_float_coh=0,damage_float_isl=0,
     damage_conn=1,damage_conn_reach=0,damage_fracture_complete=0,
@@ -305,12 +299,10 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
        far larger redistribution than the same-load solve can absorb */
     damage_float_batch=DAMAGE_DE13_BATCH_MAX,
     damage_dangle_new=0,damage_dangle_weak=0,damage_dangle_total=0,
-    damage_dangle_max=0,damage_stiff_probe=0,damage_path_on=0,damage_path_retry=0,damage_path_desc=0,
-    damage_path_nstep=20,damage_path_arm=3,damage_path_used=0,
-    damage_path_att=0,
+    damage_dangle_max=0,damage_stiff_probe=0,
     damage_stab_maxdof=0,damage_stab_maxdead=0,*damage_stab_node=NULL,
     damage_fracture_link=0,damage_deadfacet=0,damage_facetdel=0,
-    damage_facetdel_new=0,damage_facetdel_total=0,damage_arc=0,damage_diss_step=1,damage_spc_neg=0,damage_census_ok=1,
+    damage_facetdel_new=0,damage_facetdel_total=0,damage_spc_neg=0,damage_census_ok=1,
     damage_bare=0,damage_bare_rep=-1,damage_free_probe=0,
     damage_free_cnt=0,damage_free_rep=-1,*damage_free_nb=NULL,
     damage_free_worst=-1,damage_free_raw=0,damage_free_rawrep=-1,
@@ -364,8 +356,6 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     *damage_damjac=NULL,damage_snap_ratio=0.,
     *damage_damvisc=NULL,*damage_damviscini=NULL,damage_visc_eta=0.,
     *damage_frel=NULL,
-    damage_reg_lambda=0.,
-    damage_reg_lam[5]={1.e-2,1.e-1,1.e0,4.e0,1.6e1},
     damage_dtheta_healthy=0.,
     damage_dth_ring[20]={0.,0.,0.,0.,0.,0.,0.,0.,0.,0.,
                          0.,0.,0.,0.,0.,0.,0.,0.,0.,0.},
@@ -374,23 +364,17 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     *daba_eme=NULL,*daba_stiff=NULL,*daba_qa=NULL,*daba_cam=NULL,
     damage_release_qa=0.,damage_release_qam=0.,
     damage_release_dt=0.,
-    *damage_diss_fhat=NULL,*damage_diss_uf=NULL,
     *damage_addiag=NULL,*damage_addiag0=NULL,
-    damage_diss_p=0.,damage_diss_pprev=0.,damage_diss_lprev=0.,
-    damage_diss_dg=0.,damage_diss_total=0.,damage_diss_target=0.,damage_arc_lam=0.,damage_diss_engage_t=-1.,damage_arc_theta0=0.,damage_diss_lamnow=0.,
-    damage_diss_scale=1.,damage_diss_dtheta=0.,
-    damage_diss_lamcur=0.,damage_diss_lamold=0.,damage_diss_dgcur=0.,
-    damage_diss_dgold=0.,damage_diss_g=0.,damage_diss_slope=0.,
-    damage_diss_dlam=0.,damage_diss_kpp=0.,damage_diss_fr=0.,
-    damage_diss_ff=0.,damage_diss_den=0.,
-    damage_stiff_min=0.,damage_path_lam=0.,damage_path_dev=0.,
-    damage_path_devmax=-1.,damage_path_ref=0.,
-    damage_path_lamcom=0.,damage_path_drop=0.25,
+    damage_stiff_min=0.,
     *damage_free_g=NULL,damage_free_gm=0.,damage_free_dv=0.,
     damage_dmax=0.,
     damage_alphaevent=2.,damage_event_dtheta=0.,
     damage_event_raw=0.,damage_event_floor=0.;
   ITG damage_spc_force=0;
+
+  /* [LOADCTL] who drives the load parameter: fifty-three locals that
+     had no owner, and one mutual-exclusion rule.  See loadctl.c. */
+  loadctl lc;
 
   /* [OPCHECK] and [WALLDIAG]/[DAMAGE RAY]/[DAMAGE ABA]: the driver
      state of the operator check and of the probes.  See opcheck.c
@@ -524,6 +508,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
   rescue_init(&rsc);
   opcheckdrv_init(&opd);
   probedrv_init(&prb);
+  loadctl_init(&lc);
   slownewton_init(&slow);
   damstats_init(&de1);
 
@@ -1178,34 +1163,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
      Reports only; reads nothing, decides nothing. */
   ccxopt_report();
 
-  /* The operator check reads its configuration HERE, unconditionally.
-
-     It used to be parsed inside the block gated by damage_de12_enabled -
-     that is, only on a deck carrying a progressive BULK damage material -
-     for no reason except that it was written next to the code that needed
-     that gate.  The consequence was measured rather than argued: on
-     test/pathfollow/close.inp, the one deck in this tree that isolates the
-     crack-face closure kink, the probe could not be armed at all.  Every
-     one of its switches was reported by [SWITCHES LEFT] as set and never
-     read, which is exactly the failure that report exists to catch, on its
-     first real use.
-
-     "A responsibility with no home ends up nested inside whatever code
-     happened to be nearby" - describing a
-     different instance of the same thing. */
-  if((damage_de13_env=ccxopt_getenv("CCX_STRUCT_FD_INC"))!=NULL)
-    opd.fd_inc=atoi(damage_de13_env);
-  if((damage_de13_env=ccxopt_getenv("CCX_STRUCT_FD_ITER"))!=NULL)
-    opd.fd_it=atoi(damage_de13_env);
-  if((damage_de13_env=ccxopt_getenv("CCX_STRUCT_FD_H"))!=NULL)
-    opd.fd_h=atof(damage_de13_env);
-  if((damage_de13_env=ccxopt_getenv("CCX_STRUCT_FD_STEP"))!=NULL)
-    opd.fd_step=atoi(damage_de13_env);
-  if((damage_de13_env=ccxopt_getenv("CCX_STRUCT_FD_ELEM"))!=NULL)
-    opd.fd_pick=atoi(damage_de13_env);
-  if((damage_de13_env=ccxopt_getenv("CCX_STRUCT_FD_BASE"))!=NULL)
-    opd.fd_base=((strcmp(damage_de13_env,"VOLD")==0)||
-                    (strcmp(damage_de13_env,"vold")==0))?1:0;
+  opcheckdrv_configure_fd(&opd);
 
   /* [DAMAGE TMIN] statics.f:234-247 silently raises the deck's minimum
      increment to min(tinc,1e-6*tper) under automatic incrementation.  With
@@ -1333,298 +1291,11 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         if(rsc.reeq_uam_floor>1.) rsc.reeq_uam_floor=1.;
       }
 
-      /* CCX_DAMAGE_RELEASE_PROBE - PURE DIAGNOSTIC, reads only.
+      probedrv_configure_aba(&prb);
 
-         How much internal force does a topology event actually release?
-         The run log cannot answer it: "largest residual force" is printed
-         AFTER Newton has already made its first correction, so it is what
-         survived the release, not the release.
+      rescue_configure_backtrack(&rsc);
 
-         The probe differences f_int(u*) across the event with the
-         displacement state held fixed, and - the reason it exists - splits
-         the result by what happened to the equation:
-
-           surv     DOF active BEFORE and AFTER.  The equation still exists,
-                    so this is the only place a perturbation of the system
-                    Newton solves can live.  dF_surv_max/qam is the number.
-           removed  DOF active BEFORE, gone AFTER.  The equation does not
-                    exist any more; Newton neither resolves it nor owes it
-                    anything.  Diagnosis only, never a criterion.
-
-         Reporting one number for both is what made the raw residual
-         unreadable in the first place.
-
-         =1 per batch, =2 adds one line per deleted element.  Unset = off and
-         nothing is allocated.  This flag CHANGES NO BIT OF THE ANSWER, and
-         that is gated both ways: s0_coarse_ts must give m.damage md5
-         74212e957d7cd649 with the probe off AND with it on. */
-      /* CCX_DAMAGE_RESIDUAL_RAY - PURE DIAGNOSTIC, reads only.
-
-         J-13 established that the force RELEASED by a topology event does not
-         order fatal against non-fatal: the fatal event ranked 487th of 563 on
-         bandrad, and 486 larger releases were survived.  So the perturbation
-         is not the right-hand side.  What is left is the STEP: the residual
-         contracts three times (0.265 -> 0.019 -> 0.0022) and then flies up by
-         265x on the next full Newton step, at frozen load and frozen topology.
-         That is the classic signature of a full step leaving the basin, and
-         the standard instrument for it is a scan of the residual along the
-         Newton direction.
-
-         There is no such scan in this tree, and there cannot be a line search
-         either: BK3 is excluded from re-equilibration by TWO independent
-         gates - its own conjunction (idamagereeq==0, below) and the resold
-         store, which is guarded by the same conjunction, so resold is stale
-         throughout an idamagereeq pass.  This probe needs neither: it
-         evaluates alpha=0 itself and uses that as the reference.
-
-         What it does: at a re-equilibration iteration it evaluates the
-         residual at alpha=0 and alpha=1.  If the full step grew the norm by
-         more than the growth factor - the fatal signature - it walks the
-         whole ray, repeats one alpha to prove the evaluation is a pure
-         function of the step length, and ends at alpha=1, which is exactly
-         the state the unprobed code would have had.
-
-         PURITY IS THE GATE, NOT AN ASIDE.  The repeated alpha must reproduce
-         bitwise.  It can only do so for the residual vector, at fixed dtime,
-         with CCX_DAMAGE_NONLOCAL unset and no contact: damjac/xstiff are not
-         rebuilt from a baseline, and the nonlocal field (dpsave/ebar) is
-         trial-derived, never snapshotted and CG-warm-started to 1e-10.  A
-         mismatch under those conditions is a real impurity, not a bug in the
-         probe, and it would void any line search built on top.
-
-         Value = max number of rays to walk (default 8).  Unset = off,
-         nothing allocated.  Changes no bit of the answer: b is saved and
-         restored exactly, and the last evaluation is the alpha=1 state. */
-      /* CCX_DAMAGE_REEQ_BACKTRACK - SOLVER CHANGE, not a diagnostic.
-         Damps the Newton step during same-load re-equilibration, restoring
-         the committed baseline before every probe and restoring the full
-         step when nothing is acceptable.  THIS CHANGES THE ANSWER: a run
-         that goes further with it is not thereby a success, and adopting it
-         needs the full verify + ladder gate.  Default off = bit-identical. */
-      /* CCX_DAMAGE_ABA=<alpha> - PURE DIAGNOSTIC.  Proves, or refutes, that a
-         trial evaluation is a pure function of the step length.  The earlier
-         A-B-A compared ONE scalar (|R|inf); one scalar agreeing proves
-         nothing about the rest of the state, and the backtracking snapshot
-         only held dam/damvisc/xstate while results() writes more than that.
-         This evaluates A, snapshots EVERY array results()/calcresidual
-         touch, evaluates B, evaluates A again, and compares byte for byte.
-         Fires once, then the run continues from the full step. */
-      if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_ABA"))!=NULL){
-        prb.aba_mode=1;
-        prb.aba_a=atof(damage_de13_env);
-        if((prb.aba_a<=0.)||(prb.aba_a>=1.)) prb.aba_a=0.25;
-        /* CCX_DAMAGE_ABA_INC="143,209" - fire at those increments instead of
-           at the first opportunity.  Purity proved on one activated path does
-           not prove it on another: a different increment reaches the same
-           code through a different constitutive state, and that is exactly
-           what has to be shown before an ensemble rests on it. */
-        prb.aba_ninc=0;
-        if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_ABA_INC"))!=NULL){
-          char *acp=damage_de13_env;
-          while((*acp!=0)&&(prb.aba_ninc<4)){
-            while((*acp==' ')||(*acp==',')) acp++;
-            if(*acp==0) break;
-            prb.aba_inc[prb.aba_ninc++]=atoi(acp);
-            while((*acp!=0)&&(*acp!=',')) acp++;
-          }
-        }
-        printf("[DAMAGE ABA] DIAGNOSTIC: full-state A-B-A at alpha=%.6f;\n"
-               "   every array written by results()/calcresidual is compared\n"
-               "   byte for byte between two evaluations at the same alpha.%s",
-               prb.aba_a,"\n");
-        fflush(stdout);
-      }
-
-      if(ccxopt_getenv("CCX_DAMAGE_REEQ_BACKTRACK")!=NULL){
-        rsc.bt_mode=1;
-        /* Three tunables, each aimed at a MEASURED failure of the
-           first version (J-15 -> bandrad regressed 25%).
-           _GROWTH : engage only when the full step makes the residual
-                     worse by more than this factor.  Damping a step
-                     that merely fails Armijo is what made the method
-                     more aggressive than BK3 (which needs 1.10) and
-                     is what stalled bandrad.  1.0 = old behaviour.
-           _WINDOW : non-monotone reference (Grippo-Lampariello-
-                     Lucidi).  Acceptance compares against the MAX of
-                     the last WINDOW residuals, not the current one,
-                     so Newton may worsen the residual briefly and
-                     cross the kink - which is exactly what the
-                     undamped control does.  1 = monotone = old.
-           _FLOOR  : refuse to accept a step shorter than this.  The
-                     measured death mode was a chain of accepts at
-                     alpha=0.031 and 0.016 buying 1-3% each while the
-                     iteration budget drained.  0.015625 = old. */
-        if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_BT_GROWTH"))!=NULL){
-          rsc.bt_growth=atof(damage_de13_env);
-          if(rsc.bt_growth<1.) rsc.bt_growth=1.;
-        }
-        if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_BT_WINDOW"))!=NULL){
-          rsc.bt_window=atoi(damage_de13_env);
-          if(rsc.bt_window<1) rsc.bt_window=1;
-          if(rsc.bt_window>8) rsc.bt_window=8;
-        }
-        if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_BT_FLOOR"))!=NULL){
-          rsc.bt_floor=atof(damage_de13_env);
-          if(rsc.bt_floor<0.015625) rsc.bt_floor=0.015625;
-          if(rsc.bt_floor>1.) rsc.bt_floor=1.;
-        }
-        printf("[DAMAGE BT] transactional backtracking ENABLED in "
-               "idamagereeq: alpha 1, 1/2 ... 1/64, Armijo on |R|inf with "
-               "c1=1e-4, committed baseline restored before every probe, "
-               "full step restored and the increment handed to the standard "
-               "cutback if no probe is acceptable.  THIS CHANGES THE "
-               "ANSWER.  growth=%.3f window=%" ITGFORMAT
-               " floor=%.6f%s",rsc.bt_growth,rsc.bt_window,
-               rsc.bt_floor,"\n");
-        fflush(stdout);
-      }
-
-      /* ---- CCX_DAMAGE_REEQ_RESCUE ------------------------------------
-         Emergency-only backtracking.  Always-on BT is EXPERIMENTAL and was
-         measured to shorten solver survival on three placements of four and
-         to destroy the bandrad severance the control reaches (J-17), so the
-         two must never run together. */
-
-      if((ccxopt_getenv("CCX_DAMAGE_REEQ_RESCUE")!=NULL)||
-         (ccxopt_getenv("CCX_DAMAGE_REEQ_RESCUE2")!=NULL)||
-         (ccxopt_getenv("CCX_DAMAGE_REEQ_RESCUE3")!=NULL)||
-         (ccxopt_getenv("CCX_DAMAGE_RESCUE_CORRIDOR")!=NULL)){
-        rsc.rescue_mode=1;
-        ccx_rescue_active=1;
-        if(ccxopt_getenv("CCX_DAMAGE_REEQ_RESCUE2")!=NULL){
-          rsc.rescue_maxlevel=2;
-          prb.evt_nstep=0;
-        }
-        if((ccxopt_getenv("CCX_DAMAGE_REEQ_RESCUE3")!=NULL)||
-           (ccxopt_getenv("CCX_DAMAGE_RESCUE_CORRIDOR")!=NULL)){
-          prb.evt_nstep=0;
-          damage_reg_nlam=5;
-          rsc.rescue_maxlevel=2+damage_reg_nlam;
-        }
-        if(ccxopt_getenv("CCX_DAMAGE_RESCUE_CORRIDOR")!=NULL){
-          rsc.corr_mode=1;
-          if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CORR_MAXINC"))!=NULL)
-            rsc.corr_maxinc=atoi(damage_de13_env);
-          if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CORR_EXIT"))!=NULL)
-            rsc.corr_exit=atoi(damage_de13_env);
-          if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CORR_TRY"))!=NULL)
-            rsc.corr_tryevery=atoi(damage_de13_env);
-          if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CORR_GRACE"))!=NULL)
-            rsc.corr_grace=atoi(damage_de13_env);
-          if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CORR_MAXWALL"))!=NULL)
-            rsc.corr_maxwall=atoi(damage_de13_env);
-          if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CORR_MAXESC"))!=NULL)
-            rsc.corr_maxesc=atoi(damage_de13_env);
-          if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CORR_STABLE"))!=NULL)
-            rsc.corr_stableneed=atoi(damage_de13_env);
-          if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CORR_MINFRAC"))!=NULL)
-            rsc.corr_minfrac=atof(damage_de13_env);
-          if(rsc.corr_maxinc<1) rsc.corr_maxinc=1;
-          if(rsc.corr_exit<1) rsc.corr_exit=1;
-          if(rsc.corr_tryevery<1) rsc.corr_tryevery=1;
-          if(rsc.corr_maxwall<1) rsc.corr_maxwall=1;
-          if(rsc.corr_maxesc<1) rsc.corr_maxesc=1;
-          if(rsc.corr_stableneed<1) rsc.corr_stableneed=1;
-          printf("[DAMAGE CORR] bounded recovery CORRIDOR enabled.  On a "
-                 "wall levels 1 and 2 cannot touch (idamagereeq=0) the "
-                 "regularization that made the increment converge is HELD, "
-                 "so the next increments start already regularized.  dtime "
-                 "stays with the stock controller.  Three separate states "
-                 "are kept: the lambda in use, the PROVEN lambda (one that "
-                 "survived %" ITGFORMAT " converged increments) and a probe "
-                 "flag.  Every %" ITGFORMAT " increments the help is probed "
-                 "downwards (lambda/4, then 0).  A wall on a PROBE returns "
-                 "to the proven lambda; a wall on the HELD lambda would be "
-                 "an identical repeat, so lambda is escalated one ladder "
-                 "step instead, at most %" ITGFORMAT " times, and the "
-                 "corridor closes if the ladder runs out.  Wall counters "
-                 "are evaluated AT THE WALL, so a chain of walls cannot "
-                 "run unbounded.  Exit after %" ITGFORMAT " increments with "
-                 "NO help.  Breakers: <=%" ITGFORMAT " walls, <=%" ITGFORMAT
-                 " increments, and after a grace of %" ITGFORMAT " the mean "
-                 "dtime inside must stay above %.3f of the dtime at the "
-                 "last clean increment before entry.  On failure the "
-                 "guarantee is t_end NOT LOWER than rescue-2; a byte-exact "
-                 "rescue-2 result is impossible once corridor increments "
-                 "have been accepted, since no entry snapshot is taken.%s",
-                 rsc.corr_stableneed,rsc.corr_tryevery,
-                 rsc.corr_maxesc,rsc.corr_exit,rsc.corr_maxwall,
-                 rsc.corr_maxinc,rsc.corr_grace,
-                 rsc.corr_minfrac,"\n");
-          fflush(stdout);
-        }
-        if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_RESCUE_WINDOW"))!=NULL){
-          damage_rec_window=atoi(damage_de13_env);
-          if(damage_rec_window<1) damage_rec_window=1;
-        }
-        if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_RESCUE_MAXUNREC"))!=NULL){
-          damage_rec_maxunrec=atoi(damage_de13_env);
-          if(damage_rec_maxunrec<1) damage_rec_maxunrec=1;
-        }
-        printf("[DAMAGE RESCUE] bounded recovery window: a rescue counts "
-               "as RECOVERED only after %" ITGFORMAT " consecutive "
-               "increments converge with no intervention; after %"
-               ITGFORMAT " consecutive un-recovered rescues the mechanism "
-               "DISARMS itself and the wall goes to the original stock "
-               "stop.  This exists because a run that needs rescuing at "
-               "nearly every increment is crawling, not passing a wall: "
-               "measured, 92 regularized rescues bought 2.2e-4 of step "
-               "time on s3rad.%s",damage_rec_window,damage_rec_maxunrec,"\n");
-        if(rsc.bt_mode==1){
-          printf("[DAMAGE RESCUE] CCX_DAMAGE_REEQ_BACKTRACK (always-on, "
-                 "experimental) must not run together with rescue; it is "
-                 "switched OFF for this run.%s","\n");
-          rsc.bt_mode=0;
-        }
-        printf("[DAMAGE RESCUE] emergency rescue backtracking ENABLED.  The "
-               "trajectory, the stock Newton and every stock cutback are "
-               "unchanged.  Only where the next stock cutback would put "
-               "dtheta below tmin and the run would stop, the increment is "
-               "rolled back by the STANDARD cutback path and retried ONCE at "
-               "the last admissible dtheta with transactional BT active for "
-               "that attempt alone.  One attempt per wall; re-armed after any "
-               "increment that converges.%s","\n");
-        if(rsc.rescue_maxlevel==2){
-          printf("[DAMAGE RESCUE2] second level ARMED.  A wall now gets two "
-                 "attempts.  The first is the accepted level-one behaviour, "
-                 "unchanged.  Only if it fails does the second run, and there "
-                 "the single branch \"nothing accepted -> restore the full "
-                 "step\" is replaced by an EVENT STEP: the smallest ladder "
-                 "alpha at which the set of UC6 points in compression differs "
-                 "from alpha=0, read from sign(stx(1)) over every live UC6 "
-                 "point.  e_c3d_uc6.f:45 assembles the stiffness from vold, so "
-                 "the next assembly picks up ctan(1,1)=kn on the crossed facet "
-                 "by itself.  No constitutive law, no kn, no g and no material "
-                 "parameter is touched, and no element, ip or increment is "
-                 "named.  If no ladder alpha changes the set, this level does "
-                 "nothing.%s","\n");
-        }
-        if(damage_reg_nlam>0){
-          printf("[DAMAGE RESCUE3] third level ARMED with %" ITGFORMAT
-                 " attempt(s): positive diagonal regularization K+lambda*D."
-                 "  A wall whose failing solve has idamagereeq=0 goes "
-                 "straight here - it never enters a same-load solve, so "
-                 "levels 1 and 2 are gated out and would only repeat the "
-                 "identical attempt.  ad[k] += lambda*D[k] with "
-                 "D[k]=max(|ad[k]|,1e-6*mean|ad|) > 0, immediately before "
-                 "the solver dispatch, where the existing stabiliser "
-                 "already edits the same diagonal.  NOT ad*=(1+lambda), "
-                 "which shifts only where the diagonal is positive; and D "
-                 "is NOT plain |ad|, which is zero where the diagonal is "
-                 "zero and, for ad<0, gives |ad|*(lambda-1) so lambda=1 "
-                 "lands exactly on zero.  The per-attempt sign census is a "
-                 "diagnostic of the diagonal, NOT evidence about the "
-                 "definiteness of K.  Acceptance stays on the UNMODIFIED "
-                 "residual: only ad is shifted.  If mean|ad| is zero, NaN "
-                 "or infinite the shift is skipped and the attempt runs "
-                 "stock.  lambda ladder:",damage_reg_nlam);
-          for(i=0;i<damage_reg_nlam;i++) printf(" %.3e",damage_reg_lam[i]);
-          printf(".  When it is exhausted the wall is left to the original "
-                 "stock stop, so the run ends exactly where rescue-2 ends "
-                 "it.%s","\n");
-        }
-        fflush(stdout);
-      }
+      rescue_configure_levels(&rsc,&lc,&prb);
 
       if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_RESIDUAL_RAY"))!=NULL){
         prb.ray_probe=1;
@@ -1693,206 +1364,9 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           printf("[FRACTURE TERMINATION] *WARNING: CCX_FRACTURE_LINK=%s is not NODE or FACE; keeping NODE\n",damage_de13_env);
         }
       }
-      /* ---- CCX_DAMAGE_TR_DOGLEG ---------------------------------------
+      dogleg_configure(&dog,&rsc,&lc);
 
-         A root-finding TRUST REGION with a dogleg step, on the ORIGINAL
-         equilibrium residual.  It is NOT another regularisation: no matrix
-         is modified, no diagonal is shifted, no constitutive law, no Kn, no
-         g and no deletion criterion is touched.  The only thing that changes
-         is HOW LONG and IN WHICH DIRECTION the correction is, inside one
-         armed increment attempt.
-
-         Why here and not from the start: J-19 rejected the corridor because
-         a held regularisation carried the solver instead of returning it to
-         itself.  So this arms ONLY as rescue LEVEL 3, i.e. only after the
-         Rescue2 levels 1 and 2 have both failed terminally on the same wall,
-         and only on a wall with idamagereeq==0 - where the measured failure
-         is a LINE SEARCH failure: at s3rad inc=569 BK3 reports lambda pinned
-         at its floor 0.100000 with res_damped 2.001658e-03 ABOVE res_old
-         1.942365e-03 on every one of the four identical attempts.  A floor
-         of 0.1 on the Newton DIRECTION is exactly what a trust region does
-         not have: it may go shorter, and it may leave that direction.
-
-         Model, following PETSc SNESNEWTONTRDC:
-             phi(u) = 1/2 |R(u)|^2 ,  R = f_int - f_ext = -b
-             J p_N  = -R = b        (p_N is what PARDISO returns)
-             g      = J^T R = -d    with d := J^T b
-             p_C    = (|d|^2/|Jd|^2) d          (Cauchy point)
-             p      = dogleg(p_C,p_N,Delta)
-             rho    = [phi(u)-phi(u+p)] / [phi(u) - 1/2|R+Jp|^2]
-         Acceptance of the STEP is rho; acceptance of the INCREMENT stays
-         with checkconvergence on the unmodified residual.
-
-         J^T IS FORMED AS J^T, and the run proves it: dot(d,p_N) must equal
-         |b|^2 exactly, because dot(J^T b, J^-1 b) = b^T b.  That identity is
-         printed as TRANSPOSE-CHECK on the first armed iteration and the
-         mechanism REFUSES TO ARM if it is not 1 to 1e-8.  The asymmetry of
-         the operator is measured at the same point, not assumed. */
-
-      if(ccxopt_getenv("CCX_DAMAGE_TR_DOGLEG")!=NULL){
-        if(rsc.rescue_mode==0){
-          printf("*ERROR: CCX_DAMAGE_TR_DOGLEG requires "
-                 "CCX_DAMAGE_REEQ_RESCUE2; it is a level ON TOP of "
-                 "Rescue2, not a replacement.  Stopping.%s","\n");
-          fflush(stdout);FORTRAN(stop,());
-        }
-        if((rsc.corr_mode==1)||(damage_reg_nlam>0)){
-          printf("*ERROR: CCX_DAMAGE_TR_DOGLEG must not run together with "
-                 "CCX_DAMAGE_REEQ_RESCUE3 or CCX_DAMAGE_RESCUE_CORRIDOR - "
-                 "both were measured NEGATIVE (J-19) and both would occupy "
-                 "the same rescue levels.  Stopping.%s","\n");
-          fflush(stdout);FORTRAN(stop,());
-        }
-        if(rsc.bt_mode==1){
-          printf("*ERROR: CCX_DAMAGE_TR_DOGLEG must not run together with "
-                 "always-on CCX_DAMAGE_REEQ_BACKTRACK (rejected, J-17).  "
-                 "Stopping.%s","\n");
-          fflush(stdout);FORTRAN(stop,());
-        }
-        dog.mode=1;
-        rsc.rescue_maxlevel=3;
-        if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_TR_MAXTRIAL"))!=NULL)
-          dog.maxtrial=atoi(damage_de13_env);
-        if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_TR_MAXEVAL"))!=NULL)
-          dog.maxeval=atoi(damage_de13_env);
-        if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_TR_MAXFACT"))!=NULL)
-          dog.maxfact=atoi(damage_de13_env);
-        if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_TR_MAXARM"))!=NULL)
-          dog.maxarm=atoi(damage_de13_env);
-        if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_TR_D0"))!=NULL)
-          dog.d0fac=atof(damage_de13_env);
-        if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_TR_LINCHECK"))!=NULL)
-          dog.lincheck=atoi(damage_de13_env);
-        if(dog.lincheck<0) dog.lincheck=0;
-        if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_TR_LINCHECK_IT"))!=NULL)
-          dog.lc_it=atoi(damage_de13_env);
-        if(dog.lc_it<1) dog.lc_it=1;
-        if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_TR_LINCHECK_NIT"))!=NULL)
-          dog.lc_nit=atoi(damage_de13_env);
-        if(dog.lc_nit<1) dog.lc_nit=1;
-        /* the geometry of the step is proved before the first increment, on
-           a J whose dogleg is known in closed form.  A failure here is
-           arithmetic, so the run must not start. */
-        if(dogleg_selftest()!=0){
-          printf("*ERROR: the trust-region geometry self-test FAILED.  "
-                 "Stopping rather than running a method whose step "
-                 "construction is wrong.%s","\n");
-          fflush(stdout);FORTRAN(stop,());
-        }
-        if(dog.maxtrial<1) dog.maxtrial=1;
-        if(dog.maxtrial>12) dog.maxtrial=12;
-        if(dog.maxeval<1) dog.maxeval=1;
-        if(dog.maxfact<1) dog.maxfact=1;
-        if(dog.maxarm<1) dog.maxarm=1;
-        if(dog.d0fac<=0.) dog.d0fac=1.;
-        printf("[DAMAGE TR] trust-region DOGLEG armed as rescue LEVEL 3.  "
-               "Levels 1 and 2 are the unchanged Rescue2 behaviour and run "
-               "first; only when BOTH have failed on the same wall does the "
-               "increment get one more attempt, and in that attempt every "
-               "Newton correction is chosen by a dogleg trust region on "
-               "phi=1/2|R|^2 instead of by BK3.  No matrix entry, no "
-               "material constant and no deletion rule is touched, and "
-               "convergence is still judged by checkconvergence on the "
-               "UNMODIFIED residual.  Budget: <=%" ITGFORMAT " trial steps "
-               "per iteration, <=%" ITGFORMAT " residual evaluations, <=%"
-               ITGFORMAT " armed factorisations, <=%" ITGFORMAT " armed "
-               "attempts in the whole run; on exhaustion the state is "
-               "restored and the ORIGINAL stock stop runs.  Initial radius "
-               "= %.3f * |p_Newton| at the first armed iteration.%s",
-               dog.maxtrial,dog.maxeval,dog.maxfact,
-               dog.maxarm,dog.d0fac,"\n");
-        fflush(stdout);
-      }
-
-      /* ---- CCX_DAMAGE_CONTINUATION (SPEC FREEZE v1) ------------------
-
-         Bounded EXPERIMENTAL coupled local continuation.  Arms only as
-         rescue LEVEL 4, i.e. only after Rescue2 levels 1 and 2 AND the
-         dogleg have all failed on one wall.  Its single purpose is to find
-         out whether coupled local continuation crosses the s3rad wall near
-         inc=589 with physical front advance.
-
-             R(u,lambda) = f(u,xbounact(lambda)) - fext = 0
-             c(u,lambda) = m.(delta - delta_c) - ds    = 0
-
-         lambda is a genuine unknown of a bordered system, not a corrected
-         theta.  It owns the boundary for the rest of the step once armed.
-         This is NOT a production continuation: there is no terminal landing
-         at lambda=1, no return to stock control, no completed step and no
-         restart.  Every ending is PARTIAL. */
-
-      if(ccxopt_getenv("CCX_DAMAGE_CONTINUATION")!=NULL){
-        if((rsc.rescue_mode==0)||(dog.mode==0)){
-          printf("*ERROR: CCX_DAMAGE_CONTINUATION requires BOTH "
-                 "CCX_DAMAGE_REEQ_RESCUE2 and CCX_DAMAGE_TR_DOGLEG; it is a "
-                 "level ON TOP of them, never a replacement.  Stopping.%s",
-                 "\n");
-          fflush(stdout);FORTRAN(stop,());
-        }
-        if((rsc.corr_mode==1)||(damage_reg_nlam>0)||(rsc.bt_mode==1)||
-           (damage_arc==1)||(damage_diss_ctrl>=1)||(damage_path_on>0)){
-          printf("*ERROR: CCX_DAMAGE_CONTINUATION conflicts with "
-                 "CCX_DAMAGE_ARCLENGTH, CCX_DISSIPATION_CONTROL, "
-                 "CCX_DAMAGE_PATH, CCX_DAMAGE_REEQ_RESCUE3, "
-                 "CCX_DAMAGE_RESCUE_CORRIDOR and always-on "
-                 "CCX_DAMAGE_REEQ_BACKTRACK.  None of them is used as a "
-                 "foundation and simultaneous operation is refused.  "
-                 "Stopping.%s","\n");
-          fflush(stdout);FORTRAN(stop,());
-        }
-        ct.mode=1;
-        rsc.rescue_maxlevel=4;
-        if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CT_RHOMIN"))!=NULL)
-          ct.rhomin=atof(damage_de13_env);
-        if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CT_CLIM"))!=NULL)
-          ct.clim=atof(damage_de13_env);
-        if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CT_ULIM"))!=NULL)
-          ct.ulim=atof(damage_de13_env);
-        if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CT_EPS"))!=NULL)
-          ct.eps=atof(damage_de13_env);
-        if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CT_KAPTOL"))!=NULL)
-          ct.kaptol=atof(damage_de13_env);
-        if(ct.kaptol<1.) ct.kaptol=1.5;
-        if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CT_MAXSTEP"))!=NULL)
-          ct.maxstep=atoi(damage_de13_env);
-        if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CT_MAXCORR"))!=NULL)
-          ct.maxcorr=atoi(damage_de13_env);
-        if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CT_MAXFACT"))!=NULL)
-          ct.maxfact=atoi(damage_de13_env);
-        if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_CT_MAXEVAL"))!=NULL)
-          ct.maxeval=atoi(damage_de13_env);
-        if(ct.rhomin<=0.) ct.rhomin=1.e-4;
-        if(ct.clim<=0.) ct.clim=20.;
-        if(ct.ulim<=0.) ct.ulim=20.;
-        if(ct.eps<=0.) ct.eps=1.e-6;
-        if(ct.maxstep<1) ct.maxstep=1;
-        if(ct.maxcorr<1) ct.maxcorr=1;
-        if(ct.maxfact<1) ct.maxfact=1;
-        if(ct.maxeval<1) ct.maxeval=1;
-        printf("[DAMAGE CT] bounded EXPERIMENTAL continuation armed as rescue "
-               "LEVEL 4.  Levels 1-3 (Rescue2 and the dogleg) are unchanged "
-               "and run first.  On a wall none of them takes, lambda becomes "
-               "a genuine unknown of a bordered system with one FROZEN "
-               "local mixed-mode UC6 constraint, and owns the boundary for "
-               "the rest of the step.  There is NO terminal landing, NO "
-               "return to stock control, NO completed step and NO restart: "
-               "every ending is PARTIAL.  Parameters (all opt-in, printed as "
-               "actually used): rho_den_min=%.3e C_lambda=%.1f C_u=%.1f "
-               "eps_FD=%.3e kappa_tol=%.3f; budget <=%" ITGFORMAT " steps, <=%" ITGFORMAT
-               " corrector iterations, <=%" ITGFORMAT " factorisations, <=%"
-               ITGFORMAT " residual evaluations.%s",
-               ct.rhomin,ct.clim,ct.ulim,ct.eps,
-               ct.kaptol,
-               ct.maxstep,ct.maxcorr,ct.maxfact,
-               ct.maxeval,"\n");
-        fflush(stdout);
-        if(damcont_selftest()!=0){
-          printf("*ERROR: the continuation bordered-algebra self-test "
-                 "FAILED.  Stopping rather than running a method whose "
-                 "constraint row is wrong.%s","\n");
-          fflush(stdout);FORTRAN(stop,());
-        }
-      }
+      damcont_configure(&ct,&dog,&rsc,&lc);
 
       /* A requested rescue flag that silently fails to arm has already
          cost two whole runs: CCX_DAMAGE_REEQ_RESCUE3 and then
@@ -1908,7 +1382,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         fflush(stdout);FORTRAN(stop,());
       }
       if((ccxopt_getenv("CCX_DAMAGE_REEQ_RESCUE3")!=NULL)&&
-         (damage_reg_nlam==0)){
+         (lc.reg_nlam==0)){
         printf("*ERROR: CCX_DAMAGE_REEQ_RESCUE3 is set but the "
                "regularized level did NOT arm.  Stopping.%s","\n");
         fflush(stdout);FORTRAN(stop,());
@@ -2094,13 +1568,13 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         }
       }
 
-      if(ccxopt_getenv("CCX_DISSIPATION_REPORT")!=NULL) damage_diss_report=1;
-      damage_diss_env=ccxopt_getenv("CCX_DISSIPATION_TARGET");
-      if(damage_diss_env!=NULL){
-        damage_diss_target=atof(damage_diss_env);
-        if(damage_diss_target>0.) damage_diss_report=1;
+      if(ccxopt_getenv("CCX_DISSIPATION_REPORT")!=NULL) lc.diss_report=1;
+      lc.diss_env=ccxopt_getenv("CCX_DISSIPATION_TARGET");
+      if(lc.diss_env!=NULL){
+        lc.diss_target=atof(lc.diss_env);
+        if(lc.diss_target>0.) lc.diss_report=1;
       }
-      if(ccxopt_getenv("CCX_DISSIPATION_PROBE")!=NULL) damage_diss_probe=1;
+      if(ccxopt_getenv("CCX_DISSIPATION_PROBE")!=NULL) lc.diss_probe=1;
       if(ccxopt_getenv("CCX_DAMAGE_BATCH_LIST")!=NULL) damage_batch_list=1;
       /* The stress is scaled by 1-Dvis whenever the viscosity is
          on, so the deletion trigger has to read the same variable.
@@ -2123,13 +1597,13 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
       if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_NULLVEC_IT"))!=NULL)
         prb.null_nit=atoi(damage_de13_env);
       if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_PATH_DROP"))!=NULL)
-        damage_path_drop=atof(damage_de13_env);
+        lc.path_drop=atof(damage_de13_env);
       if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_PATH_NSTEP"))!=NULL)
-        damage_path_nstep=atoi(damage_de13_env);
+        lc.path_nstep=atoi(damage_de13_env);
       if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_PATH"))!=NULL){
-        damage_path_on=atoi(damage_de13_env);
-        if(damage_path_on<0) damage_path_on=0;
-        if(damage_path_on>2) damage_path_on=2;
+        lc.path_on=atoi(damage_de13_env);
+        if(lc.path_on<0) lc.path_on=0;
+        if(lc.path_on>2) lc.path_on=2;
       }
       if(ccxopt_getenv("CCX_DAMAGE_STIFF_PROBE")!=NULL)
         damage_stiff_probe=1;
@@ -2303,23 +1777,23 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                  damage_stab_alpha);
         }
       }
-      damage_diss_env=ccxopt_getenv("CCX_DISSIPATION_CONTROL");
-      if((damage_diss_env!=NULL)&&(damage_diss_target>0.)){
-        damage_diss_ctrl=(strcmp(damage_diss_env,"2")==0)?2:1;
-        if(damage_diss_ctrl==2){
-          NNEW(damage_diss_fhat,double,neq[1]);
-          NNEW(damage_diss_uf,double,neq[1]);
+      lc.diss_env=ccxopt_getenv("CCX_DISSIPATION_CONTROL");
+      if((lc.diss_env!=NULL)&&(lc.diss_target>0.)){
+        lc.diss_ctrl=(strcmp(lc.diss_env,"2")==0)?2:1;
+        if(lc.diss_ctrl==2){
+          NNEW(lc.diss_fhat,double,neq[1]);
+          NNEW(lc.diss_uf,double,neq[1]);
         }
-        damage_diss_report=1;
+        lc.diss_report=1;
         printf("[DISSIPATION CONTROL] load factor solved from "
                "dG=%.6e per increment; theta is advanced only on "
-               "acceptance\n",damage_diss_target);
+               "acceptance\n",lc.diss_target);
       }
 
       /* Path following: give lambda an identity separate from theta.
 
          Everything in this file has so far identified the load factor WITH
-         the step time: `damage_diss_lprev=theta`, and both dissipation
+         the step time: `lc.diss_lprev=theta`, and both dissipation
          schemes end by clamping `lamcur` back to `theta`
          (nonlingeo.c 5153 and 5635).  theta only ever advances, because
          dtime=dtheta*tper feeds the viscous update and must stay positive,
@@ -2375,24 +1849,24 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
          CCX_DISSIPATION_STEP=0 keeps the stock step controller and leaves
          the target to the constraint alone. */
       if((damage_de13_env=ccxopt_getenv("CCX_DISSIPATION_STEP"))!=NULL){
-        damage_diss_step=(strcmp(damage_de13_env,"0")==0)?0:1;
-        if(damage_diss_step==0){
+        lc.diss_step=(strcmp(damage_de13_env,"0")==0)?0:1;
+        if(lc.diss_step==0){
           printf("[DISSIPATION] step sizing is OFF; the target drives the "
                  "constraint only, the stock controller sizes the step\n");
         }
       }
       if((damage_de13_env=ccxopt_getenv("CCX_DISSIPATION_ENGAGE_T"))!=NULL){
-        damage_diss_engage_t=atof(damage_de13_env);
+        lc.diss_engage_t=atof(damage_de13_env);
       }
       if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_ARCLENGTH"))!=NULL){
-        damage_arc=(strcmp(damage_de13_env,"0")==0)?0:1;
+        lc.arc=(strcmp(damage_de13_env,"0")==0)?0:1;
       }
-      if(damage_arc==1){
-        if(damage_diss_ctrl!=2){
+      if(lc.arc==1){
+        if(lc.diss_ctrl!=2){
           printf("[PATH FOLLOWING] *WARNING: CCX_DAMAGE_ARCLENGTH needs "
                  "CCX_DISSIPATION_CONTROL=2 to have an equation for lambda; "
                  "it is ignored\n");
-          damage_arc=0;
+          lc.arc=0;
         }else{
           printf("[PATH FOLLOWING] lambda is decoupled from the step time "
                  "and may DECREASE; theta stays monotone for dtime\n");
@@ -2579,7 +2053,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     if(!(pf.tauv>0.)){
       printf("[PATHFOLLOW] *ERROR: CCX_PATHFOLLOW must be a positive "
              "dissipation increment; got \"%s\".  Not armed.\n",pf.env);
-    }else if(damage_diss_ctrl>=1){
+    }else if(lc.diss_ctrl>=1){
       printf("[PATHFOLLOW] *ERROR: CCX_PATHFOLLOW and "
              "CCX_DISSIPATION_CONTROL both drive the load factor; "
              "set only one.  Not armed.\n");
@@ -3662,7 +3136,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 
       /* ---- [DAMAGE CORR] one pass per converged increment ---------- */
       if(rsc.corr_mode==1){
-        if((damage_rec_used_in_inc==0)&&(damage_reg_on==0)){
+        if((rsc.rec_used_in_inc==0)&&(lc.reg_on==0)){
           /* The crawl breaker needs a reference from HEALTHY operation.
              Taking it from the last clean increment before entry is
              wrong: that increment sits at the wall, where the stock
@@ -3684,7 +3158,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           rsc.corr_nsince++;
           rsc.corr_nwallstab=0;
           rsc.corr_dtsum+=dtheta;rsc.corr_dtn++;
-          rsc.corr_nfact+=damage_reg_napply;
+          rsc.corr_nfact+=lc.reg_napply;
           /* A probe stays a PROBE until it has survived stableneed
              converged increments.  Clearing the flag after the FIRST
              success - the earlier draft did - makes a failure on the
@@ -3715,7 +3189,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                    rsc.corr_nfact,(theta-rsc.corr_theta0)**tper,
                    cmean**tper,rsc.corr_dtref**tper,"\n");
             fflush(stdout);
-            rsc.corr_on=0;damage_reg_on=0;rsc.corr_lam=0.;
+            rsc.corr_on=0;lc.reg_on=0;rsc.corr_lam=0.;
           }else{
             if(rsc.corr_ninc>rsc.corr_maxinc) cbrk=1;
             if((cbrk==0)&&(rsc.corr_ninc>rsc.corr_grace)&&
@@ -3734,8 +3208,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                      (theta-rsc.corr_theta0)**tper,cmean**tper,
                      rsc.corr_dtref**tper,"\n");
               fflush(stdout);
-              rsc.corr_on=0;damage_reg_on=0;rsc.corr_lam=0.;
-              damage_rec_disarmed=1;
+              rsc.corr_on=0;lc.reg_on=0;rsc.corr_lam=0.;
+              rsc.rec_disarmed=1;
             }else{
               rsc.corr_try--;
               if((rsc.corr_try<=0)&&(rsc.corr_lam>0.)&&
@@ -3751,11 +3225,11 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                        rsc.corr_lamstable,rsc.corr_lam,"\n");
                 fflush(stdout);
               }
-              damage_reg_lambda=rsc.corr_lam;
-              damage_reg_on=(rsc.corr_lam>0.)?1:0;
+              lc.reg_lambda=rsc.corr_lam;
+              lc.reg_on=(rsc.corr_lam>0.)?1:0;
             }
           }
-          damage_reg_napply=0;
+          lc.reg_napply=0;
         }
       }
 
@@ -3784,8 +3258,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         fflush(stdout);
         ct.partial=1;ct.on=0;
       }
-      if(damage_rec_used_in_inc==0){
-        damage_rec_healthy++;
+      if(rsc.rec_used_in_inc==0){
+        rsc.rec_healthy++;
         /* [DAMAGE TR] five consecutive clean increments, derived from
            INCREMENT NUMBERS rather than from a running flag.  The previous
            counter was incremented in one place and cleared in two, and its
@@ -3812,17 +3286,17 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
             fflush(stdout);
           }
         }
-        if((damage_rec_healthy==damage_rec_window)&&
-           (damage_rec_unrec>0)){
+        if((rsc.rec_healthy==rsc.rec_window)&&
+           (rsc.rec_unrec>0)){
           printf("[DAMAGE RESCUE] RECOVERED: %" ITGFORMAT " consecutive "
                  "increments converged with no intervention; the "
                  "un-recovered counter is cleared%s",
-                 damage_rec_window,"\n");
+                 rsc.rec_window,"\n");
           fflush(stdout);
-          damage_rec_unrec=0;
+          rsc.rec_unrec=0;
         }
       }
-      damage_rec_used_in_inc=0;
+      rsc.rec_used_in_inc=0;
 
       if(rsc.rescue_bt_on==1){
         rsc.rescue_bt_on=0;
@@ -3848,13 +3322,13 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         }
         dog.on=0;
         dog.delta=0.;
-        if((damage_reg_on==1)&&(rsc.corr_mode==1)&&
+        if((lc.reg_on==1)&&(rsc.corr_mode==1)&&
            (rsc.corr_on==0)){
           rsc.corr_on=1;
-          rsc.corr_lam=damage_reg_lambda;
-          rsc.corr_lamstable=damage_reg_lambda;
+          rsc.corr_lam=lc.reg_lambda;
+          rsc.corr_lamstable=lc.reg_lambda;
           rsc.corr_ninc=0;rsc.corr_nint=1;
-          rsc.corr_nfact=damage_reg_napply;
+          rsc.corr_nfact=lc.reg_napply;
           rsc.corr_clean=0;rsc.corr_try=rsc.corr_tryevery;
           rsc.corr_dtsum=0.;rsc.corr_dtn=0;
           rsc.corr_trial=0;rsc.corr_nsince=0;
@@ -3877,18 +3351,18 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                  " clean increments = %.6e (the last clean increment "
                  "alone was %.6e and sits at the wall, so it is not a "
                  "healthy reference)%s",
-                 theta**tper,rsc.corr_lam,damage_reg_napply,
+                 theta**tper,rsc.corr_lam,lc.reg_napply,
                  damage_dth_n,rsc.corr_dtref**tper,
                  damage_dtheta_healthy**tper,"\n");
           fflush(stdout);
-        }else if(damage_reg_on==1){
+        }else if(lc.reg_on==1){
           printf("[DAMAGE REG] the regularized attempt CONVERGED after %"
                  ITGFORMAT " factorisation(s) at lambda=%.3e; the shift "
                  "is switched OFF and the run continues stock%s",
-                 damage_reg_napply,damage_reg_lambda,"\n");
+                 lc.reg_napply,lc.reg_lambda,"\n");
           fflush(stdout);
         }
-        if(rsc.corr_on==0) damage_reg_on=0;
+        if(rsc.corr_on==0) lc.reg_on=0;
         rsc.rescue_nok++;
         printf("[DAMAGE RESCUE] ACCEPTED: the rescue increment converged at "
                "step time %.12e; backtracking switched OFF, rescue re-armed "
@@ -4365,9 +3839,9 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     /* trial load factor for dissipation control; theta itself is
        left alone until the increment is accepted */
 
-    if(damage_diss_ctrl>=1){
-      damage_diss_lamcur=(damage_arc==1)?(damage_arc_lam+dtheta):(theta+dtheta);
-      damage_diss_have=0;
+    if(lc.diss_ctrl>=1){
+      lc.diss_lamcur=(lc.arc==1)?(lc.arc_lam+dtheta):(theta+dtheta);
+      lc.diss_have=0;
     }
     time=reltime**tper;
     dtime=dtheta**tper;
@@ -4390,9 +3864,9 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
        START of the step, so this is an absolute step fraction - exactly the
        ramp CCX_DAMAGE_PATH mode 1 verified against tempload at max|diff|=0. */
 
-    if(damage_arc==1){
+    if(lc.arc==1){
       for(k=0;k<*nboun;k++){
-        xbounact[k]=xbounold[k]+(xboun[k]-xbounold[k])*damage_diss_lamcur;
+        xbounact[k]=xbounold[k]+(xboun[k]-xbounold[k])*lc.diss_lamcur;
       }
     }
 
@@ -4952,8 +4426,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
        anything is allowed to rely on the equivalence.  Amplitudes would
        break it, and this reports that rather than assuming it. */
 
-    if(damage_path_on>0){
-      damage_path_lam=theta+dtheta;
+    if(lc.path_on>0){
+      lc.path_lam=theta+dtheta;
 
       /* Diagnostic descent.  After a deletion transaction has been
          rolled back, the question is whether an equilibrium exists
@@ -4980,9 +4454,9 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
          3.4e8, damage saturated in 9195 elements.  A descent has to be
          walked, with each step accepted, exactly like a loading path. */
 
-      if((damage_path_on>=2)&&(damage_path_desc>0)){
-        damage_path_lam=damage_path_lamcom*(1.-damage_path_drop);
-        if(damage_path_lam<1.e-6) damage_path_lam=1.e-6;
+      if((lc.path_on>=2)&&(lc.path_desc>0)){
+        lc.path_lam=lc.path_lamcom*(1.-lc.path_drop);
+        if(lc.path_lam<1.e-6) lc.path_lam=1.e-6;
 
         /* The descent is armed when dtheta has already collapsed to
            the floor, so without this it fails the minimum-size test
@@ -4992,12 +4466,12 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
            Give the descent a workable step and a fresh set of
            attempts, bounded so a descent that never converges cannot
            spin. */
-        damage_path_att++;
-        if(damage_path_att>4*damage_path_nstep){
-          damage_path_desc=0;
+        lc.path_att++;
+        if(lc.path_att>4*lc.path_nstep){
+          lc.path_desc=0;
           printf("[DAMAGE PATH] descent abandoned after %" ITGFORMAT
                  " attempts without an accepted step\n",
-                 damage_path_att);
+                 lc.path_att);
           fflush(stdout);
         }else{
           if(dtheta<0.5*dthetaref) dtheta=0.5*dthetaref;
@@ -5005,21 +4479,21 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         }
         printf("[DAMAGE PATH] inc=%" ITGFORMAT " descent step %"
                ITGFORMAT " left: lambda %.6f -> %.6f\n",
-               iinc,damage_path_desc,damage_path_lamcom,damage_path_lam);
+               iinc,lc.path_desc,lc.path_lamcom,lc.path_lam);
         fflush(stdout);
       }
-      damage_path_dev=0.;
+      lc.path_dev=0.;
       for(k=0;k<*nboun;k++){
-        damage_path_ref=xbounold[k]+(xboun[k]-xbounold[k])*damage_path_lam;
-        if(fabs(damage_path_ref-xbounact[k])>damage_path_dev)
-          damage_path_dev=fabs(damage_path_ref-xbounact[k]);
-        if(damage_path_on>=2) xbounact[k]=damage_path_ref;
+        lc.path_ref=xbounold[k]+(xboun[k]-xbounold[k])*lc.path_lam;
+        if(fabs(lc.path_ref-xbounact[k])>lc.path_dev)
+          lc.path_dev=fabs(lc.path_ref-xbounact[k]);
+        if(lc.path_on>=2) xbounact[k]=lc.path_ref;
       }
-      if(damage_path_dev>damage_path_devmax){
-        damage_path_devmax=damage_path_dev;
+      if(lc.path_dev>lc.path_devmax){
+        lc.path_devmax=lc.path_dev;
         printf("[DAMAGE PATH] inc=%" ITGFORMAT " lambda=%.6f "
                "max|ramp-tempload|=%.6e (new maximum)\n",
-               iinc,damage_path_lam,damage_path_dev);
+               iinc,lc.path_lam,lc.path_dev);
         fflush(stdout);
       }
     }
@@ -6625,20 +6099,20 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	   Solving both together removes that deadlock, because the constraint
 	   becomes part of the linear system instead of a layer on top. */
 	
-	if((damage_diss_ctrl==2)&&(damage_diss_fhat!=NULL)){
+	if((lc.diss_ctrl==2)&&(lc.diss_fhat!=NULL)){
 	  if((iit==1)&&(dtheta>1.e-30)){
-	    for(k=0;k<neq[1];k++) damage_diss_fhat[k]=b[k]/dtheta;
-	    damage_diss_kpp=(damage_diss_p-damage_diss_pprev)/dtheta;
-	    damage_diss_have=1;
+	    for(k=0;k<neq[1];k++) lc.diss_fhat[k]=b[k]/dtheta;
+	    lc.diss_kpp=(lc.diss_p-lc.diss_pprev)/dtheta;
+	    lc.diss_have=1;
 	  }
-	  if(damage_diss_have==1){
-	    for(k=0;k<neq[1];k++) damage_diss_uf[k]=damage_diss_fhat[k];
+	  if(lc.diss_have==1){
+	    for(k=0;k<neq[1];k++) lc.diss_uf[k]=lc.diss_fhat[k];
 	  }
-	  if(damage_diss_probe==1){
+	  if(lc.diss_probe==1){
 	    printf("[DISS-GATE] it=%" ITGFORMAT " have=%" ITGFORMAT
 	           " eng=%" ITGFORMAT " isolver=%" ITGFORMAT
 	           " ithermal=%" ITGFORMAT " dtheta=%.4e\n",
-	           iit,damage_diss_have,damage_diss_engaged,*isolver,
+	           iit,lc.diss_have,lc.diss_engaged,*isolver,
 	           *ithermal,dtheta);
 	    fflush(stdout);
 	  }
@@ -6959,7 +6433,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
            residual, and checkconvergence decides on ram/cam/qa/uam from
            results()/calcresidual, none of which sees the shift. */
 
-        if((damage_reg_on==1)&&(*ithermal<2)){
+        if((lc.reg_on==1)&&(*ithermal<2)){
           ITG rneg=0,rzero=0,nsum=0,nfl=0,nneg2=0;
           double rmin=1.e300,rmax=-1.e300,rabs,dsum=0.,dmean,dfloor;
           double ssum=0.,smax=0.,sh;
@@ -6981,7 +6455,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                    "(zero, NaN or infinite); regularization NOT applied, "
                    "the attempt falls back to stock%s","\n");
             fflush(stdout);
-            damage_reg_on=0;
+            lc.reg_on=0;
           }else{
             dfloor=1.e-6*dmean;
             /* D must be STRICTLY positive.  Plain |ad| is not: it
@@ -6991,13 +6465,13 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
             for(k=0;k<neq[1];k++){
               rabs=(ad[k]<0.)?-ad[k]:ad[k];
               if(rabs<dfloor){rabs=dfloor;nfl++;}
-              sh=damage_reg_lambda*rabs;
+              sh=lc.reg_lambda*rabs;
               ssum+=sh; if(sh>smax) smax=sh;
               ad[k]+=sh;
             }
             for(k=0;k<neq[1];k++) if(ad[k]<0.) nneg2++;
-            damage_reg_napply++;
-            if(damage_reg_napply==1){
+            lc.reg_napply++;
+            if(lc.reg_napply==1){
               printf("[DAMAGE REG] inc=%" ITGFORMAT " iter=%" ITGFORMAT
                      " diagonal sign census BEFORE the shift - a "
                      "DIAGNOSTIC of the diagonal, NOT evidence about the "
@@ -7011,8 +6485,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                      "mean=%.6e max=%.6e floored_dof=%" ITGFORMAT
                      " ; diagonal negatives %" ITGFORMAT " -> %" ITGFORMAT
                      ".  Acceptance remains on the UNMODIFIED residual%s",
-                     dfloor,damage_reg_lambda,damage_reg_level+1,
-                     damage_reg_nlam,ssum/neq[1],smax,nfl,rneg,nneg2,"\n");
+                     dfloor,lc.reg_lambda,lc.reg_level+1,
+                     lc.reg_nlam,ssum/neq[1],smax,nfl,rneg,nneg2,"\n");
               fflush(stdout);
             }
           }
@@ -7257,62 +6731,62 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	   accepted increment reaches a fraction of the target, then
 	   engage and stay engaged. */
 
-	if((damage_diss_ctrl==2)&&(damage_diss_have==1)&&
-	   (damage_diss_engaged==1)&&
+	if((lc.diss_ctrl==2)&&(lc.diss_have==1)&&
+	   (lc.diss_engaged==1)&&
 	   (*isolver==7)&&(*ithermal<2)){
 #ifdef PARDISO
-	  pardiso_main(ad,au,adb,aub,&sigma,damage_diss_uf,icol,irow,
+	  pardiso_main(ad,au,adb,aub,&sigma,lc.diss_uf,icol,irow,
 	               &neq[0],&nzs[0],&symmetryflag,&inputformat,jq,
 	               &nzs[2],&nrhs);
 #endif
-	  damage_diss_fr=0.;
-	  damage_diss_ff=0.;
+	  lc.diss_fr=0.;
+	  lc.diss_ff=0.;
 	  for(k=0;k<neq[1];k++){
-	    damage_diss_fr+=damage_diss_fhat[k]*b[k];
-	    damage_diss_ff+=damage_diss_fhat[k]*damage_diss_uf[k];
+	    lc.diss_fr+=lc.diss_fhat[k]*b[k];
+	    lc.diss_ff+=lc.diss_fhat[k]*lc.diss_uf[k];
 	  }
-	  damage_diss_dgcur=0.5*(damage_diss_pprev*damage_diss_lamcur-
-	                         damage_diss_p*damage_diss_lprev);
-	  damage_diss_g=damage_diss_dgcur-damage_diss_target;
+	  lc.diss_dgcur=0.5*(lc.diss_pprev*lc.diss_lamcur-
+	                         lc.diss_p*lc.diss_lprev);
+	  lc.diss_g=lc.diss_dgcur-lc.diss_target;
 	  /* P is a function of u alone, so dg/dlambda is exactly 0.5*P_n and
 	     every remaining lambda dependence already travels through du_F.
 	     The earlier -0.5*lambda_n*k_pp counted dP/dlambda a second time,
 	     which is what left the correction cancelling itself: the residual
 	     sat at 0.043639 while the displacement correction was 5.7e-7. */
-	  damage_diss_den=0.5*damage_diss_lprev*damage_diss_ff
-	                 +0.5*damage_diss_pprev;
-	  if(damage_diss_probe==1){
+	  lc.diss_den=0.5*lc.diss_lprev*lc.diss_ff
+	                 +0.5*lc.diss_pprev;
+	  if(lc.diss_probe==1){
 	    printf("[DISS-PROBE] it=%" ITGFORMAT " lam=%.6f dG=%.4e g=%.4e"
 	           " fr=%.4e ff=%.4e den=%.4e\n",
-	           iit,damage_diss_lamcur,damage_diss_dgcur,damage_diss_g,
-	           damage_diss_fr,damage_diss_ff,damage_diss_den);
+	           iit,lc.diss_lamcur,lc.diss_dgcur,lc.diss_g,
+	           lc.diss_fr,lc.diss_ff,lc.diss_den);
 	    fflush(stdout);
 	  }
-	  if(fabs(damage_diss_den)>1.e-30){
-	    damage_diss_dlam=-(damage_diss_g
-	                       +0.5*damage_diss_lprev*damage_diss_fr)
-	                     /damage_diss_den;
-	    if(damage_diss_dlam>DAMAGE_DISS_DLAM*dthetaref)
-	      damage_diss_dlam=DAMAGE_DISS_DLAM*dthetaref;
-	    if(damage_diss_dlam<-DAMAGE_DISS_DLAM*dthetaref)
-	      damage_diss_dlam=-DAMAGE_DISS_DLAM*dthetaref;
+	  if(fabs(lc.diss_den)>1.e-30){
+	    lc.diss_dlam=-(lc.diss_g
+	                       +0.5*lc.diss_lprev*lc.diss_fr)
+	                     /lc.diss_den;
+	    if(lc.diss_dlam>DAMAGE_DISS_DLAM*dthetaref)
+	      lc.diss_dlam=DAMAGE_DISS_DLAM*dthetaref;
+	    if(lc.diss_dlam<-DAMAGE_DISS_DLAM*dthetaref)
+	      lc.diss_dlam=-DAMAGE_DISS_DLAM*dthetaref;
 	    for(k=0;k<neq[1];k++)
-	      b[k]+=damage_diss_dlam*damage_diss_uf[k];
-	    damage_diss_lamcur+=damage_diss_dlam;
-	    if(damage_diss_probe==1){
+	      b[k]+=lc.diss_dlam*lc.diss_uf[k];
+	    lc.diss_lamcur+=lc.diss_dlam;
+	    if(lc.diss_probe==1){
 	      printf("[DISS-PROBE]      dlam=%.6e -> lam=%.6f\n",
-	             damage_diss_dlam,damage_diss_lamcur);
+	             lc.diss_dlam,lc.diss_lamcur);
 	      fflush(stdout);
 	    }
-	    if(damage_arc==1){
-	      if(damage_diss_lamcur<0.) damage_diss_lamcur=0.;
-	    }else if(damage_diss_lamcur<=theta){
-	      damage_diss_lamcur=theta+(*tmin);
+	    if(lc.arc==1){
+	      if(lc.diss_lamcur<0.) lc.diss_lamcur=0.;
+	    }else if(lc.diss_lamcur<=theta){
+	      lc.diss_lamcur=theta+(*tmin);
 	    }
-	    if(damage_diss_lamcur>1.) damage_diss_lamcur=1.;
+	    if(lc.diss_lamcur>1.) lc.diss_lamcur=1.;
 	    for(k=0;k<*nboun;k++){
 	      xbounact[k]=xbounold[k]+
-	        (xboun[k]-xbounold[k])*damage_diss_lamcur;
+	        (xboun[k]-xbounold[k])*lc.diss_lamcur;
 	    }
 	  }
 	}
@@ -8105,11 +7579,11 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
          after SFREE(fn) the sum was exactly zero, and at the output calls
          it was stale enough to give a negative dissipation increment. */
 
-      if(damage_diss_report==1){
-        damage_diss_p=0.;
+      if(lc.diss_report==1){
+        lc.diss_p=0.;
         for(i=0;i<*nboun;i++){
           if((ndirboun[i]<1)||(ndirboun[i]>mi[1])) continue;
-          damage_diss_p+=fn[mt*(nodeboun[i]-1)+ndirboun[i]]*xboun[i];
+          lc.diss_p+=fn[mt*(nodeboun[i]-1)+ndirboun[i]]*xboun[i];
         }
       }
 
@@ -8387,56 +7861,56 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
          two iterations, and a non-positive dG is treated as "not yet
          meaningful" rather than as a constraint violation. */
 
-      damage_diss_ok=0;
-      if((damage_diss_ctrl==1)&&(iit>=3)&&(damage_diss_init==1)&&
+      lc.diss_ok=0;
+      if((lc.diss_ctrl==1)&&(iit>=3)&&(lc.diss_init==1)&&
          (ram[0]<ram1[0])&&(ram1[0]<ram2[0])){
-        damage_diss_ok=1;
+        lc.diss_ok=1;
       }
 
-      if(damage_diss_ok==1){
-        damage_diss_dgcur=0.5*(damage_diss_pprev*damage_diss_lamcur-
-                               damage_diss_p*damage_diss_lprev);
-        if(damage_diss_dgcur<=0.) damage_diss_ok=0;
+      if(lc.diss_ok==1){
+        lc.diss_dgcur=0.5*(lc.diss_pprev*lc.diss_lamcur-
+                               lc.diss_p*lc.diss_lprev);
+        if(lc.diss_dgcur<=0.) lc.diss_ok=0;
       }
 
-      if(damage_diss_ok==1){
-        damage_diss_g=damage_diss_dgcur-damage_diss_target;
+      if(lc.diss_ok==1){
+        lc.diss_g=lc.diss_dgcur-lc.diss_target;
 
-        if(damage_diss_have==1){
-          damage_diss_slope=(damage_diss_dgcur-damage_diss_dgold)/
-            (damage_diss_lamcur-damage_diss_lamold);
+        if(lc.diss_have==1){
+          lc.diss_slope=(lc.diss_dgcur-lc.diss_dgold)/
+            (lc.diss_lamcur-lc.diss_lamold);
         }else{
           /* first pass: the only slope estimate available is the secant
              through the converged state */
-          damage_diss_slope=0.5*damage_diss_pprev;
+          lc.diss_slope=0.5*lc.diss_pprev;
         }
-        if(fabs(damage_diss_slope)<1.e-30) damage_diss_slope=
-          (damage_diss_slope<0.)?-1.e-30:1.e-30;
+        if(fabs(lc.diss_slope)<1.e-30) lc.diss_slope=
+          (lc.diss_slope<0.)?-1.e-30:1.e-30;
 
-        damage_diss_dgold=damage_diss_dgcur;
-        damage_diss_lamold=damage_diss_lamcur;
-        damage_diss_have=1;
+        lc.diss_dgold=lc.diss_dgcur;
+        lc.diss_lamold=lc.diss_lamcur;
+        lc.diss_have=1;
 
-        damage_diss_dlam=-damage_diss_g/damage_diss_slope;
+        lc.diss_dlam=-lc.diss_g/lc.diss_slope;
 
         /* bound the move so a bad secant cannot throw lambda across the
            whole step */
-        if(damage_diss_dlam>DAMAGE_DISS_DLAM*dthetaref)
-          damage_diss_dlam=DAMAGE_DISS_DLAM*dthetaref;
-        if(damage_diss_dlam<-DAMAGE_DISS_DLAM*dthetaref)
-          damage_diss_dlam=-DAMAGE_DISS_DLAM*dthetaref;
+        if(lc.diss_dlam>DAMAGE_DISS_DLAM*dthetaref)
+          lc.diss_dlam=DAMAGE_DISS_DLAM*dthetaref;
+        if(lc.diss_dlam<-DAMAGE_DISS_DLAM*dthetaref)
+          lc.diss_dlam=-DAMAGE_DISS_DLAM*dthetaref;
 
-        damage_diss_lamcur+=damage_diss_dlam;
-        if(damage_arc==1){
-          if(damage_diss_lamcur<0.) damage_diss_lamcur=0.;
-        }else if(damage_diss_lamcur<theta){
-          damage_diss_lamcur=theta;
+        lc.diss_lamcur+=lc.diss_dlam;
+        if(lc.arc==1){
+          if(lc.diss_lamcur<0.) lc.diss_lamcur=0.;
+        }else if(lc.diss_lamcur<theta){
+          lc.diss_lamcur=theta;
         }
-        if(damage_diss_lamcur>1.) damage_diss_lamcur=1.;
+        if(lc.diss_lamcur>1.) lc.diss_lamcur=1.;
 
         for(i=0;i<*nboun;i++){
           xbounact[i]=xbounold[i]+
-            (xboun[i]-xbounold[i])*damage_diss_lamcur;
+            (xboun[i]-xbounold[i])*lc.diss_lamcur;
         }
       }
 
@@ -9978,8 +9452,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
            theta, so the dissipation controller's handover would
            overwrite the step the descent just restored - which is
            why the descent only ever got three attempts. */
-        if((damage_diss_ctrl>=1)&&(damage_path_desc==0)&&(damage_arc==0)){
-          dtheta=damage_diss_lamcur-theta;
+        if((lc.diss_ctrl>=1)&&(lc.path_desc==0)&&(lc.arc==0)){
+          dtheta=lc.diss_lamcur-theta;
           if(dtheta<*tmin) dtheta=*tmin;
         }
 
@@ -10005,7 +9479,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         rsc.rescue_dthetaref_last=dthetaref;
         ccx_rescue_req=0;
         ccx_rescue_arm=0;
-        if((rsc.rescue_mode==1)&&(damage_rec_disarmed==0)&&
+        if((rsc.rescue_mode==1)&&(rsc.rec_disarmed==0)&&
            (rsc.rescue_used<rsc.rescue_maxlevel)&&(ncont==0)&&
            (*nmethod!=4)&&(*nmethod!=5)&&(*ithermal<2)&&(*idrct==0)){
           ccx_rescue_arm=1;
@@ -10044,7 +9518,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           }
         }
 
-	damage_arc_theta0=theta;
+	lc.arc_theta0=theta;
 	checkconvergence(co,nk,kon,ipkon,lakon,ne,stn,nmethod, 
 			 kode,filab,een,t1act,&time,epn,ielmat,matname,enern, 
 			 xstaten,nstate_,istep,&iinc,iperturb,ener,mi,output,
@@ -10098,9 +9572,9 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                  bounded - or close. */
               ITG ei;double lnext=0.;
               rsc.corr_nwallstab++;
-              for(ei=0;ei<damage_reg_nlam;ei++){
-                if(damage_reg_lam[ei]>rsc.corr_lam*1.0000001){
-                  lnext=damage_reg_lam[ei];break;
+              for(ei=0;ei<lc.reg_nlam;ei++){
+                if(lc.reg_lam[ei]>rsc.corr_lam*1.0000001){
+                  lnext=lc.reg_lam[ei];break;
                 }
               }
               if((rsc.corr_nwallstab>rsc.corr_maxesc)||(lnext<=0.)){
@@ -10131,20 +9605,20 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                      rsc.corr_ninc,rsc.corr_nint,rsc.corr_nfact,
                      (theta-rsc.corr_theta0)**tper,"\n");
               rsc.corr_on=0;rsc.corr_lam=0.;
-              damage_rec_disarmed=1;
+              rsc.rec_disarmed=1;
             }
-            damage_reg_lambda=rsc.corr_lam;
-            damage_reg_on=(rsc.corr_lam>0.)?1:0;
+            lc.reg_lambda=rsc.corr_lam;
+            lc.reg_on=(rsc.corr_lam>0.)?1:0;
             /* Bank BEFORE zeroing.  Dropping this counts only the
                factorisations of attempts that succeeded, so the price
                of the corridor would be understated by exactly the cost
                of its failures. */
-            rsc.corr_nfact+=damage_reg_napply;
-            damage_reg_napply=0;
+            rsc.corr_nfact+=lc.reg_napply;
+            lc.reg_napply=0;
             rsc.rescue_used=0;
             rsc.rescue_bt_on=0;
             prb.evt_on=0;
-            damage_rec_used_in_inc=1;
+            rsc.rec_used_in_inc=1;
             fflush(stdout);
           }else{
           /* Recovery accounting.  A rescue that fires before WINDOW
@@ -10152,30 +9626,30 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
              anything; MAXUNREC of those in a row and the mechanism
              stops pretending and disarms. */
           if(rsc.rescue_used==0){
-            if(damage_rec_healthy<damage_rec_window){
-              damage_rec_unrec++;
+            if(rsc.rec_healthy<rsc.rec_window){
+              rsc.rec_unrec++;
             }else{
-              damage_rec_unrec=0;
+              rsc.rec_unrec=0;
             }
-            damage_rec_healthy=0;
-            if(damage_rec_unrec>damage_rec_maxunrec){
-              damage_rec_disarmed=1;
+            rsc.rec_healthy=0;
+            if(rsc.rec_unrec>rsc.rec_maxunrec){
+              rsc.rec_disarmed=1;
               printf("[DAMAGE RESCUE] recovery window BLOWN: %" ITGFORMAT
                      " consecutive rescues without %" ITGFORMAT
                      " clean increments in between.  The solver is being "
                      "carried, not recovering, so the mechanism DISARMS "
                      "and this wall goes to the original stock stop%s",
-                     damage_rec_unrec,damage_rec_window,"\n");
+                     rsc.rec_unrec,rsc.rec_window,"\n");
               fflush(stdout);
               ccx_rescue_arm=0;
               ccx_rescue_req=0;
             }
           }
-          if(damage_rec_disarmed==1){
+          if(rsc.rec_disarmed==1){
             rsc.rescue_used=rsc.rescue_maxlevel;
           }else{
           rsc.rescue_used++;
-          damage_rec_used_in_inc=1;
+          rsc.rec_used_in_inc=1;
           rsc.rescue_bt_on=1;
           /* A wall reached with idamagereeq==0 never enters a same-load
              solve, so BT and the event step - both gated on
@@ -10183,7 +9657,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
              recompute the identical attempt.  Measured: s3rad inc=569
              carries four [DAMAGE RESCUE] lines and not one [DAMAGE BT],
              and both retries there failed identically. */
-          if((idamagereeq==0)&&(damage_reg_nlam>0)&&
+          if((idamagereeq==0)&&(lc.reg_nlam>0)&&
              (rsc.rescue_used<2)){
             printf("[DAMAGE RESCUE] this wall has idamagereeq=0: no "
                    "same-load solve, so levels 1 and 2 cannot act on it; "
@@ -10229,19 +9703,19 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
             fflush(stdout);
           }
           prb.evt_on=(rsc.rescue_used==2)?1:0;
-          damage_reg_on=0;
-          /* [DAMAGE TR] guard: without damage_reg_nlam>0 this block indexes
-             damage_reg_lam[-1] and switches the diagonal shift on with a
+          lc.reg_on=0;
+          /* [DAMAGE TR] guard: without lc.reg_nlam>0 this block indexes
+             lc.reg_lam[-1] and switches the diagonal shift on with a
              garbage lambda.  Unreachable while only RESCUE3/CORRIDOR could
              raise the level count; reachable the moment any other mechanism
              claims level 3, which the dogleg does. */
-          if((rsc.rescue_used>=3)&&(damage_reg_nlam>0)){
-            damage_reg_level=rsc.rescue_used-3;
-            if(damage_reg_level>=damage_reg_nlam)
-              damage_reg_level=damage_reg_nlam-1;
-            damage_reg_lambda=damage_reg_lam[damage_reg_level];
-            damage_reg_on=1;
-            damage_reg_napply=0;
+          if((rsc.rescue_used>=3)&&(lc.reg_nlam>0)){
+            lc.reg_level=rsc.rescue_used-3;
+            if(lc.reg_level>=lc.reg_nlam)
+              lc.reg_level=lc.reg_nlam-1;
+            lc.reg_lambda=lc.reg_lam[lc.reg_level];
+            lc.reg_on=1;
+            lc.reg_napply=0;
           }
           }
           }
@@ -10254,7 +9728,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           dog.selfrec=0;
           dog.on=0;
           if((dog.mode==1)&&(rsc.rescue_used>=3)&&
-             (damage_rec_disarmed==0)){
+             (rsc.rec_disarmed==0)){
             if(dog.have<0){
               printf("[DAMAGE TR] not re-arming: the transpose check has "
                      "already failed once in this run.  The wall goes to "
@@ -10269,7 +9743,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                      "ORIGINAL stock stop.%s",
                      dog.narm,dog.maxarm,"\n");
               fflush(stdout);
-              damage_rec_disarmed=1;
+              rsc.rec_disarmed=1;
               rsc.rescue_used=rsc.rescue_maxlevel;
             }else{
               if(dog.narm>0){
@@ -10326,22 +9800,22 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
            every re-equilibration advanced theta while leaving lambda behind.
            The drift accumulated - lambda 0.2733 against theta 0.2706 - and the
            run stalled at 98.6% of peak with 38 deletions. */
-        if((damage_arc==1)&&(theta>damage_arc_theta0)){
+        if((lc.arc==1)&&(theta>lc.arc_theta0)){
           /* Until the constraint engages, lambda has no equation of its own
              and must track theta EXACTLY.  It cannot be taken from
-             damage_diss_lamcur: that was built at the top of the increment
+             lc.diss_lamcur: that was built at the top of the increment
              from the TRIAL dtheta, while checkconvergence advances theta by
              whatever dtheta it settles on.  The two drift, the dG formula
              below then pairs a current theta with a stale lambda, dG comes
              out wrong and the engagement threshold never fires - measured,
              the arc arm never engaged while the identical run without it
              engaged and reached 70.9% of peak (E-96). */
-          if(damage_diss_engaged==1){
-            damage_arc_lam=damage_diss_lamcur;
+          if(lc.diss_engaged==1){
+            lc.arc_lam=lc.diss_lamcur;
           }else{
-            damage_arc_lam+=theta-damage_arc_theta0;
+            lc.arc_lam+=theta-lc.arc_theta0;
           }
-          damage_diss_lamcur=damage_arc_lam;
+          lc.diss_lamcur=lc.arc_lam;
         }
 
         ctrl[3]=icref;
@@ -11723,19 +11197,19 @@ damage_controller_done:
        the two questions separate: is the quantity well behaved, and does
        driving it fix the limit point. */
 
-    if((icutb==0)&&(idamagereeq==0)&&(*nmethod!=4)&&(damage_diss_report==1)){
-      if(damage_diss_init==1){
-        damage_diss_lamnow=(damage_arc==1)?damage_arc_lam:theta;
-        damage_diss_dg=0.5*(damage_diss_pprev*damage_diss_lamnow-
-                            damage_diss_p*damage_diss_lprev);
-        damage_diss_total+=damage_diss_dg;
+    if((icutb==0)&&(idamagereeq==0)&&(*nmethod!=4)&&(lc.diss_report==1)){
+      if(lc.diss_init==1){
+        lc.diss_lamnow=(lc.arc==1)?lc.arc_lam:theta;
+        lc.diss_dg=0.5*(lc.diss_pprev*lc.diss_lamnow-
+                            lc.diss_p*lc.diss_lprev);
+        lc.diss_total+=lc.diss_dg;
 
-        if((damage_diss_ctrl==2)&&(damage_diss_engaged==0)&&
-           (damage_diss_dg>DAMAGE_DISS_ENGAGE*damage_diss_target)&&
-           ((damage_diss_engage_t<0.)||(theta>=damage_diss_engage_t))){
-          damage_diss_engaged=1;
+        if((lc.diss_ctrl==2)&&(lc.diss_engaged==0)&&
+           (lc.diss_dg>DAMAGE_DISS_ENGAGE*lc.diss_target)&&
+           ((lc.diss_engage_t<0.)||(theta>=lc.diss_engage_t))){
+          lc.diss_engaged=1;
           printf("[DISSIPATION CONTROL] engaged at inc=%" ITGFORMAT
-                 " lambda=%.6f dG=%.6e\n",iinc,theta,damage_diss_dg);
+                 " lambda=%.6f dG=%.6e\n",iinc,theta,lc.diss_dg);
           fflush(stdout);
         }
 
@@ -11755,51 +11229,51 @@ damage_controller_done:
            of the idea, worth measuring before rebuilding the Newton loop
            around a bordered system. */
 
-        if((damage_diss_target>0.)&&(damage_diss_dg>1.e-30)&&
-           (dtheta>0.)&&(*idrct==0)&&(damage_diss_step==1)){
-          damage_diss_scale=damage_diss_target/damage_diss_dg;
-          if(damage_diss_scale>DAMAGE_DISS_GROW)
-            damage_diss_scale=DAMAGE_DISS_GROW;
-          if(damage_diss_scale<DAMAGE_DISS_SHRINK)
-            damage_diss_scale=DAMAGE_DISS_SHRINK;
-          damage_diss_dtheta=dtheta*damage_diss_scale;
-          if(damage_diss_dtheta>dthetaref) damage_diss_dtheta=dthetaref;
-          if(damage_diss_dtheta<(*tmin)) damage_diss_dtheta=*tmin;
-          if(damage_diss_dtheta<0.98*dtheta){
+        if((lc.diss_target>0.)&&(lc.diss_dg>1.e-30)&&
+           (dtheta>0.)&&(*idrct==0)&&(lc.diss_step==1)){
+          lc.diss_scale=lc.diss_target/lc.diss_dg;
+          if(lc.diss_scale>DAMAGE_DISS_GROW)
+            lc.diss_scale=DAMAGE_DISS_GROW;
+          if(lc.diss_scale<DAMAGE_DISS_SHRINK)
+            lc.diss_scale=DAMAGE_DISS_SHRINK;
+          lc.diss_dtheta=dtheta*lc.diss_scale;
+          if(lc.diss_dtheta>dthetaref) lc.diss_dtheta=dthetaref;
+          if(lc.diss_dtheta<(*tmin)) lc.diss_dtheta=*tmin;
+          if(lc.diss_dtheta<0.98*dtheta){
             printf("[DISSIPATION STEP] inc=%" ITGFORMAT
                    " dG=%.6e target=%.6e dtheta %.6e -> %.6e\n",
-                   iinc,damage_diss_dg,damage_diss_target,dtheta,
-                   damage_diss_dtheta);
+                   iinc,lc.diss_dg,lc.diss_target,dtheta,
+                   lc.diss_dtheta);
             fflush(stdout);
           }
-          dtheta=damage_diss_dtheta;
+          dtheta=lc.diss_dtheta;
         }
 
         printf("[DISSIPATION] inc=%" ITGFORMAT " lambda=%.6f P=%.6e "
-               "dG=%.6e G=%.6e\n",iinc,theta,damage_diss_p,
-               damage_diss_dg,damage_diss_total);
+               "dG=%.6e G=%.6e\n",iinc,theta,lc.diss_p,
+               lc.diss_dg,lc.diss_total);
         fflush(stdout);
       }
-      damage_diss_init=1;
-      damage_diss_lprev=damage_diss_lamnow;
-      damage_diss_pprev=damage_diss_p;
+      lc.diss_init=1;
+      lc.diss_lprev=lc.diss_lamnow;
+      lc.diss_pprev=lc.diss_p;
     }
 
     if((icutb==0)&&(idamagereeq==0)){
-      damage_path_retry=0;
-      damage_path_lamcom=damage_path_lam;
-      if(damage_path_desc>0) damage_path_desc--;
+      lc.path_retry=0;
+      lc.path_lamcom=lc.path_lam;
+      if(lc.path_desc>0) lc.path_desc--;
     /* Arm only when the step controller has actually run out of
        room.  Arming on icutb>=3 fired at increment 385 on an
        ordinary cutback the stock logic recovers from, derailed the
        path, and never reached the real stall at all. */
-    }else if((damage_path_on>=2)&&(dtheta<10.*(*tmin))&&
-             (damage_path_desc==0)){
-      damage_path_desc=damage_path_nstep;
-      damage_path_used=1;
+    }else if((lc.path_on>=2)&&(dtheta<10.*(*tmin))&&
+             (lc.path_desc==0)){
+      lc.path_desc=lc.path_nstep;
+      lc.path_used=1;
       printf("[DAMAGE PATH] inc=%" ITGFORMAT " arming a %"
              ITGFORMAT "-increment descent at lambda=%.6f\n",
-             iinc,damage_path_nstep,damage_path_lamcom);
+             iinc,lc.path_nstep,lc.path_lamcom);
       fflush(stdout);
     }
     if((damage_de12_enabled)&&(icutb==0)&&(idamagereeq==0)&&
@@ -12445,7 +11919,7 @@ damage_controller_done:
 
         /* Trial deletions must never enter jobname.damage. */
         topo_txn_discard(&dtxn);
-        if(damage_de13_transaction) damage_path_retry++;
+        if(damage_de13_transaction) lc.path_retry++;
         damage_de13_transaction=0;
         if(damage_de13_trigger_value!=NULL){
           for(i=0;i<ne0;i++){
@@ -13129,8 +12603,8 @@ damage_controller_done:
     SFREE(damde1prev);
     if(damage_damjac!=NULL) SFREE(damage_damjac);
     if(damage_fracture_seta!=NULL) free(damage_fracture_seta);
-    if(damage_diss_fhat!=NULL) SFREE(damage_diss_fhat);
-    if(damage_diss_uf!=NULL) SFREE(damage_diss_uf);
+    if(lc.diss_fhat!=NULL) SFREE(lc.diss_fhat);
+    if(lc.diss_uf!=NULL) SFREE(lc.diss_uf);
     if(damage_damvisc!=NULL) SFREE(damage_damvisc);
     if(damage_damviscini!=NULL) SFREE(damage_damviscini);
     if(rsc.bt_dam!=NULL) SFREE(rsc.bt_dam);

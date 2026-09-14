@@ -135,6 +135,12 @@ Each file answers the question in its own first paragraph. Sizes are
   follow the dissipation.
 - **`topology.c`** — *the transaction that commits an erosion.* One marked
   set, one lifetime, one discard.
+- **`loadctl.c`** — *who drives the load parameter.* Dissipation control,
+  path control, the arc-length boundary and the regularisation ladder: 53
+  locals, four mechanisms, and one rule — they refuse to run beside each
+  other. That refusal was written out as four loose integers in every
+  other mechanism's arming block; `loadctl_driving()` is the one question
+  they ask now.
 
 ### State with an owner, and drivers partly still in `nonlingeo()`
 
@@ -168,6 +174,31 @@ increments, rolls topology back or ends steps.
 - **`topodiag.c`**, **`damstate.c`**, **`damstats.c`**, **`logview.c`**,
   **`ccxopt.c`** — the topology/rank report, the load-path judgement, the
   damage census and its VTK series, the profile, the switch registry.
+
+## Arming: each object reads its own switches
+
+The configuration was 141 `ccxopt_getenv` calls in one function. Most of
+them now sit in the file that owns what they configure, as a
+`<module>_configure()` — `dogleg_configure()`, `damcont_configure()`,
+`rescue_configure_backtrack()`, `rescue_configure_levels()`,
+`probedrv_configure_aba()`, `opcheckdrv_configure_fd()`. This is PETSc's
+`XXXSetFromOptions`: one per object, called in the order the objects are
+created.
+
+Two properties of these blocks decide how they had to move.
+
+They **refuse rather than degrade**, and they refuse *on each other's
+state*: the dogleg will not arm without Rescue2, the continuation will not
+arm without the dogleg, and neither will arm while anything is driving the
+load parameter. So the order in which they run is part of the behaviour,
+and every `_configure()` call sits at exactly the line its block occupied.
+Nothing about which switch is read first has changed.
+
+They **write across objects**: the corridor sets the regularisation
+ladder's length, two rescue levels reset the event census. The signatures
+say so — `rescue_configure_levels(rescue*, loadctl*, probedrv*)`, with the
+two it writes to non-const. A signature that hid that would be worse than
+the inline block.
 
 ## What is still unowned, and why
 
@@ -231,6 +262,17 @@ matter of opinion.
    An extraction that changes an answer is not an extraction. If a change
    is *meant* to move a number, this check is the wrong one and the number
    needs a measurement of its own; that is what `cases.json` records.
+
+   Two things this check has been wrong about, both of them the check's
+   fault and not the code's, both now fixed in `tools/abruns.py`: it
+   compared the `.frd` `UDATE` record, so a comparison run either side of
+   midnight reported sixteen differing files, one per case, all identical
+   in length; and the build it runs against only rejected `error:`, so an
+   integer passed where a `const loadctl *` was expected compiled with a
+   warning and killed eleven of sixteen cases with SIGSEGV. The build now
+   carries `-Werror=int-conversion -Werror=incompatible-pointer-types` —
+   two classes, both of them the ones C lets through silently, and the
+   whole tree including stock CalculiX builds clean with them.
 
 3. **The ratchet.** `tools/arch.py --check` fails when any measured number
    — the function's length, its locals, or a subsystem's site count — is

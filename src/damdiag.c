@@ -444,3 +444,118 @@ void probedrv_init(probedrv *p)
   p->null_seed=987654321;
   p->null_x=NULL;
 }
+
+/* ---- arming ------------------------------------------------------------
+
+   The A-B-A purity test reads its own switches.  It is a diagnostic that
+   fires once and then lets the run continue from the full step, so nothing
+   downstream depends on when it is configured - but it is read here, at
+   the point it was read before, because that is the rule for all of these
+   and an exception would have to be argued rather than assumed. */
+
+void probedrv_configure_aba(probedrv *p)
+{
+  const char *e;
+
+  /* CCX_DAMAGE_RELEASE_PROBE - PURE DIAGNOSTIC, reads only.
+
+     How much internal force does a topology event actually release?
+     The run log cannot answer it: "largest residual force" is printed
+     AFTER Newton has already made its first correction, so it is what
+     survived the release, not the release.
+
+     The probe differences f_int(u*) across the event with the
+     displacement state held fixed, and - the reason it exists - splits
+     the result by what happened to the equation:
+
+       surv     DOF active BEFORE and AFTER.  The equation still exists,
+                so this is the only place a perturbation of the system
+                Newton solves can live.  dF_surv_max/qam is the number.
+       removed  DOF active BEFORE, gone AFTER.  The equation does not
+                exist any more; Newton neither resolves it nor owes it
+                anything.  Diagnosis only, never a criterion.
+
+     Reporting one number for both is what made the raw residual
+     unreadable in the first place.
+
+     =1 per batch, =2 adds one line per deleted element.  Unset = off and
+     nothing is allocated.  This flag CHANGES NO BIT OF THE ANSWER, and
+     that is gated both ways: s0_coarse_ts must give m.damage md5
+     74212e957d7cd649 with the probe off AND with it on. */
+  /* CCX_DAMAGE_RESIDUAL_RAY - PURE DIAGNOSTIC, reads only.
+
+     J-13 established that the force RELEASED by a topology event does not
+     order fatal against non-fatal: the fatal event ranked 487th of 563 on
+     bandrad, and 486 larger releases were survived.  So the perturbation
+     is not the right-hand side.  What is left is the STEP: the residual
+     contracts three times (0.265 -> 0.019 -> 0.0022) and then flies up by
+     265x on the next full Newton step, at frozen load and frozen topology.
+     That is the classic signature of a full step leaving the basin, and
+     the standard instrument for it is a scan of the residual along the
+     Newton direction.
+
+     There is no such scan in this tree, and there cannot be a line search
+     either: BK3 is excluded from re-equilibration by TWO independent
+     gates - its own conjunction (idamagereeq==0, below) and the resold
+     store, which is guarded by the same conjunction, so resold is stale
+     throughout an idamagereeq pass.  This probe needs neither: it
+     evaluates alpha=0 itself and uses that as the reference.
+
+     What it does: at a re-equilibration iteration it evaluates the
+     residual at alpha=0 and alpha=1.  If the full step grew the norm by
+     more than the growth factor - the fatal signature - it walks the
+     whole ray, repeats one alpha to prove the evaluation is a pure
+     function of the step length, and ends at alpha=1, which is exactly
+     the state the unprobed code would have had.
+
+     PURITY IS THE GATE, NOT AN ASIDE.  The repeated alpha must reproduce
+     bitwise.  It can only do so for the residual vector, at fixed dtime,
+     with CCX_DAMAGE_NONLOCAL unset and no contact: damjac/xstiff are not
+     rebuilt from a baseline, and the nonlocal field (dpsave/ebar) is
+     trial-derived, never snapshotted and CG-warm-started to 1e-10.  A
+     mismatch under those conditions is a real impurity, not a bug in the
+     probe, and it would void any line search built on top.
+
+     Value = max number of rays to walk (default 8).  Unset = off,
+     nothing allocated.  Changes no bit of the answer: b is saved and
+     restored exactly, and the last evaluation is the alpha=1 state. */
+  /* CCX_DAMAGE_REEQ_BACKTRACK - SOLVER CHANGE, not a diagnostic.
+     Damps the Newton step during same-load re-equilibration, restoring
+     the committed baseline before every probe and restoring the full
+     step when nothing is acceptable.  THIS CHANGES THE ANSWER: a run
+     that goes further with it is not thereby a success, and adopting it
+     needs the full verify + ladder gate.  Default off = bit-identical. */
+  /* CCX_DAMAGE_ABA=<alpha> - PURE DIAGNOSTIC.  Proves, or refutes, that a
+     trial evaluation is a pure function of the step length.  The earlier
+     A-B-A compared ONE scalar (|R|inf); one scalar agreeing proves
+     nothing about the rest of the state, and the backtracking snapshot
+     only held dam/damvisc/xstate while results() writes more than that.
+     This evaluates A, snapshots EVERY array results()/calcresidual
+     touch, evaluates B, evaluates A again, and compares byte for byte.
+     Fires once, then the run continues from the full step. */
+  if((e=ccxopt_getenv("CCX_DAMAGE_ABA"))!=NULL){
+    p->aba_mode=1;
+    p->aba_a=atof(e);
+    if((p->aba_a<=0.)||(p->aba_a>=1.)) p->aba_a=0.25;
+    /* CCX_DAMAGE_ABA_INC="143,209" - fire at those increments instead of
+       at the first opportunity.  Purity proved on one activated path does
+       not prove it on another: a different increment reaches the same
+       code through a different constitutive state, and that is exactly
+       what has to be shown before an ensemble rests on it. */
+    p->aba_ninc=0;
+    if((e=ccxopt_getenv("CCX_DAMAGE_ABA_INC"))!=NULL){
+      char *acp=e;
+      while((*acp!=0)&&(p->aba_ninc<4)){
+        while((*acp==' ')||(*acp==',')) acp++;
+        if(*acp==0) break;
+        p->aba_inc[p->aba_ninc++]=atoi(acp);
+        while((*acp!=0)&&(*acp!=',')) acp++;
+      }
+    }
+    printf("[DAMAGE ABA] DIAGNOSTIC: full-state A-B-A at alpha=%.6f;\n"
+           "   every array written by results()/calcresidual is compared\n"
+           "   byte for byte between two evaluations at the same alpha.%s",
+           p->aba_a,"\n");
+    fflush(stdout);
+  }
+}

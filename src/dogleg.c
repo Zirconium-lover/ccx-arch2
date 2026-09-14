@@ -494,3 +494,135 @@ void dogleg_rescue(dogleg *d,const trialctx *t,glob_census *g,
     d->on=0;
   }
 }
+
+/* ---- arming ------------------------------------------------------------
+
+   The block that reads this mechanism's own switches, moved beside the
+   mechanism.  It stays a separate call at the exact point it used to sit,
+   because these arming blocks REFUSE TO ARM ON EACH OTHER'S STATE - the
+   dogleg needs Rescue2 already read, the continuation needs the dogleg -
+   so the order in which they run is part of the behaviour, not an
+   accident.  PETSc has the same shape and the same name for it:
+   XXXSetFromOptions, one per object, called in the order the objects are
+   created.
+
+   It refuses rather than degrades, and it stops the run rather than
+   printing a warning nobody reads: a method whose step construction is
+   wrong, or which is sharing a rescue level with a mechanism measured
+   negative, produces numbers that look like an answer.                */
+
+void dogleg_configure(dogleg *d,rescue *r,const loadctl *c)
+{
+  const char *e;
+
+  /* ---- CCX_DAMAGE_TR_DOGLEG ---------------------------------------
+
+     A root-finding TRUST REGION with a dogleg step, on the ORIGINAL
+     equilibrium residual.  It is NOT another regularisation: no matrix
+     is modified, no diagonal is shifted, no constitutive law, no Kn, no
+     g and no deletion criterion is touched.  The only thing that changes
+     is HOW LONG and IN WHICH DIRECTION the correction is, inside one
+     armed increment attempt.
+
+     Why here and not from the start: J-19 rejected the corridor because
+     a held regularisation carried the solver instead of returning it to
+     itself.  So this arms ONLY as rescue LEVEL 3, i.e. only after the
+     Rescue2 levels 1 and 2 have both failed terminally on the same wall,
+     and only on a wall with idamagereeq==0 - where the measured failure
+     is a LINE SEARCH failure: at s3rad inc=569 BK3 reports lambda pinned
+     at its floor 0.100000 with res_damped 2.001658e-03 ABOVE res_old
+     1.942365e-03 on every one of the four identical attempts.  A floor
+     of 0.1 on the Newton DIRECTION is exactly what a trust region does
+     not have: it may go shorter, and it may leave that direction.
+
+     Model, following PETSc SNESNEWTONTRDC:
+         phi(u) = 1/2 |R(u)|^2 ,  R = f_int - f_ext = -b
+         J p_N  = -R = b        (p_N is what PARDISO returns)
+         g      = J^T R = -d    with d := J^T b
+         p_C    = (|d|^2/|Jd|^2) d          (Cauchy point)
+         p      = dogleg(p_C,p_N,Delta)
+         rho    = [phi(u)-phi(u+p)] / [phi(u) - 1/2|R+Jp|^2]
+     Acceptance of the STEP is rho; acceptance of the INCREMENT stays
+     with checkconvergence on the unmodified residual.
+
+     J^T IS FORMED AS J^T, and the run proves it: dot(d,p_N) must equal
+     |b|^2 exactly, because dot(J^T b, J^-1 b) = b^T b.  That identity is
+     printed as TRANSPOSE-CHECK on the first armed iteration and the
+     mechanism REFUSES TO ARM if it is not 1 to 1e-8.  The asymmetry of
+     the operator is measured at the same point, not assumed. */
+
+  if(ccxopt_getenv("CCX_DAMAGE_TR_DOGLEG")!=NULL){
+    if(r->rescue_mode==0){
+      printf("*ERROR: CCX_DAMAGE_TR_DOGLEG requires "
+             "CCX_DAMAGE_REEQ_RESCUE2; it is a level ON TOP of "
+             "Rescue2, not a replacement.  Stopping.%s","\n");
+      fflush(stdout);FORTRAN(stop,());
+    }
+    if((r->corr_mode==1)||(c->reg_nlam>0)){
+      printf("*ERROR: CCX_DAMAGE_TR_DOGLEG must not run together with "
+             "CCX_DAMAGE_REEQ_RESCUE3 or CCX_DAMAGE_RESCUE_CORRIDOR - "
+             "both were measured NEGATIVE (J-19) and both would occupy "
+             "the same rescue levels.  Stopping.%s","\n");
+      fflush(stdout);FORTRAN(stop,());
+    }
+    if(r->bt_mode==1){
+      printf("*ERROR: CCX_DAMAGE_TR_DOGLEG must not run together with "
+             "always-on CCX_DAMAGE_REEQ_BACKTRACK (rejected, J-17).  "
+             "Stopping.%s","\n");
+      fflush(stdout);FORTRAN(stop,());
+    }
+    d->mode=1;
+    r->rescue_maxlevel=3;
+    if((e=ccxopt_getenv("CCX_DAMAGE_TR_MAXTRIAL"))!=NULL)
+      d->maxtrial=atoi(e);
+    if((e=ccxopt_getenv("CCX_DAMAGE_TR_MAXEVAL"))!=NULL)
+      d->maxeval=atoi(e);
+    if((e=ccxopt_getenv("CCX_DAMAGE_TR_MAXFACT"))!=NULL)
+      d->maxfact=atoi(e);
+    if((e=ccxopt_getenv("CCX_DAMAGE_TR_MAXARM"))!=NULL)
+      d->maxarm=atoi(e);
+    if((e=ccxopt_getenv("CCX_DAMAGE_TR_D0"))!=NULL)
+      d->d0fac=atof(e);
+    if((e=ccxopt_getenv("CCX_DAMAGE_TR_LINCHECK"))!=NULL)
+      d->lincheck=atoi(e);
+    if(d->lincheck<0) d->lincheck=0;
+    if((e=ccxopt_getenv("CCX_DAMAGE_TR_LINCHECK_IT"))!=NULL)
+      d->lc_it=atoi(e);
+    if(d->lc_it<1) d->lc_it=1;
+    if((e=ccxopt_getenv("CCX_DAMAGE_TR_LINCHECK_NIT"))!=NULL)
+      d->lc_nit=atoi(e);
+    if(d->lc_nit<1) d->lc_nit=1;
+    /* the geometry of the step is proved before the first increment, on
+       a J whose dogleg is known in closed form.  A failure here is
+       arithmetic, so the run must not start. */
+    if(dogleg_selftest()!=0){
+      printf("*ERROR: the trust-region geometry self-test FAILED.  "
+             "Stopping rather than running a method whose step "
+             "construction is wrong.%s","\n");
+      fflush(stdout);FORTRAN(stop,());
+    }
+    if(d->maxtrial<1) d->maxtrial=1;
+    if(d->maxtrial>12) d->maxtrial=12;
+    if(d->maxeval<1) d->maxeval=1;
+    if(d->maxfact<1) d->maxfact=1;
+    if(d->maxarm<1) d->maxarm=1;
+    if(d->d0fac<=0.) d->d0fac=1.;
+    printf("[DAMAGE TR] trust-region DOGLEG armed as rescue LEVEL 3.  "
+           "Levels 1 and 2 are the unchanged Rescue2 behaviour and run "
+           "first; only when BOTH have failed on the same wall does the "
+           "increment get one more attempt, and in that attempt every "
+           "Newton correction is chosen by a dogleg trust region on "
+           "phi=1/2|R|^2 instead of by BK3.  No matrix entry, no "
+           "material constant and no deletion rule is touched, and "
+           "convergence is still judged by checkconvergence on the "
+           "UNMODIFIED residual.  Budget: <=%" ITGFORMAT " trial steps "
+           "per iteration, <=%" ITGFORMAT " residual evaluations, <=%"
+           ITGFORMAT " armed factorisations, <=%" ITGFORMAT " armed "
+           "attempts in the whole run; on exhaustion the state is "
+           "restored and the ORIGINAL stock stop runs.  Initial radius "
+           "= %.3f * |p_Newton| at the first armed iteration.%s",
+           d->maxtrial,d->maxeval,d->maxfact,
+           d->maxarm,d->d0fac,"\n");
+    fflush(stdout);
+  }
+}

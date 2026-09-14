@@ -159,10 +159,10 @@ def ext_modules():
     Named explicitly rather than detected: a list that guesses would quietly
     start counting stock CalculiX and the number would stop meaning anything."""
     names=['nonlingeo.c','converge.c','topology.c','topodiag.c','globalize.c',
-           'lsladder.c','crackcontrol.c','pathfollow.c','ccxopt.c',
-           'damstate.c','stiffcensus.c','loadcut.c','fracture.c','mincut.c',
+           'lsladder.c','crackcontrol.c','pathfollow.c','ccxopt.c','logview.c',
+           'damstate.c','stiffcensus.c','loadcut.c','opcheck.c',
            'damdiag.c','erosion.c','dogleg.c','damcont.c','damstats.c',
-           'slownewton.c','damcfg.c']
+           'slownewton.c','rescue.c','trial.c','loadctl.c']
     return [SRC/n for n in names if (SRC/n).exists()]
 
 def measure():

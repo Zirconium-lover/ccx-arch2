@@ -42,7 +42,21 @@ MKL_LIBDIR  = /usr/lib/x86_64-linux-gnu
 # invalidate a bit-identity claim, because the binary under test is then not
 # the binary the sources describe.  Measured the hard way - a declaration
 # table edited three times and compiled none of them.
-CFLAGS = -Wall $(OPTLEVEL) -DARCH="Linux" -DSPOOLES -DARPACK -DPARDISO \
+# -Werror on TWO warning classes, and only two.  C lets an integer be
+# passed where a pointer is expected with nothing but a warning, and in a
+# tree whose calls take a hundred and thirty arguments that is not a style
+# question: it is a segfault three hundred lines later.  It happened -
+# a refactor left `dogleg_configure(&dog,&rsc,lc.reg_nlam)' where the third
+# parameter is a `const loadctl *', the build printed a warning nobody
+# grepped for, and eleven of sixteen gate cases died with SIGSEGV inside
+# the arming block.  With these flags that same line does not compile;
+# OBSERVED, by putting it back.
+#
+# They cost nothing: the whole tree, stock CalculiX included, builds clean
+# with them.  -Werror=implicit-function-declaration is deliberately NOT
+# here - the Fortran entry points are called without prototypes all over
+# the stock sources and that is a different argument.
+CFLAGS = -Wall -Werror=int-conversion -Werror=incompatible-pointer-types $(OPTLEVEL) -DARCH="Linux" -DSPOOLES -DARPACK -DPARDISO \
          -DMATRIXSTORAGE -DNETWORKOUT -MMD -MP -fopenmp -I$(SPOOLES_INC) \
          -I$(MKL_INC) $(EXTRA_CFLAGS)
 FFLAGS = -Wall $(OPTLEVEL) -fopenmp -fallow-argument-mismatch -cpp $(EXTRA_FFLAGS)

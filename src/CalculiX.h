@@ -5137,6 +5137,48 @@ void topo_txn_commit(const topo_txn *t,FILE *fdamage,ITG batch,
                      ITG de13_transaction,ITG active_pass);
 ITG  topo_selftest(void);
 
+/* ---- who drives the load parameter (loadctl.c) ------------------------
+
+   Four mechanisms that all answer the same question - what sets lambda
+   this increment - and that all refuse to run beside each other:
+   dissipation control, path control, the arc-length boundary, and the
+   regularisation ladder.  Fifty-three locals of nonlingeo() with no owner,
+   and the reason they matter beyond their own code is that every OTHER
+   mechanism's arming block reads them: the dogleg and the continuation
+   both refuse to arm when any of these is driving.  Those refusals used to
+   name four loose integers; now they name one object.
+
+   Fields keep their mechanism's prefix.  This is one object because the
+   mutual exclusion is one rule, not because the four are one algorithm.
+
+   `path_arm' was declared here and never read; it is gone.            */
+
+typedef struct{
+  /* the arc-length boundary: armed, and where it is */
+  ITG    arc;
+  double arc_lam,arc_theta0;
+  /* dissipation control (CCX_DISSIPATION_*) */
+  ITG    diss_ctrl,diss_engaged,diss_have,diss_init,diss_ok,diss_probe;
+  ITG    diss_report,diss_step;
+  char  *diss_env;
+  double diss_den,diss_dg,diss_dgcur,diss_dgold,diss_dlam,diss_dtheta;
+  double diss_engage_t,diss_ff,diss_fr,diss_g,diss_kpp,diss_lamcur;
+  double diss_lamnow,diss_lamold,diss_lprev,diss_p,diss_pprev,diss_scale;
+  double diss_slope,diss_target,diss_total;
+  double *diss_fhat,*diss_uf;
+  /* path control (CCX_DAMAGE_PATH): lambda as an absolute step fraction */
+  ITG    path_att,path_desc,path_nstep,path_on,path_retry,path_used;
+  double path_dev,path_devmax,path_drop,path_lam,path_lamcom,path_ref;
+  /* the regularisation ladder */
+  ITG    reg_level,reg_napply,reg_nlam,reg_on;
+  double reg_lam[5],reg_lambda;
+}loadctl;
+
+void loadctl_init(loadctl *c);
+/* Is any of the four driving the load parameter?  The one question the
+   other mechanisms' arming blocks ask of this object. */
+ITG  loadctl_driving(const loadctl *c);
+
 /* ---- the operator check's driver state (opcheck.c) --------------------
 
    opcheck.c owns the comparison - the assembled tangent, column by column,
@@ -5159,6 +5201,7 @@ typedef struct{
           was declared in nonlingeo() and never read; it is gone */
 }opcheckdrv;
 void opcheckdrv_init(opcheckdrv *p);
+void opcheckdrv_configure_fd(opcheckdrv *p);
 
 /* ---- the probes' driver state (damdiag.c) -----------------------------
 
@@ -5195,6 +5238,7 @@ typedef struct{
   double  *null_x;
 }probedrv;
 void probedrv_init(probedrv *p);
+void probedrv_configure_aba(probedrv *p);
 
 /* ---- what happens when an increment will not converge (rescue.c) -----
 
@@ -5247,6 +5291,11 @@ typedef struct{
   char    *reeq_scale_env;
   ITG     reeq_scale_mode;
   double  reeq_uam_actual[2],reeq_uam_floor,reeq_uam_peak[2],reeq_uam_ref[2];
+  /* the bounded recovery window: a rescue counts as recovered only
+     after rec_window clean increments, and after rec_maxunrec
+     un-recovered ones the ladder disarms itself */
+  ITG    rec_disarmed,rec_healthy,rec_maxunrec,rec_unrec;
+  ITG    rec_used_in_inc,rec_window;
   /* the rescue levels themselves */
   ITG     rescue_bt_on,rescue_maxlevel,rescue_mode,rescue_nfired;
   ITG     rescue_nok,rescue_used;
@@ -5254,6 +5303,12 @@ typedef struct{
 }rescue;
 
 void rescue_init(rescue *r);
+/* the ladder's handshake with checkconvergence.c; defined in rescue.c */
+extern ITG ccx_rescue_active,ccx_rescue_arm,ccx_rescue_req;
+void rescue_configure_backtrack(rescue *r);
+/* it WRITES to both: the corridor sets the regularisation ladder's
+   length, and two levels reset the event census. */
+void rescue_configure_levels(rescue *r,loadctl *c,probedrv *p);
 
 /* ---- the Newton iteration budget (slownewton.c) -----------------------
 
@@ -5470,6 +5525,14 @@ ITG  dogleg_pick(double dl,double nd2,double nw2,double npn2,
 /* the model's predicted reduction for that step: the denominator of rho */
 double dogleg_pred(double pa,double pb,double nb2,double nd2,double nw2);
 ITG  dogleg_selftest(void);
+/* read this mechanism's own switches, and refuse rather than degrade.
+   Called where the block used to be: these arming blocks refuse on
+   each other's state, so their order is part of the behaviour. */
+void dogleg_configure(dogleg *d,rescue *r,const loadctl *c);
+/* level 4 arms on top of the dogleg, so its declaration lives here,
+   after both types exist. */
+void damcont_configure(damcont *k,dogleg *d,rescue *r,
+                       const loadctl *c);
 
 /* ---- the probes (damdiag.c) -------------------------------------------
 

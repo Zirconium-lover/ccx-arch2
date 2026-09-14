@@ -36,6 +36,16 @@
 #include <string.h>
 #include "CalculiX.h"
 
+/* The handshake between the rescue ladder and the convergence verdict.
+   checkconvergence.c SETS ccx_rescue_req when it is about to stop a run
+   that a rescue could still save, and reads ccx_rescue_arm to know whether
+   one is available; nonlingeo() arms and consumes.  Three globals, because
+   the verdict is reached inside a routine that this object cannot be
+   passed into - that is the honest description, not a design.  They are
+   defined HERE rather than in nonlingeo.c so that the state and the flags
+   that publish it are in one file. */
+ITG ccx_rescue_active=0,ccx_rescue_arm=0,ccx_rescue_req=0;
+
 /* The values the sixty-seven locals carried at their declarations. */
 void rescue_init(rescue *r)
 {
@@ -55,6 +65,8 @@ void rescue_init(rescue *r)
   r->corr_minfrac=0.05;
   r->ls_trials=DAMAGE_LINESEARCH_MAX_TRIALS;
   r->ls_min=DAMAGE_LINESEARCH_MIN;
+  r->rec_maxunrec=3;
+  r->rec_window=5;
   r->rescue_maxlevel=1;
 }
 
@@ -241,4 +253,213 @@ void rescue_backtrack(rescue *r,const trialctx *t,glob_census *g,
                     "NONE-ACCEPTED-full-step-restored alpha="),
          ba,"\n");
   fflush(stdout);
+}
+
+/* ---- arming ------------------------------------------------------------
+
+   Two blocks, kept as two calls at the two points they occupied, because
+   the levels block reads what the backtracking block wrote: always-on
+   backtracking and the rescue levels are mutually exclusive and the refusal
+   is in the second. */
+
+void rescue_configure_backtrack(rescue *r)
+{
+  const char *e;
+
+  if(ccxopt_getenv("CCX_DAMAGE_REEQ_BACKTRACK")!=NULL){
+    r->bt_mode=1;
+    /* Three tunables, each aimed at a MEASURED failure of the
+       first version (J-15 -> bandrad regressed 25%).
+       _GROWTH : engage only when the full step makes the residual
+                 worse by more than this factor.  Damping a step
+                 that merely fails Armijo is what made the method
+                 more aggressive than BK3 (which needs 1.10) and
+                 is what stalled bandrad.  1.0 = old behaviour.
+       _WINDOW : non-monotone reference (Grippo-Lampariello-
+                 Lucidi).  Acceptance compares against the MAX of
+                 the last WINDOW residuals, not the current one,
+                 so Newton may worsen the residual briefly and
+                 cross the kink - which is exactly what the
+                 undamped control does.  1 = monotone = old.
+       _FLOOR  : refuse to accept a step shorter than this.  The
+                 measured death mode was a chain of accepts at
+                 alpha=0.031 and 0.016 buying 1-3% each while the
+                 iteration budget drained.  0.015625 = old. */
+    if((e=ccxopt_getenv("CCX_DAMAGE_BT_GROWTH"))!=NULL){
+      r->bt_growth=atof(e);
+      if(r->bt_growth<1.) r->bt_growth=1.;
+    }
+    if((e=ccxopt_getenv("CCX_DAMAGE_BT_WINDOW"))!=NULL){
+      r->bt_window=atoi(e);
+      if(r->bt_window<1) r->bt_window=1;
+      if(r->bt_window>8) r->bt_window=8;
+    }
+    if((e=ccxopt_getenv("CCX_DAMAGE_BT_FLOOR"))!=NULL){
+      r->bt_floor=atof(e);
+      if(r->bt_floor<0.015625) r->bt_floor=0.015625;
+      if(r->bt_floor>1.) r->bt_floor=1.;
+    }
+    printf("[DAMAGE BT] transactional backtracking ENABLED in "
+           "idamagereeq: alpha 1, 1/2 ... 1/64, Armijo on |R|inf with "
+           "c1=1e-4, committed baseline restored before every probe, "
+           "full step restored and the increment handed to the standard "
+           "cutback if no probe is acceptable.  THIS CHANGES THE "
+           "ANSWER.  growth=%.3f window=%" ITGFORMAT
+           " floor=%.6f%s",r->bt_growth,r->bt_window,
+           r->bt_floor,"\n");
+    fflush(stdout);
+  }
+}
+
+void rescue_configure_levels(rescue *r,loadctl *c,probedrv *p)
+{
+  const char *e;
+  ITG i;                       /* the banner walks the lambda ladder */
+
+  /* ---- CCX_DAMAGE_REEQ_RESCUE ------------------------------------
+     Emergency-only backtracking.  Always-on BT is EXPERIMENTAL and was
+     measured to shorten solver survival on three placements of four and
+     to destroy the bandrad severance the control reaches (J-17), so the
+     two must never run together. */
+
+  if((ccxopt_getenv("CCX_DAMAGE_REEQ_RESCUE")!=NULL)||
+     (ccxopt_getenv("CCX_DAMAGE_REEQ_RESCUE2")!=NULL)||
+     (ccxopt_getenv("CCX_DAMAGE_REEQ_RESCUE3")!=NULL)||
+     (ccxopt_getenv("CCX_DAMAGE_RESCUE_CORRIDOR")!=NULL)){
+    r->rescue_mode=1;
+    ccx_rescue_active=1;
+    if(ccxopt_getenv("CCX_DAMAGE_REEQ_RESCUE2")!=NULL){
+      r->rescue_maxlevel=2;
+      p->evt_nstep=0;
+    }
+    if((ccxopt_getenv("CCX_DAMAGE_REEQ_RESCUE3")!=NULL)||
+       (ccxopt_getenv("CCX_DAMAGE_RESCUE_CORRIDOR")!=NULL)){
+      p->evt_nstep=0;
+      c->reg_nlam=5;
+      r->rescue_maxlevel=2+c->reg_nlam;
+    }
+    if(ccxopt_getenv("CCX_DAMAGE_RESCUE_CORRIDOR")!=NULL){
+      r->corr_mode=1;
+      if((e=ccxopt_getenv("CCX_DAMAGE_CORR_MAXINC"))!=NULL)
+        r->corr_maxinc=atoi(e);
+      if((e=ccxopt_getenv("CCX_DAMAGE_CORR_EXIT"))!=NULL)
+        r->corr_exit=atoi(e);
+      if((e=ccxopt_getenv("CCX_DAMAGE_CORR_TRY"))!=NULL)
+        r->corr_tryevery=atoi(e);
+      if((e=ccxopt_getenv("CCX_DAMAGE_CORR_GRACE"))!=NULL)
+        r->corr_grace=atoi(e);
+      if((e=ccxopt_getenv("CCX_DAMAGE_CORR_MAXWALL"))!=NULL)
+        r->corr_maxwall=atoi(e);
+      if((e=ccxopt_getenv("CCX_DAMAGE_CORR_MAXESC"))!=NULL)
+        r->corr_maxesc=atoi(e);
+      if((e=ccxopt_getenv("CCX_DAMAGE_CORR_STABLE"))!=NULL)
+        r->corr_stableneed=atoi(e);
+      if((e=ccxopt_getenv("CCX_DAMAGE_CORR_MINFRAC"))!=NULL)
+        r->corr_minfrac=atof(e);
+      if(r->corr_maxinc<1) r->corr_maxinc=1;
+      if(r->corr_exit<1) r->corr_exit=1;
+      if(r->corr_tryevery<1) r->corr_tryevery=1;
+      if(r->corr_maxwall<1) r->corr_maxwall=1;
+      if(r->corr_maxesc<1) r->corr_maxesc=1;
+      if(r->corr_stableneed<1) r->corr_stableneed=1;
+      printf("[DAMAGE CORR] bounded recovery CORRIDOR enabled.  On a "
+             "wall levels 1 and 2 cannot touch (idamagereeq=0) the "
+             "regularization that made the increment converge is HELD, "
+             "so the next increments start already regularized.  dtime "
+             "stays with the stock controller.  Three separate states "
+             "are kept: the lambda in use, the PROVEN lambda (one that "
+             "survived %" ITGFORMAT " converged increments) and a probe "
+             "flag.  Every %" ITGFORMAT " increments the help is probed "
+             "downwards (lambda/4, then 0).  A wall on a PROBE returns "
+             "to the proven lambda; a wall on the HELD lambda would be "
+             "an identical repeat, so lambda is escalated one ladder "
+             "step instead, at most %" ITGFORMAT " times, and the "
+             "corridor closes if the ladder runs out.  Wall counters "
+             "are evaluated AT THE WALL, so a chain of walls cannot "
+             "run unbounded.  Exit after %" ITGFORMAT " increments with "
+             "NO help.  Breakers: <=%" ITGFORMAT " walls, <=%" ITGFORMAT
+             " increments, and after a grace of %" ITGFORMAT " the mean "
+             "dtime inside must stay above %.3f of the dtime at the "
+             "last clean increment before entry.  On failure the "
+             "guarantee is t_end NOT LOWER than rescue-2; a byte-exact "
+             "rescue-2 result is impossible once corridor increments "
+             "have been accepted, since no entry snapshot is taken.%s",
+             r->corr_stableneed,r->corr_tryevery,
+             r->corr_maxesc,r->corr_exit,r->corr_maxwall,
+             r->corr_maxinc,r->corr_grace,
+             r->corr_minfrac,"\n");
+      fflush(stdout);
+    }
+    if((e=ccxopt_getenv("CCX_DAMAGE_RESCUE_WINDOW"))!=NULL){
+      r->rec_window=atoi(e);
+      if(r->rec_window<1) r->rec_window=1;
+    }
+    if((e=ccxopt_getenv("CCX_DAMAGE_RESCUE_MAXUNREC"))!=NULL){
+      r->rec_maxunrec=atoi(e);
+      if(r->rec_maxunrec<1) r->rec_maxunrec=1;
+    }
+    printf("[DAMAGE RESCUE] bounded recovery window: a rescue counts "
+           "as RECOVERED only after %" ITGFORMAT " consecutive "
+           "increments converge with no intervention; after %"
+           ITGFORMAT " consecutive un-recovered rescues the mechanism "
+           "DISARMS itself and the wall goes to the original stock "
+           "stop.  This exists because a run that needs rescuing at "
+           "nearly every increment is crawling, not passing a wall: "
+           "measured, 92 regularized rescues bought 2.2e-4 of step "
+           "time on s3rad.%s",r->rec_window,r->rec_maxunrec,"\n");
+    if(r->bt_mode==1){
+      printf("[DAMAGE RESCUE] CCX_DAMAGE_REEQ_BACKTRACK (always-on, "
+             "experimental) must not run together with rescue; it is "
+             "switched OFF for this run.%s","\n");
+      r->bt_mode=0;
+    }
+    printf("[DAMAGE RESCUE] emergency rescue backtracking ENABLED.  The "
+           "trajectory, the stock Newton and every stock cutback are "
+           "unchanged.  Only where the next stock cutback would put "
+           "dtheta below tmin and the run would stop, the increment is "
+           "rolled back by the STANDARD cutback path and retried ONCE at "
+           "the last admissible dtheta with transactional BT active for "
+           "that attempt alone.  One attempt per wall; re-armed after any "
+           "increment that converges.%s","\n");
+    if(r->rescue_maxlevel==2){
+      printf("[DAMAGE RESCUE2] second level ARMED.  A wall now gets two "
+             "attempts.  The first is the accepted level-one behaviour, "
+             "unchanged.  Only if it fails does the second run, and there "
+             "the single branch \"nothing accepted -> restore the full "
+             "step\" is replaced by an EVENT STEP: the smallest ladder "
+             "alpha at which the set of UC6 points in compression differs "
+             "from alpha=0, read from sign(stx(1)) over every live UC6 "
+             "point.  e_c3d_uc6.f:45 assembles the stiffness from vold, so "
+             "the next assembly picks up ctan(1,1)=kn on the crossed facet "
+             "by itself.  No constitutive law, no kn, no g and no material "
+             "parameter is touched, and no element, ip or increment is "
+             "named.  If no ladder alpha changes the set, this level does "
+             "nothing.%s","\n");
+    }
+    if(c->reg_nlam>0){
+      printf("[DAMAGE RESCUE3] third level ARMED with %" ITGFORMAT
+             " attempt(s): positive diagonal regularization K+lambda*D."
+             "  A wall whose failing solve has idamagereeq=0 goes "
+             "straight here - it never enters a same-load solve, so "
+             "levels 1 and 2 are gated out and would only repeat the "
+             "identical attempt.  ad[k] += lambda*D[k] with "
+             "D[k]=max(|ad[k]|,1e-6*mean|ad|) > 0, immediately before "
+             "the solver dispatch, where the existing stabiliser "
+             "already edits the same diagonal.  NOT ad*=(1+lambda), "
+             "which shifts only where the diagonal is positive; and D "
+             "is NOT plain |ad|, which is zero where the diagonal is "
+             "zero and, for ad<0, gives |ad|*(lambda-1) so lambda=1 "
+             "lands exactly on zero.  The per-attempt sign census is a "
+             "diagnostic of the diagonal, NOT evidence about the "
+             "definiteness of K.  Acceptance stays on the UNMODIFIED "
+             "residual: only ad is shifted.  If mean|ad| is zero, NaN "
+             "or infinite the shift is skipped and the attempt runs "
+             "stock.  lambda ladder:",c->reg_nlam);
+      for(i=0;i<c->reg_nlam;i++) printf(" %.3e",c->reg_lam[i]);
+      printf(".  When it is exhausted the wall is left to the original "
+             "stock stop, so the run ends exactly where rescue-2 ends "
+             "it.%s","\n");
+    }
+    fflush(stdout);
+  }
 }

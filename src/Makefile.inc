@@ -1040,6 +1040,7 @@ electromagnetics.c \
 elementcpuload.c \
 expand.c \
 damcont.c \
+loadctl.c \
 damstats.c \
 damdiag.c \
 dogleg.c \

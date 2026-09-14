@@ -307,3 +307,43 @@ void opcheckdrv_init(opcheckdrv *p)
   p->fd_udmax=-1.;
   p->unsym_advrep=-1;
 }
+
+/* ---- arming ------------------------------------------------------------
+
+   Read unconditionally, beside the object it configures.  The comment the
+   block carries is the reason it is unconditional, and it is worth more
+   than the six lines it explains. */
+
+void opcheckdrv_configure_fd(opcheckdrv *p)
+{
+  const char *e;
+
+/* The operator check reads its configuration HERE, unconditionally.
+
+   It used to be parsed inside the block gated by damage_de12_enabled -
+   that is, only on a deck carrying a progressive BULK damage material -
+   for no reason except that it was written next to the code that needed
+   that gate.  The consequence was measured rather than argued: on
+   test/pathfollow/close.inp, the one deck in this tree that isolates the
+   crack-face closure kink, the probe could not be armed at all.  Every
+   one of its switches was reported by [SWITCHES LEFT] as set and never
+   read, which is exactly the failure that report exists to catch, on its
+   first real use.
+
+   "A responsibility with no home ends up nested inside whatever code
+   happened to be nearby" - describing a
+   different instance of the same thing. */
+if((e=ccxopt_getenv("CCX_STRUCT_FD_INC"))!=NULL)
+  p->fd_inc=atoi(e);
+if((e=ccxopt_getenv("CCX_STRUCT_FD_ITER"))!=NULL)
+  p->fd_it=atoi(e);
+if((e=ccxopt_getenv("CCX_STRUCT_FD_H"))!=NULL)
+  p->fd_h=atof(e);
+if((e=ccxopt_getenv("CCX_STRUCT_FD_STEP"))!=NULL)
+  p->fd_step=atoi(e);
+if((e=ccxopt_getenv("CCX_STRUCT_FD_ELEM"))!=NULL)
+  p->fd_pick=atoi(e);
+if((e=ccxopt_getenv("CCX_STRUCT_FD_BASE"))!=NULL)
+  p->fd_base=((strcmp(e,"VOLD")==0)||
+                  (strcmp(e,"vold")==0))?1:0;
+}

@@ -328,3 +328,107 @@ ITG damcont_selftest(void)
   fflush(stdout);
   return nbad;
 }
+
+/* ---- arming ------------------------------------------------------------
+
+   Level 4 arms only when levels 1-3 are armed and NOTHING is driving the
+   load parameter, because this mechanism takes the boundary over for the
+   rest of the step.  That second condition used to be four loose integers
+   in this block; it is loadctl_driving() now, and adding a fifth driver is
+   one edit in loadctl.c instead of one here and one in dogleg.c.       */
+
+void damcont_configure(damcont *k,dogleg *d,rescue *r,const loadctl *c)
+{
+  const char *e;
+
+  /* ---- CCX_DAMAGE_CONTINUATION (SPEC FREEZE v1) ------------------
+
+     Bounded EXPERIMENTAL coupled local continuation.  Arms only as
+     rescue LEVEL 4, i.e. only after Rescue2 levels 1 and 2 AND the
+     dogleg have all failed on one wall.  Its single purpose is to find
+     out whether coupled local continuation crosses the s3rad wall near
+     inc=589 with physical front advance.
+
+         R(u,lambda) = f(u,xbounact(lambda)) - fext = 0
+         c(u,lambda) = m.(delta - delta_c) - ds    = 0
+
+     lambda is a genuine unknown of a bordered system, not a corrected
+     theta.  It owns the boundary for the rest of the step once armed.
+     This is NOT a production continuation: there is no terminal landing
+     at lambda=1, no return to stock control, no completed step and no
+     restart.  Every ending is PARTIAL. */
+
+  if(ccxopt_getenv("CCX_DAMAGE_CONTINUATION")!=NULL){
+    if((r->rescue_mode==0)||(d->mode==0)){
+      printf("*ERROR: CCX_DAMAGE_CONTINUATION requires BOTH "
+             "CCX_DAMAGE_REEQ_RESCUE2 and CCX_DAMAGE_TR_DOGLEG; it is a "
+             "level ON TOP of them, never a replacement.  Stopping.%s",
+             "\n");
+      fflush(stdout);FORTRAN(stop,());
+    }
+    /* the four load-parameter terms are loadctl_driving(); the other two
+       are rescue levels, which are rescue.c's to answer for. */
+    if((r->corr_mode==1)||(r->bt_mode==1)||loadctl_driving(c)){
+      printf("*ERROR: CCX_DAMAGE_CONTINUATION conflicts with "
+             "CCX_DAMAGE_ARCLENGTH, CCX_DISSIPATION_CONTROL, "
+             "CCX_DAMAGE_PATH, CCX_DAMAGE_REEQ_RESCUE3, "
+             "CCX_DAMAGE_RESCUE_CORRIDOR and always-on "
+             "CCX_DAMAGE_REEQ_BACKTRACK.  None of them is used as a "
+             "foundation and simultaneous operation is refused.  "
+             "Stopping.%s","\n");
+      fflush(stdout);FORTRAN(stop,());
+    }
+    k->mode=1;
+    r->rescue_maxlevel=4;
+    if((e=ccxopt_getenv("CCX_DAMAGE_CT_RHOMIN"))!=NULL)
+      k->rhomin=atof(e);
+    if((e=ccxopt_getenv("CCX_DAMAGE_CT_CLIM"))!=NULL)
+      k->clim=atof(e);
+    if((e=ccxopt_getenv("CCX_DAMAGE_CT_ULIM"))!=NULL)
+      k->ulim=atof(e);
+    if((e=ccxopt_getenv("CCX_DAMAGE_CT_EPS"))!=NULL)
+      k->eps=atof(e);
+    if((e=ccxopt_getenv("CCX_DAMAGE_CT_KAPTOL"))!=NULL)
+      k->kaptol=atof(e);
+    if(k->kaptol<1.) k->kaptol=1.5;
+    if((e=ccxopt_getenv("CCX_DAMAGE_CT_MAXSTEP"))!=NULL)
+      k->maxstep=atoi(e);
+    if((e=ccxopt_getenv("CCX_DAMAGE_CT_MAXCORR"))!=NULL)
+      k->maxcorr=atoi(e);
+    if((e=ccxopt_getenv("CCX_DAMAGE_CT_MAXFACT"))!=NULL)
+      k->maxfact=atoi(e);
+    if((e=ccxopt_getenv("CCX_DAMAGE_CT_MAXEVAL"))!=NULL)
+      k->maxeval=atoi(e);
+    if(k->rhomin<=0.) k->rhomin=1.e-4;
+    if(k->clim<=0.) k->clim=20.;
+    if(k->ulim<=0.) k->ulim=20.;
+    if(k->eps<=0.) k->eps=1.e-6;
+    if(k->maxstep<1) k->maxstep=1;
+    if(k->maxcorr<1) k->maxcorr=1;
+    if(k->maxfact<1) k->maxfact=1;
+    if(k->maxeval<1) k->maxeval=1;
+    printf("[DAMAGE CT] bounded EXPERIMENTAL continuation armed as rescue "
+           "LEVEL 4.  Levels 1-3 (Rescue2 and the dogleg) are unchanged "
+           "and run first.  On a wall none of them takes, lambda becomes "
+           "a genuine unknown of a bordered system with one FROZEN "
+           "local mixed-mode UC6 constraint, and owns the boundary for "
+           "the rest of the step.  There is NO terminal landing, NO "
+           "return to stock control, NO completed step and NO restart: "
+           "every ending is PARTIAL.  Parameters (all opt-in, printed as "
+           "actually used): rho_den_min=%.3e C_lambda=%.1f C_u=%.1f "
+           "eps_FD=%.3e kappa_tol=%.3f; budget <=%" ITGFORMAT " steps, <=%" ITGFORMAT
+           " corrector iterations, <=%" ITGFORMAT " factorisations, <=%"
+           ITGFORMAT " residual evaluations.%s",
+           k->rhomin,k->clim,k->ulim,k->eps,
+           k->kaptol,
+           k->maxstep,k->maxcorr,k->maxfact,
+           k->maxeval,"\n");
+    fflush(stdout);
+    if(damcont_selftest()!=0){
+      printf("*ERROR: the continuation bordered-algebra self-test "
+             "FAILED.  Stopping rather than running a method whose "
+             "constraint row is wrong.%s","\n");
+      fflush(stdout);FORTRAN(stop,());
+    }
+  }
+}

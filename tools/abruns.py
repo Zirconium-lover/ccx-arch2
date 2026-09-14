@@ -16,10 +16,15 @@ WHAT IS ALLOWED TO DIFFER, AND WHY
 ----------------------------------
 Exactly two things, both of them clocks rather than arithmetic:
 
-  * the UTIME record of a .frd file, which is the wall-clock time the run
-    started.  frdheader.c writes it from time(); two runs of the identical
-    binary differ there too, so treating it as a difference would make the
-    check cry wolf on every pair;
+  * the UDATE and UTIME records of a .frd file, which are the calendar date
+    and wall-clock time the run started.  frdheader.c writes them from
+    time(); two runs of the identical binary differ there too, so treating
+    them as differences would make the check cry wolf on every pair.
+    UTIME was stripped from the first version and UDATE was not, and the
+    omission showed itself the way these always do: a comparison run either
+    side of midnight reported sixteen differing .frd files, one per case,
+    all of them identical in length.  A check that goes red once a night is
+    a check people learn to ignore;
   * provenance.txt, which records the binary's sha256 on purpose - it is
     SUPPOSED to change when the binary changes.
 
@@ -34,7 +39,7 @@ import argparse,pathlib,re,sys
 # .log carries timings, thread ids and progress chatter by design.
 SKIP_SUFFIX={'.log'}
 SKIP_NAME={'provenance.txt'}
-UTIME=re.compile(rb'^\s*1UTIME\b')
+CLOCK=re.compile(rb'^\s*1U(TIME|DATE)\b')
 
 def canon(path):
     """File bytes with the clock records removed, or None if unreadable."""
@@ -42,7 +47,7 @@ def canon(path):
     except OSError: return None
     if path.suffix=='.frd':
         return b"".join(l for l in b.splitlines(keepends=True)
-                        if not UTIME.match(l))
+                        if not CLOCK.match(l))
     return b
 
 def main():
