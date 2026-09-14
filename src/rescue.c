@@ -463,3 +463,290 @@ void rescue_configure_levels(rescue *r,loadctl *c,probedrv *p)
     fflush(stdout);
   }
 }
+
+/* ---- the rescue attempt ------------------------------------------------
+
+   checkconvergence() has just deferred a stop: it left the increment
+   exactly as an ordinary cutback leaves it, so the standard rollback
+   further down nonlingeo() restores the start of the increment from the
+   baselines it already saved.  What this does is undo the step reduction
+   and decide which level gets the one extra attempt - corridor, event
+   step, dogleg or continuation - counting walls and disarming the ladder
+   when it is buying nothing.
+
+   THIRTEEN PARAMETERS, and the count is the point.  Six are the objects
+   this reads and writes; the other seven are nonlingeo's own control flow -
+   the step time it restores, the iteration and the re-equilibration flag it
+   judges on.  Bundling those into a struct would make the signature shorter
+   and the coupling identical, and it would put stock CalculiX locals
+   (theta, dtheta, iit) into a fork-specific type, which costs something
+   real on the next upstream merge.  So they are spelled out: the length of
+   this list is the honest measure of how much of the increment this reaches
+   into, and it should be read as a number to be reduced, not hidden.
+
+   Only dtheta and dthetaref are written, which is why only those two are
+   pointers.                                                            */
+
+void rescue_attempt(rescue *r,dogleg *d,damcont *k,
+                    loadctl *c,probedrv *p,glob_census *g,
+                    const trialctx *t,
+                    double *dtheta,double *dthetaref,
+                    double theta,const double *tper,ITG iit,ITG idamagereeq)
+{
+  ITG iinc=*(t->iinc),*ipkon=*(t->ipkon),*ielprop=*(t->ielprop);
+  ITG *mi=*(t->mi),ne0=*(t->ne0);
+  double time=*(t->time),dtime=*(t->dtime),*prop=*(t->prop);
+  char *lakon=*(t->lakon);
+
+if(ccx_rescue_req==1){
+  ccx_rescue_req=0;
+  ccx_rescue_arm=0;
+  if(r->corr_on==1){
+    /* Wall inside the corridor.  Counted and judged HERE, not
+       after some later converged increment, so a chain of walls
+       is bounded even if nothing ever converges again. */
+    ITG cwclose=0;
+    r->corr_nint++;
+    r->corr_nwalltot++;
+    if(r->corr_nwalltot>r->corr_maxwall){
+      printf("[DAMAGE CORR] CIRCUIT BREAKER (walls): %" ITGFORMAT
+             " walls inside the corridor%s",
+             r->corr_nwalltot,"\n");
+      cwclose=1;
+    }else if(r->corr_trial==1){
+      /* the probe failed - fall back to the proven lambda.  This
+         is not a repeat: lambda changes. */
+      r->corr_trial=0;
+      r->corr_lam=r->corr_lamstable;
+      r->corr_nsince=0;
+      printf("[DAMAGE CORR] the probe did not hold at inc=%"
+             ITGFORMAT "; back to the proven lambda=%.3e "
+             "(intervention %" ITGFORMAT ")%s",
+             iinc,r->corr_lam,r->corr_nint,"\n");
+    }else{
+      /* Wall on the HELD lambda.  Repeating it would recompute
+         the identical attempt, so escalate one ladder step -
+         bounded - or close. */
+      ITG ei;double lnext=0.;
+      r->corr_nwallstab++;
+      for(ei=0;ei<c->reg_nlam;ei++){
+        if(c->reg_lam[ei]>r->corr_lam*1.0000001){
+          lnext=c->reg_lam[ei];break;
+        }
+      }
+      if((r->corr_nwallstab>r->corr_maxesc)||(lnext<=0.)){
+        printf("[DAMAGE CORR] CIRCUIT BREAKER (escalation): wall "
+               "on the held lambda=%.3e at inc=%" ITGFORMAT ", %"
+               ITGFORMAT " consecutive, ladder %s%s",
+               r->corr_lam,iinc,r->corr_nwallstab,
+               (lnext<=0.)?"exhausted":"still open","\n");
+        cwclose=1;
+      }else{
+        printf("[DAMAGE CORR] wall on the held lambda at inc=%"
+               ITGFORMAT ": an identical retry is refused; lambda "
+               "escalated %.3e -> %.3e (escalation %" ITGFORMAT
+               " of %" ITGFORMAT ")%s",
+               iinc,r->corr_lam,lnext,r->corr_nwallstab,
+               r->corr_maxesc,"\n");
+        r->corr_lam=lnext;
+        r->corr_lamstable=lnext;
+        r->corr_nsince=0;
+      }
+    }
+    if(cwclose==1){
+      printf("[DAMAGE CORR] corridor CLOSES: %" ITGFORMAT
+             " increments, %" ITGFORMAT " intervention(s), %"
+             ITGFORMAT " regularized factorisation(s), step time "
+             "gained %.6e.  The mechanism DISARMS; the next wall "
+             "goes to the original stock stop%s",
+             r->corr_ninc,r->corr_nint,r->corr_nfact,
+             (theta-r->corr_theta0)**tper,"\n");
+      r->corr_on=0;r->corr_lam=0.;
+      r->rec_disarmed=1;
+    }
+    c->reg_lambda=r->corr_lam;
+    c->reg_on=(r->corr_lam>0.)?1:0;
+    /* Bank BEFORE zeroing.  Dropping this counts only the
+       factorisations of attempts that succeeded, so the price
+       of the corridor would be understated by exactly the cost
+       of its failures. */
+    r->corr_nfact+=c->reg_napply;
+    c->reg_napply=0;
+    r->rescue_used=0;
+    r->rescue_bt_on=0;
+    p->evt_on=0;
+    r->rec_used_in_inc=1;
+    fflush(stdout);
+  }else{
+  /* Recovery accounting.  A rescue that fires before WINDOW
+     untouched increments have gone by has not recovered
+     anything; MAXUNREC of those in a row and the mechanism
+     stops pretending and disarms. */
+  if(r->rescue_used==0){
+    if(r->rec_healthy<r->rec_window){
+      r->rec_unrec++;
+    }else{
+      r->rec_unrec=0;
+    }
+    r->rec_healthy=0;
+    if(r->rec_unrec>r->rec_maxunrec){
+      r->rec_disarmed=1;
+      printf("[DAMAGE RESCUE] recovery window BLOWN: %" ITGFORMAT
+             " consecutive rescues without %" ITGFORMAT
+             " clean increments in between.  The solver is being "
+             "carried, not recovering, so the mechanism DISARMS "
+             "and this wall goes to the original stock stop%s",
+             r->rec_unrec,r->rec_window,"\n");
+      fflush(stdout);
+      ccx_rescue_arm=0;
+      ccx_rescue_req=0;
+    }
+  }
+  if(r->rec_disarmed==1){
+    r->rescue_used=r->rescue_maxlevel;
+  }else{
+  r->rescue_used++;
+  r->rec_used_in_inc=1;
+  r->rescue_bt_on=1;
+  /* A wall reached with idamagereeq==0 never enters a same-load
+     solve, so BT and the event step - both gated on
+     idamagereeq==1 - cannot act on it, and levels 1 and 2 would
+     recompute the identical attempt.  Measured: s3rad inc=569
+     carries four [DAMAGE RESCUE] lines and not one [DAMAGE BT],
+     and both retries there failed identically. */
+  if((idamagereeq==0)&&(c->reg_nlam>0)&&
+     (r->rescue_used<2)){
+    printf("[DAMAGE RESCUE] this wall has idamagereeq=0: no "
+           "same-load solve, so levels 1 and 2 cannot act on it; "
+           "skipping straight to the regularized level%s","\n");
+    r->rescue_used=2;
+  }
+  /* [DAMAGE CT] level 4: Rescue2 levels 1-2 and the dogleg have
+     all failed on this wall.  The standard cutback rollback has
+     already restored the increment-start state, so everything below
+     is measured on the last COMMITTED state.  Any refusal leaves
+     that state untouched and hands the wall to the stock stop. */
+  if((k->mode==1)&&(r->rescue_used>=4)&&
+     (k->on==0)&&(k->refused==0)){
+    ITG cse,csi,csn,csr;
+    double csm[3],csk,csd,cst;
+    if((k->alloc==1)&&(k->nring>=6)&&
+       (damcont_select(k->ring,k->fl,k->dt,
+                         ipkon,lakon,ielprop,prop,ne0,mi[0],
+                         k->head,&cse,&csi,csm,&csk,&csd,
+                         &cst,&csn,&csr,k->kaptol,k->bl,k->nbl)==1)){
+      k->arm=1;   /* already gated above; this only reports */
+      printf("[DAMAGE CT] level 4 pre-check PASSED at inc=%" ITGFORMAT
+             ": %" ITGFORMAT " candidate(s) with five admissible "
+             "committed intervals; best element %" ITGFORMAT " ip %"
+             ITGFORMAT ", kappa=%.6e (max/min=%.4f), ds0=%.6e.  The "
+             "increment gets one continuation attempt.%s",
+             iinc,csn,cse+1,csi+1,csk,cst,csd,"\n");
+    }else{
+      printf("[DAMAGE CT] level 4 REFUSED at inc=%" ITGFORMAT
+             " (%s; candidates=%" ITGFORMAT ", ring=%" ITGFORMAT
+             "/6).  No continuation attempt is granted, so the stock "
+             "path is untouched and this wall goes to the ORIGINAL "
+             "stock stop.%s",iinc,
+             (k->alloc==0)?"ring not allocated":
+             ((k->nring<6)?"ring incomplete":
+              ((csr==2)?"kappa unstable over the five intervals":
+               "no candidate with five admissible intervals")),
+             (k->alloc==1)?csn:0,k->nring,"\n");
+      k->refused=1;
+      r->rescue_used=r->rescue_maxlevel;
+      ccx_rescue_arm=0;
+    }
+    fflush(stdout);
+  }
+  p->evt_on=(r->rescue_used==2)?1:0;
+  c->reg_on=0;
+  /* [DAMAGE TR] guard: without c->reg_nlam>0 this block indexes
+     c->reg_lam[-1] and switches the diagonal shift on with a
+     garbage lambda.  Unreachable while only RESCUE3/CORRIDOR could
+     raise the level count; reachable the moment any other mechanism
+     claims level 3, which the dogleg does. */
+  if((r->rescue_used>=3)&&(c->reg_nlam>0)){
+    c->reg_level=r->rescue_used-3;
+    if(c->reg_level>=c->reg_nlam)
+      c->reg_level=c->reg_nlam-1;
+    c->reg_lambda=c->reg_lam[c->reg_level];
+    c->reg_on=1;
+    c->reg_napply=0;
+  }
+  }
+  }
+  /* [DAMAGE TR] level 3.  Levels 1 and 2 have already run and
+     failed on THIS wall - unchanged Rescue2 - so the trajectory up
+     to here is the Rescue2 trajectory.  Only now is the increment
+     given one more attempt, with the trust region choosing every
+     correction inside it. */
+  d->lasthelp=iinc;
+  d->selfrec=0;
+  d->on=0;
+  if((d->mode==1)&&(r->rescue_used>=3)&&
+     (r->rec_disarmed==0)){
+    if(d->have<0){
+      printf("[DAMAGE TR] not re-arming: the transpose check has "
+             "already failed once in this run.  The wall goes to "
+             "the original stock stop.%s","\n");
+      fflush(stdout);
+      r->rescue_used=r->rescue_maxlevel;
+    }else if(d->narm>=d->maxarm){
+      printf("[DAMAGE TR] ATTEMPT BUDGET EXHAUSTED: %" ITGFORMAT
+             " armed attempts of %" ITGFORMAT " used.  The mechanism "
+             "DISARMS, the state is left as the standard cutback "
+             "rollback restored it, and this wall goes to the "
+             "ORIGINAL stock stop.%s",
+             d->narm,d->maxarm,"\n");
+      fflush(stdout);
+      r->rec_disarmed=1;
+      r->rescue_used=r->rescue_maxlevel;
+    }else{
+      if(d->narm>0){
+        printf("[DAMAGE TR] inc=%" ITGFORMAT " running total "
+               "BEFORE this attempt: "
+               "armed %" ITGFORMAT ", accepted steps %" ITGFORMAT
+               " (Newton %" ITGFORMAT ", Cauchy %" ITGFORMAT
+               ", dogleg %" ITGFORMAT "), iterations that accepted "
+               "nothing %" ITGFORMAT ", rejected trials %" ITGFORMAT
+               ", residual evaluations %" ITGFORMAT
+               ", armed factorisations %" ITGFORMAT "%s",
+               iinc,d->narm,d->nacc,d->nnewt,
+               d->ncau,d->ndog,d->nfail,
+               d->nrej,d->neval,d->nfact,"\n");
+        fflush(stdout);
+      }
+      d->narm++;
+      d->on=1;
+      d->have=0;
+      d->delta=0.;
+      d->banner=0;
+      d->incarm=iinc;
+      printf("[DAMAGE TR] LEVEL 3 armed for inc=%" ITGFORMAT
+             " (attempt %" ITGFORMAT " of %" ITGFORMAT ").  Levels 1 "
+             "and 2 both failed on this wall; idamagereeq=%" ITGFORMAT
+             ".  The increment is retried once more at the last "
+             "admissible (*dtheta), and inside it BK3 is replaced by a "
+             "dogleg trust region on phi=1/2|R|^2.  Nothing else "
+             "changes: no matrix entry, no material constant, no "
+             "deletion rule, and convergence is still decided by "
+             "checkconvergence on the unmodified residual.%s",
+             iinc,d->narm,d->maxarm,idamagereeq,"\n");
+      fflush(stdout);
+    }
+  }
+  r->rescue_nfired++;
+  (*dtheta)=r->rescue_dtheta_last;
+  (*dthetaref)=r->rescue_dthetaref_last;
+  glob_fired(&*g,(r->rescue_used>=2)?
+             GLOB_RESCUE2:GLOB_RESCUE1);
+  printf("[DAMAGE RESCUE] FIRED #%" ITGFORMAT " inc=%" ITGFORMAT
+         " iter=%" ITGFORMAT " time=%.12e dtime=%.12e; (*dtheta) restored "
+         "to the last admissible %.12e; transactional BT armed for "
+         "THIS attempt only (level %" ITGFORMAT ")%s",
+         r->rescue_nfired,iinc,iit,time,dtime,(*dtheta),
+         r->rescue_used,"\n");
+  fflush(stdout);
+}
+}

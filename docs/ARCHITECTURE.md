@@ -151,8 +151,19 @@ increments, rolls topology back or ends steps.
 - **`rescue.c`** — what happens when an increment will not converge: the
   line search, its probe, transactional backtracking, same-load
   re-equilibration, the recovery corridor and the levels that order them
-  (67 locals, six clusters, one object). `rescue_backtrack()` is the
-  backtracking loop itself; the rest of the ladder is still inline.
+  (73 locals, seven clusters, one object). `rescue_backtrack()` is the
+  backtracking loop; `rescue_attempt()` is the decision about which level
+  gets the one extra attempt a deferred stop buys. The three
+  `ccx_rescue_*` flags — the ladder's handshake with
+  `checkconvergence.c`'s verdict — are defined here too.
+
+  `rescue_attempt()` takes **thirteen** parameters and the count is
+  deliberate: six objects, and seven pieces of `nonlingeo()`'s own control
+  flow. Bundling those seven would shorten the signature, leave the
+  coupling exactly as it is, and put stock CalculiX locals into a
+  fork-specific type — which costs something real on the next upstream
+  merge. The length is the measurement; it is a number to reduce, not to
+  hide.
 - **`damcont.c`** — the bounded local continuation (88 locals → one
   object; 12 of the 88 were declared and never read, and are gone). The
   driver is still inline.

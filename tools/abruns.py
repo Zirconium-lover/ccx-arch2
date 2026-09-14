@@ -28,9 +28,12 @@ Exactly two things, both of them clocks rather than arithmetic:
   * provenance.txt, which records the binary's sha256 on purpose - it is
     SUPPOSED to change when the binary changes.
 
-Everything else must match to the byte.  A file present on one side and
+Everything else must match to the byte.  A FILE present on one side and
 missing on the other is a failure, not a skip: a report that stopped being
-written is a regression the scalars cannot see.
+written is a regression the scalars cannot see.  A CASE present only in the
+reference run is the same failure - it stopped running.  A case present
+only in the new run is a case added since, and is reported as a note: there
+is nothing for it to differ from.
 
 Exit status is the number of differing files, so it is usable from a hook.
 """
@@ -80,8 +83,14 @@ def main():
                 print("DIFFERS  %-24s %s%s"%(c,name,extra))
             elif o.v:
                 print("same     %-24s %s"%(c,name))
-    for c in onlyA: print("MISSING  case %s ran only in A"%c); nbad+=1
-    for c in onlyB: print("MISSING  case %s ran only in B"%c); nbad+=1
+    # A case present on one side only is not symmetric.  Gone from B is a
+    # case that STOPPED RUNNING, which is a regression the scalars cannot
+    # see.  Present only in B is a case ADDED since the reference run, which
+    # cannot be a difference in output because there is nothing to differ
+    # from - counting it made every comparison against an older baseline
+    # report one phantom failure for ever.
+    for c in onlyA: print("MISSING  case %s ran only in A - it stopped running"%c); nbad+=1
+    for c in onlyB: print("note     case %s is new since the reference run"%c)
     print("\n[ABRUNS] %d case(s), %d file(s) compared byte for byte, "
           "%d skipped as clocks, %d differ"%(len(cases),nfile,nskip,nbad))
     if nbad==0:
