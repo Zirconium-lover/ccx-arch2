@@ -363,6 +363,25 @@
    }
   },
   {
+   "name": "fast-plain-lincheck",
+   "what": "the linearity probe, 350 lines that NO case in this gate had ever executed - and could not have, because it is armed by an increment number and every case left CCX_DAMAGE_TR_LINCHECK unset.  That is the point: covered.txt lists CCX_DAMAGE_TR_DOGLEG, so the SWITCH was covered while the code under it ran zero times, which is how 350 lines sat in nonlingeo() unexecuted long enough to be moved into dogleg_lincheck() on nothing but a text comparison.  The probe measures the three sign conventions the trust region rests on - b = -R before the solve, p_N = +b after it, d = J^T r0 - by walking eps down a ladder and comparing the residual results()/calcresidual() actually returns against the linear model the dogleg steps in.  Two of its numbers are verdicts, and they are the two the extraction could have broken.  `transpose' counts probes whose dot(J^T R,p_N)/|R|^2 is not 1: d comes out of the TRANSPOSE loop and w out of the forward loop, so a swapped or mis-strided pair cannot pass it.  `rollback' counts probes whose restored |res| disagrees with the eps=1 line of their own pass 1: the probe BORROWS the solver's mutable state - cam, qa, uam - and must hand it back, and the extraction moved that save/restore across a file boundary.  MEASURED: 3 probes (NIT=3 at increment 20), both verdicts 0, and the run still ends where the other fast/plain cases end.",
+   "kind": "fast",
+   "variant": "plain",
+   "env": [
+    "CCX_DAMAGE_TR_LINCHECK=20",
+    "CCX_DAMAGE_TR_LINCHECK_NIT=3"
+   ],
+   "expect": {
+    "rc": 0,
+    "last_inc": 507,
+    "theta": "0.100000E+01",
+    "deletions": 90,
+    "lincheck_probes": 3,
+    "lincheck_transpose": 0,
+    "lincheck_rollback": 0
+   }
+  },
+  {
    "name": "fast-plain-opcheck",
    "what": "the operator check itself, which no case in this gate had ever run: CCX_STRUCT_FD_* is one of the switch families nothing sets, so the probe had the coverage of a switch that does not exist.  It arms at increment 3 iteration 2, compares the ASSEMBLED tangent column by column against a central difference of the internal force, and stops the run - so last_inc is 2, the last increment that completed.  MEASURED on the plain fast deck: 27 columns, 43200 coefficients, 0 wrong and 0 kink.  `wrong' is the only one of the four classes that accuses the operator; `kink' accuses the model of not being differentiable there, which on a deck whose cohesive plane has not yet opened it is not.  This case exists because the probe was moved out of nonlingeo() into opcheck.c and byte identity over the other sixteen cases says nothing about code none of them executes.",
    "kind": "fast",

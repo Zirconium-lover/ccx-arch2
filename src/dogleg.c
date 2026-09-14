@@ -149,6 +149,361 @@ double dogleg_pred(double pa,double pb,double nb2,double nd2,
        |r0|^2 = 2  and  dot(d,p_N) = 2   - the same identity the run checks.
    Prints PASS/FAIL per case and returns the number of failures. */
 
+/* The sign convention, measured rather than asserted.
+
+
+   Three hundred and fifty lines of it sat inside nonlingeo(), between a
+   residual save and a trust-region step, with nothing but the tag to say
+   they were one probe.  It borrows the solver's state and gives it back:
+   it ends by evaluating p_N, which is the state the unprobed code would
+   have had, and puts cam/qa/uam back first.
+
+   Armed by CCX_DAMAGE_TR_LINCHECK=<increment>; the caller keeps the guard,
+   as every other mechanism in this tree does. */
+void dogleg_lincheck(dogleg *d,probedrv *p,const trialctx *mdl,
+                     const nlstate *n,double *addiag,
+                     double *addiag0,double *damjac,
+                     double *damvisc,double *dambase)
+{
+  /* Unpacked once, so the body below is the body that was there.  Every
+     trialctx field holds the ADDRESS of the caller's local, which is what
+     lets the binding survive the reallocations nonlingeo() does on every
+     iteration; cam and qa are fixed-size arrays, so for them the field IS
+     the address. */
+  double *b=*(mdl->b),*co=*(mdl->co);
+  double *vold=*(mdl->vold),*xstate=*(mdl->xstate);
+  double *cam=mdl->cam,*qa=mdl->qa,*uam=n->uam;
+  ITG *ipkon=*(mdl->ipkon),*kon=*(mdl->kon),*irow=*(mdl->irow);
+  ITG *jq=*(mdl->jq),*nactdof=*(mdl->nactdof),*mi=*(mdl->mi);
+  ITG *neq=*(mdl->neq),*nzs=*(mdl->nzs),*nstate_=*(mdl->nstate_);
+  ITG *nk=*(mdl->nk),*ne=*(mdl->ne),*nboun=*(mdl->nboun),*nmpc=*(mdl->nmpc);
+  char *lakon=*(mdl->lakon);
+  ITG iinc=*(mdl->iinc),ne0=*(mdl->ne0),nasym=*(mdl->nasym);
+  ITG num_cpus=*(mdl->num_cpus),iit=*(n->iit);
+  double *dam=*(mdl->dam);
+  ITG mt=mi[1]+1,isiz;
+
+        /* [WALLDIAG] The ladder has to reach BELOW the step the search
+           actually takes, or it cannot tell a consistent tangent with a
+           small radius of validity from an inconsistent one: the second
+           wall's best rung is alpha~0.004, and the old ladder stopped at
+           0.0156.  1/2^k down to k=14 puts six rungs below 0.004 while the
+           defect is still far above the cancellation floor, which for
+           |J p|=|r0| sits at about 1e-16/eps. */
+        static const double lcE[15]={1.,0.5,0.25,0.125,0.0625,0.03125,
+                                     0.015625,0.0078125,0.00390625,
+                                     0.001953125,0.0009765625,
+                                     0.00048828125,0.000244140625,
+                                     0.0001220703125,0.00006103515625};
+        ITG lnst,lii,ljj,lpass,lact,lspc,lmpcd;
+        double le,lsc,lnum,lden,lnjp,lnres,lmv,ldv,linf,linf0;
+        double lqas[4],luams[2];
+        double *lp=NULL,*ljp=NULL;
+
+        lnst=*nstate_;
+        if(d->res==NULL){
+          NNEW(d->res,double,neq[1]);
+          NNEW(d->dam,double,mi[0]**ne);
+          NNEW(d->visc,double,mi[0]**ne);
+          if(lnst>0) NNEW(d->xs,double,lnst*mi[0]**ne);
+        }
+        NNEW(lp,double,neq[1]);
+        NNEW(ljp,double,neq[1]);
+
+        lact=0;lspc=0;lmpcd=0;
+        for(ljj=0;ljj<*nk;ljj++){
+          for(lii=1;lii<mt;lii++){
+            if(nactdof[mt*ljj+lii]>0) lact++;
+            else if(nactdof[mt*ljj+lii]==0) lspc++;
+            else lmpcd++;   /* negative: MPC-dependent, and in this tree
+                               SPC-eliminated slots land here as well */
+          }
+        }
+        printf("[DAMAGE TR LINCHECK] inc=%" ITGFORMAT " iter=%" ITGFORMAT
+               " REDUCED SPACE: neq[0]=%" ITGFORMAT " neq[1]=%" ITGFORMAT
+               "; mechanical slots %" ITGFORMAT " = active (nactdof>0) %"
+               ITGFORMAT " + excluded, nactdof==0 %" ITGFORMAT
+               " + excluded, nactdof<0 %" ITGFORMAT "; nboun=%" ITGFORMAT
+               " nmpc=%" ITGFORMAT " nzs[1]=%" ITGFORMAT " nzs[2]=%" ITGFORMAT
+               ".  active == neq[1] and excluded == nboun+MPC-dependent is "
+               "the proof that b, f, fext, ad and au share ONE post-SPC/MPC "
+               "numbering (nactdof>0, 1-based), so every vector the trust "
+               "region forms already lives in the reduced space and no "
+               "constrained degree of freedom is ever stepped.%s",
+               iinc,iit,neq[0],neq[1],3*(*nk),lact,lspc,lmpcd,*nboun,*nmpc,
+               nzs[1],nzs[2],"\n");
+        printf("[DAMAGE TR LINCHECK] transpose identity dot(J^T R,p_N)/|R|^2 "
+               "= %.12e (exact 1); operator asymmetry "
+               "max|au_L-au_U|/max|au_L| = %.6e; |p_N|=%.6e |p_C|=%.6e "
+               "|R|2=%.6e%s",
+               d->ident,d->asym,sqrt(d->npn2),
+               d->tc*sqrt(d->nd2),sqrt(d->nb2),"\n");
+        fflush(stdout);
+
+        isiz=mi[0]**ne;cpypardou(d->dam,dam,&isiz,&num_cpus);
+        if(damvisc!=NULL){
+          isiz=mi[0]**ne;
+          cpypardou(d->visc,damvisc,&isiz,&num_cpus);
+        }
+        if((lnst>0)&&(d->xs!=NULL)){
+          isiz=lnst*mi[0]**ne;
+          cpypardou(d->xs,xstate,&isiz,&num_cpus);
+        }
+        for(ljj=0;ljj<4;ljj++) lqas[ljj]=qa[ljj];
+        for(ljj=0;ljj<2;ljj++) luams[ljj]=uam[ljj];
+
+        /* [WALLDIAG] the base state and the residual peaks.  Seventy
+           lines of it used to sit here; damdiag.c owns the report now. */
+        damage_wall_report(p,mdl,n,d,dambase,
+                           damvisc,addiag,addiag0,
+                           damage_spc_mask,damage_spc_nk);
+
+        {
+        ITG lpassn=2;
+        if((p->wall_maskstep!=0)&&(d->pm!=NULL)) lpassn=3;
+        for(lpass=0;lpass<lpassn;lpass++){
+          if(lpass==0){
+            for(ljj=0;ljj<neq[1];ljj++){
+              lp[ljj]=d->pn[ljj];
+              ljp[ljj]=d->r0[ljj];
+            }
+            printf("[DAMAGE TR LINCHECK] pass 1: p = p_N, so J p = r0 "
+                   "EXACTLY.  res(u+eps p)/((1-eps)|r0|) must go to 1 and "
+                   "the defect to zero like O(eps).%s","\n");
+          }else if(lpass==1){
+            lsc=sqrt(d->npn2/d->nd2);
+            for(ljj=0;ljj<neq[1];ljj++){
+              lp[ljj]=lsc*d->d[ljj];
+              ljp[ljj]=lsc*d->w[ljj];
+            }
+            printf("[DAMAGE TR LINCHECK] pass 2: p = %.6e * d (scaled to "
+                   "|p_N|), so J p = %.6e * w.  d comes from the TRANSPOSE "
+                   "loop and w from the forward loop, so a swapped pair "
+                   "cannot pass this.%s",lsc,lsc,"\n");
+          }else{
+            /* [WALLDIAG] MASKSTEP.  p = p_N with the AUTOSPC-masked nodes'
+               components zeroed.  UNSCALED on purpose: the question is not
+               how this direction behaves at |p_N|, it is what the step
+               actually does once the collapsed-diagonal dofs are taken out
+               of it, so eps=1 here means "the rest of the Newton step". */
+            for(ljj=0;ljj<neq[1];ljj++){
+              lp[ljj]=d->pm[ljj];
+              ljp[ljj]=d->wm[ljj];
+            }
+            printf("[DAMAGE TR LINCHECK] pass 3 (MASKSTEP): p = p_N with the "
+                   "%" ITGFORMAT " AUTOSPC-masked nodes zeroed.  |p|=%.6e "
+                   "against |p_N|=%.6e, so the mask removes %.4f%% of "
+                   "|p_N|^2.  If the best rung here beats pass 1's best rung "
+                   "(and the ladder's accepted alpha), the step is unusable "
+                   "BECAUSE it is spent on collapsed-diagonal nodes; if it "
+                   "does not, that hypothesis is dead.%s",
+                   damage_spc_count,sqrt(d->npm2),
+                   sqrt(d->npn2),
+                   (d->npn2>0.)?
+                     100.*(1.-d->npm2/d->npn2):0.,"\n");
+          }
+          fflush(stdout);
+          lnjp=0.;
+          for(ljj=0;ljj<neq[1];ljj++) lnjp+=ljp[ljj]*ljp[ljj];
+          lnjp=sqrt(lnjp);
+          for(lii=0;lii<15;lii++){
+            le=lcE[lii];
+          /* [DAMAGE TR LINCHECK] cam starts clean for every probe, for the
+             same reason as in the trust-region block. */
+          for(ljj=0;ljj<3;ljj++) cam[ljj]=0.;
+          for(ljj=3;ljj<5;ljj++) cam[ljj]=0.5;
+          isiz=mi[0]**ne;cpypardou(dam,d->dam,&isiz,&num_cpus);
+          if(damvisc!=NULL){
+            isiz=mi[0]**ne;
+            cpypardou(damvisc,d->visc,&isiz,&num_cpus);
+          }
+          if((lnst>0)&&(d->xs!=NULL)){
+            isiz=lnst*mi[0]**ne;
+            cpypardou(xstate,d->xs,&isiz,&num_cpus);
+          }
+          for(ljj=0;ljj<neq[1];ljj++) b[ljj]=le*lp[ljj];
+          trial_residual(mdl,d->res);
+
+            d->neval++;
+            lnum=0.;lnres=0.;linf=0.;linf0=0.;
+            if(p->wall_def==NULL) NNEW(p->wall_def,double,neq[1]);
+            for(ljj=0;ljj<neq[1];ljj++){
+              lmv=d->r0[ljj]-le*ljp[ljj];
+              ldv=d->res[ljj]-lmv;
+              p->wall_def[ljj]=ldv;
+              lnum+=ldv*ldv;
+              lnres+=d->res[ljj]*d->res[ljj];
+            }
+            /* [WALLDIAG] The line search judges a trial by max|res| over the
+               MECHANICAL block neq[0] (nonlingeo.c, damage_linesearch_*norm),
+               while the direction it damps is only guaranteed to descend the
+               2-norm merit - the transpose identity dot(J^T R,p_N)=|R|^2 is
+               what makes that guarantee exact.  The two norms are therefore
+               measured on the SAME rung here, or the disagreement between
+               them stays an inference. */
+            for(ljj=0;ljj<neq[0];ljj++){
+              if(fabs(d->res[ljj])>linf) linf=fabs(d->res[ljj]);
+              if(fabs(d->r0[ljj])>linf0) linf0=fabs(d->r0[ljj]);
+            }
+            lnum=sqrt(lnum);lnres=sqrt(lnres);
+            lden=le*lnjp;
+            printf("[DAMAGE TR LINCHECK] pass %" ITGFORMAT " eps=%.9f "
+                   "|res(u+eps p)|=%.12e  linear-model defect=%.6e  "
+                   "defect/eps=%.6e%s",lpass+1,le,lnres,
+                   (lden>0.)?lnum/lden:0.,
+                   (lden>0.)?lnum/(lden*le):0.,"\n");
+            printf("[WALLDIAG] pass %" ITGFORMAT " eps=%.9f  TWO NORMS: "
+                   "|res|2/|r0|2=%.12f  |res|inf/|r0|inf=%.12f  "
+                   "(|r0|2=%.6e |r0|inf=%.6e)%s",lpass+1,le,
+                   (d->nb2>0.)?lnres/sqrt(d->nb2):0.,
+                   (linf0>0.)?linf/linf0:0.,sqrt(d->nb2),linf0,"\n");
+            if(lpass==0)
+              printf("[DAMAGE TR LINCHECK]          ratio "
+                     "|res|/((1-eps)|r0|) = %.12f  (must go to 1)%s",
+                     ((1.-le)>0.)?lnres/((1.-le)*sqrt(d->nb2)):0.,
+                     "\n");
+            {
+              ITG wtot;
+              wtot=damage_wall_setdiff(p->wall_cat,mdl,dambase,
+                                       damvisc,p->wall_nb);
+              printf("[WALLDIAG] pass %" ITGFORMAT " eps=%.9f  active-set "
+                     "transitions %" ITGFORMAT " = UC6 loading/unloading %"
+                     ITGFORMAT " + UC6 initiation %" ITGFORMAT
+                     " + UC6 viscous %" ITGFORMAT " + UC6 failure %"
+                     ITGFORMAT " + UC6 tension/compression %" ITGFORMAT
+                     " + bulk plastic %" ITGFORMAT " + bulk initiation %"
+                     ITGFORMAT " + bulk damage growth %" ITGFORMAT "%s",
+                     lpass+1,le,wtot,p->wall_nb[6],p->wall_nb[3],
+                     p->wall_nb[4],p->wall_nb[5],p->wall_nb[7],
+                     p->wall_nb[0],p->wall_nb[1],p->wall_nb[2],
+                     "\n");
+            }
+            /* [WALLDIAG] IS THE MISSING TERM THE DAMAGE RANK-1 TERM?
+
+               J = K0 + E, where E is exactly what mafilldamas.f adds from
+               damjac.  Assemble E ALONE into a zeroed pair and apply it to
+               p_N.  If the true operator is A = K0 + (1+c)E - that is, if
+               the rank-1 damage term is the right shape and the wrong size -
+               then (J-A)p = -c*E*p, so the measured defect must be
+               ANTI-PARALLEL to E*p and |defect|/(eps*|E p|) must equal |c|.
+               A cosine of zero says the missing term is a different term,
+               and no scaling of this one can supply it. */
+            if(lii==14){
+              ITG e1i,e1c,e1k,e1r;
+              double *e1ad=NULL,*e1au=NULL,*e1y=NULL,e1n=0.,e1d=0.,e1w=0.;
+              ITG e1nd,e1sk,e1ad2,e1ho,e1fl,e1lv,e1dg;
+              ITG *e1cat=NULL;
+              NNEW(e1ad,double,neq[1]);
+              NNEW(e1au,double,(nasym+1)*nzs[1]);
+              NNEW(e1y,double,neq[1]);
+              e1nd=0;e1sk=0;e1ad2=0;e1ho=0;e1fl=0;e1lv=0;e1dg=0;
+              NNEW(e1cat,ITG,ne0);
+              FORTRAN(mafilldamas,(co,kon,ipkon,lakon,&ne0,nactdof,jq,irow,
+                                   neq,nzs,e1au,e1ad,vold,mi,damjac,
+                                   nmpc,&e1nd,dam,dambase,
+                                   &e1sk,&e1ad2,&e1ho,&e1fl,&e1lv,&e1dg,
+                                   e1cat));
+              SFREE(e1cat);
+              for(e1k=0;e1k<neq[1];e1k++)
+                e1y[e1k]=e1ad[e1k]*d->pn[e1k];
+              for(e1c=0;e1c<neq[1];e1c++){
+                for(e1k=jq[e1c]-1;e1k<jq[e1c+1]-1;e1k++){
+                  e1r=irow[e1k]-1;
+                  e1y[e1r]+=e1au[e1k]*d->pn[e1c];
+                  e1y[e1c]+=e1au[nzs[2]+e1k]*d->pn[e1r];
+                }
+              }
+              for(e1i=0;e1i<neq[1];e1i++){
+                e1n+=e1y[e1i]*e1y[e1i];
+                e1d+=p->wall_def[e1i]*p->wall_def[e1i];
+                e1w+=e1y[e1i]*p->wall_def[e1i];
+              }
+              e1n=sqrt(e1n);e1d=sqrt(e1d);
+              /* Is the rank-1 term small because dD/d(eps) is small, or
+                 because the assembly loses it?  damjac slots 1..6 are the
+                 effective stress and 7..12 are dD/d(eps); censusing both
+                 separates "the derivative is tiny" from "the derivative is
+                 there and the operator does not carry it". */
+              {
+                ITG qi,qn=0,qz=0;
+                double qmax=0.,qsum=0.,tmax=0.;
+                for(qi=0;qi<ne0;qi++){
+                  ITG qk;double qa2=0.,qt2=0.;
+                  if(ipkon[qi]<0) continue;
+                  if(lakon[8*qi]!='C') continue;
+                  for(qk=6;qk<12;qk++)
+                    qa2+=damjac[12*mi[0]*qi+qk]
+                        *damjac[12*mi[0]*qi+qk];
+                  for(qk=0;qk<6;qk++)
+                    qt2+=damjac[12*mi[0]*qi+qk]
+                        *damjac[12*mi[0]*qi+qk];
+                  if((qa2<=0.)&&(qt2<=0.)) continue;
+                  qn++;
+                  qa2=sqrt(qa2);qt2=sqrt(qt2);
+                  if(qa2<=1.e-12) qz++;
+                  if(qa2>qmax) qmax=qa2;
+                  if(qt2>tmax) tmax=qt2;
+                  qsum+=qa2;
+                }
+                printf("[WALLDIAG]   damjac census over %" ITGFORMAT
+                       " elements with any entry: |dD/d(eps)| max=%.6e "
+                       "mean=%.6e, of which %" ITGFORMAT
+                       " have it BELOW 1e-12 (assembled anyway, because the "
+                       "skip test sums the stress slots too); |sigma_eff| "
+                       "max=%.6e%s",qn,qmax,(qn>0)?qsum/qn:0.,qz,tmax,"\n");
+              }
+              printf("[WALLDIAG]   damage rank-1 term applied to p_N: "
+                     "elements %" ITGFORMAT ", |E p|=%.6e, |defect|/eps=%.6e,"
+                     "  cos(defect,E p)=%+.6f  |defect|/(eps|E p|)=%.6f%s",
+                     e1nd,e1n,e1d/le,
+                     ((e1n>0.)&&(e1d>0.))?e1w/(e1n*e1d):0.,
+                     (e1n>0.)?e1d/(le*e1n):0.,"\n");
+              SFREE(e1ad);SFREE(e1au);SFREE(e1y);
+            }
+            if(lii==14){
+              damage_wall_split("linear-model defect",p->wall_def,mdl);
+              damage_wall_split("residual r0",d->r0,mdl);
+              damage_wall_split("Newton step p_N",d->pn,mdl);
+              damage_wall_where("defect",p->wall_def,mdl,5);
+            }
+            fflush(stdout);
+          }
+        }
+        }
+
+        /* leave the full Newton step, exactly as the unprobed code would */
+        for(ljj=0;ljj<4;ljj++) qa[ljj]=lqas[ljj];
+        for(ljj=0;ljj<2;ljj++) uam[ljj]=luams[ljj];
+        le=1.;
+        for(ljj=0;ljj<neq[1];ljj++) lp[ljj]=d->pn[ljj];
+          /* [DAMAGE TR LINCHECK] cam starts clean for every probe, for the
+             same reason as in the trust-region block. */
+          for(ljj=0;ljj<3;ljj++) cam[ljj]=0.;
+          for(ljj=3;ljj<5;ljj++) cam[ljj]=0.5;
+          isiz=mi[0]**ne;cpypardou(dam,d->dam,&isiz,&num_cpus);
+          if(damvisc!=NULL){
+            isiz=mi[0]**ne;
+            cpypardou(damvisc,d->visc,&isiz,&num_cpus);
+          }
+          if((lnst>0)&&(d->xs!=NULL)){
+            isiz=lnst*mi[0]**ne;
+            cpypardou(xstate,d->xs,&isiz,&num_cpus);
+          }
+          for(ljj=0;ljj<neq[1];ljj++) b[ljj]=le*lp[ljj];
+          trial_residual(mdl,d->res);
+
+        lnres=0.;
+        for(ljj=0;ljj<neq[1];ljj++)
+          lnres+=d->res[ljj]*d->res[ljj];
+        printf("[DAMAGE TR LINCHECK] restored to the full Newton step; "
+               "|res| there = %.12e.  Compare with the eps=1 line of pass 1: "
+               "equal means every probe rolled the mutable state back "
+               "completely.%s",sqrt(lnres),"\n");
+        fflush(stdout);
+        SFREE(lp);SFREE(ljp);
+        d->lc_due=0;
+}
+
 ITG dogleg_selftest(void)
 {
   const double nb2=2.,nd2=101.,nw2=10001.,npn2=1.01,dtpn=2.;

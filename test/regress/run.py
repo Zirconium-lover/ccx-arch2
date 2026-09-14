@@ -79,6 +79,47 @@ def release(log):
     anom=sum(int(x) for x in re.findall(r'selfcheck: anom=(\d+)',txt))
     return npass,nelem,anom
 
+def lincheck(log):
+    """What the linearity probe measured, as three integers.
+
+    The probe exists to measure three sign conventions that are easy to get
+    backwards and impossible to see in the output: b = -R before the solve,
+    p_N = +b after it, and d = J^T r0.  It walks eps down a ladder and
+    compares the residual results()/calcresidual() actually returns against
+    the linear model the dogleg steps in.
+
+    Two of its numbers are verdicts rather than diagnostics, and they are the
+    two that moving these 350 lines out of nonlingeo() could have broken:
+
+      `transpose' counts probes whose identity dot(J^T R,p_N)/|R|^2 is not 1.
+      d comes out of the TRANSPOSE loop and w out of the forward loop, so a
+      swapped or mis-strided pair cannot pass it.
+
+      `rollback' counts probes whose restored |res| disagrees with the eps=1
+      line of their own pass 1.  The probe BORROWS the solver's mutable state
+      - cam, qa, uam - and must hand it back; the extraction moved that
+      save/restore across a file boundary, and a disagreement here means it
+      no longer round-trips.
+
+    Both must be zero, and no other case in this gate arms
+    CCX_DAMAGE_TR_LINCHECK: byte identity over the other eighteen says
+    nothing about code none of them executes, which is exactly why the code
+    could sit in nonlingeo() unexecuted for as long as it did."""
+    try: txt=open(log,errors='replace').read()
+    except OSError: return None,None,None
+    probes=re.split(r'^\[DAMAGE TR LINCHECK\] inc=',txt,flags=re.M)[1:]
+    if not probes: return 0,None,None
+    ntr=nrb=0
+    for p in probes:
+        m=re.search(r'transpose identity dot\(J\^T R,p_N\)/\|R\|\^2 = ([0-9.]+[eE][-+][0-9]+)',p)
+        if m is None or abs(float(m.group(1))-1.)>1.e-9: ntr+=1
+        a=re.search(r'pass 1 eps=1\.0*\s+\|res\(u\+eps p\)\|=([0-9.]+[eE][-+][0-9]+)',p)
+        b=re.search(r'restored to the full Newton step; \|res\| there = ([0-9.]+[eE][-+][0-9]+)',p)
+        if a is None or b is None: nrb+=1; continue
+        x,y=float(a.group(1)),float(b.group(1))
+        if abs(y-x)>1.e-12*abs(x): nrb+=1
+    return len(probes),ntr,nrb
+
 def opcheck(log):
     """What the operator check measured, as three integers.
 
@@ -134,7 +175,14 @@ def selftests(log,required,lines):
     for name in required:
         if not re.search(re.escape(name)+r'.*(PASSED|0 failure)',txt):
             if name in txt: bad.append("%s did not report PASSED"%name)
-    for m in re.finditer(r'\[([A-Z0-9 _]+)\][^\n]*?([1-9]\d*) failure',txt):
+    # `failure(s)' with the parentheses, not a bare `failure'.  All fourteen
+    # emitters in the tree print "%ITG failure(s)"; without the suffix the
+    # pattern also matches the 6 of "UC6 failure 0" in WALLDIAG's active-set
+    # line and the increment of "[DAMAGE FAST BACKOFF] inc=20 failures=1",
+    # and reports a passing run as six failures.  Nothing caught that until
+    # fast-plain-lincheck armed the first case that reaches those lines,
+    # which is the same reason the case exists.
+    for m in re.finditer(r'\[([A-Z0-9 _]+)\][^\n]*?([1-9]\d*) failure\(s\)',txt):
         bad.append("%s reported %s failure(s)"%(m.group(1),m.group(2)))
     for m in re.finditer(r'\[([A-Z0-9 _]+)\][^\n]*?\*ERROR([^\n]*)',txt):
         bad.append("%s reported an error:%s"%(m.group(1),m.group(2)[:80]))
@@ -195,6 +243,8 @@ def one(case,outroot,exe,required,lines):
         got['opcheck_cols'],got['opcheck_wrong'],got['opcheck_kink']=opcheck(log)
     if 'release_passes' in exp:
         got['release_passes'],got['release_elem'],got['release_anom']=release(log)
+    if 'lincheck_probes' in exp:
+        got['lincheck_probes'],got['lincheck_transpose'],got['lincheck_rollback']=lincheck(log)
     if 'check_close' in exp:
         r=sh('python3 %s/test/pathfollow/check_close.py %s --zeta %s'
              %(ROOT,rundir,case.get('zeta','0')),base_env([]))

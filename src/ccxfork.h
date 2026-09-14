@@ -544,6 +544,12 @@ typedef struct{
 void rescue_init(rescue *r);
 /* the ladder's handshake with checkconvergence.c; defined in rescue.c */
 extern ITG ccx_rescue_active,ccx_rescue_arm,ccx_rescue_req;
+
+/* The AUTOSPC load-path mask.  Defined at file scope in nonlingeo.c, and
+   read by the probes that moved out of it - the same arrangement, and for
+   the same reason, as the three rescue flags above. */
+extern ITG *damage_spc_mask;
+extern ITG damage_spc_nk,damage_spc_count;
 void rescue_configure_backtrack(rescue *r);
 /* it WRITES to both: the corridor sets the regularisation ladder's
    length, and two levels reset the event census. */
@@ -757,6 +763,14 @@ ITG  dogleg_pick(double dl,double nd2,double nw2,double npn2,
                  double dtpn,double *pa,double *pb,double *nrm);
 /* the model's predicted reduction for that step: the denominator of rho */
 double dogleg_pred(double pa,double pb,double nb2,double nd2,double nw2);
+/* The sign convention, measured rather than asserted: 350 lines that sat
+   inside nonlingeo() between a residual save and a trust-region step.  It
+   borrows the solver's state and gives it back.  The caller keeps the
+   guard. */
+void dogleg_lincheck(dogleg *d,probedrv *p,const trialctx *mdl,
+                     const nlstate *n,double *addiag,
+                     double *addiag0,double *damjac,
+                     double *damvisc,double *dambase);
 ITG  dogleg_selftest(void);
 /* read this mechanism's own switches, and refuse rather than degrade.
    Called where the block used to be: these arming blocks refuse on

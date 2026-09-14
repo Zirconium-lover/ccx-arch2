@@ -94,8 +94,9 @@ Everything above is bottom-up: it says what may be pulled out of a long
 function. It was enough to get twenty-three files out of `nonlingeo()` and
 it is not enough to keep them worth having. A tree can satisfy all four
 criteria on every file and still be miserable to work in, because the four
-say nothing about what it COSTS to change one. Four more, and each is a cost
-somebody pays on every change rather than a matter of taste:
+say nothing about what it COSTS to change one, or about what it costs to get
+one wrong. Five more, and each is a price somebody pays on every change
+rather than a matter of taste:
 
 5. **A signature is an interface, or it is a copy of the caller's locals.**
    A function taking twenty-two arguments has no boundary: every local the
@@ -148,6 +149,63 @@ somebody pays on every change rather than a matter of taste:
    `ccxfork.h` now — 49 files — with `ccxopt.h` and `logview.h` split off
    because they are platform rather than mechanism.
 
+9. **Something has to be able to check it, and sometimes nothing can.**
+   Criteria 1–4 say what MAY be pulled out of a long function; 5–8 say what
+   it costs to change the result. This one says what it costs to be wrong,
+   and it is the only one of the nine whose answer is sometimes **don't move
+   it**.
+
+   The proof this tree uses for a move is byte identity: the same binary
+   before and after on nineteen cases, 172 files compared byte for byte. It
+   is a strong proof and it says exactly nothing about lines no case
+   executes. Neither does `covered.txt`, which records that a SWITCH was
+   set, not that the code under it ran: `CCX_DAMAGE_TR_DOGLEG` is listed
+   there, and the 350 lines of `LINCHECK` under that same switch family ran
+   zero times in eighteen cases.
+
+   So the question is not "is this block covered" but **"can this block be
+   made to run at all"**, and the two biggest remaining subsystems were
+   measured against it and gave opposite answers.
+
+   `LINCHECK` — 350 lines, the largest single block left in `nonlingeo()` —
+   was executed by nothing, but it is ARMABLE: `CCX_DAMAGE_TR_LINCHECK=<inc>`
+   makes it run on an ordinary deck. So it was moved and checked the way
+   every other move is checked, with the probe armed on both arms: 150 lines
+   of probe output identical character for character, and the whole run tree
+   byte for byte apart from the `1UTIME` stamp. Then it got the gate case it
+   had never had. Arming it found a defect in the first minute — not in the
+   moved code, but in the gate's own log scanner, which read the `6` of
+   `UC6 failure 0` as a failure count and called a passing run six failures.
+   That scanner had been running against eighteen cases for as long as it
+   existed; no case had ever reached a line it misparses.
+
+   `DAMAGE CT` — 294 lines across eleven sites, spanning 9,640 lines of the
+   function — is not armable, and that was established by trying rather than
+   by reading. On a deck built to provoke it (the wrapped-inclusion variant,
+   `CCX_DAMAGE_CONTINUATION=1`) the ring is allocated once; the
+   admissibility scan is reached exactly once, at increment 97, finds 16
+   candidate integration points and refuses — kappa is not stable over the
+   five intervals; twenty-five further refusals are the latch reporting
+   `candidates=0`. `ARMED` appears zero times and `COMMIT` zero times, so
+   the 264-line arming block and the 88-line commit block were never
+   entered. Reaching them needs rescue level 4, which needs levels 1, 2 and
+   the dogleg to have all failed first, on top of a ring of six committed
+   intervals.
+
+   **So `DAMAGE CT` was not moved** — decided, not deferred. Moving it could
+   only have been checked by reading the same text twice, and the text is
+   the thing that changes. The one place where a text comparison WAS enough
+   is worth stating precisely, because it looks like the same argument and
+   is not: `release.c` was safe because a script proved its two 91-line arm
+   blocks character-identical **to each other**, 1,120 lines apart, so
+   whatever the move did it could not make the two disagree. There is no
+   such proof available here.
+
+   The finding is worth as much as the move would have been. A 294-line
+   subsystem, spread over eleven places a reader must hold at once, that no
+   deck in this tree can reach, is a thing to know before spending a day
+   making it tidy. Its reachable half already lives in `damcont.c`.
+
 ### The limit of a context, found by measuring
 
 Nine of the twenty-nine widest functions are called by a self test, and they
@@ -175,13 +233,13 @@ against criterion 4 is a worse metric than none.
 | | at the start | now |
 |---|---|---|
 | **parameters a context already holds** | 295 | **71** |
-| signatures over the 6-argument budget | 36 | 22 |
+| signatures over the 6-argument budget | 36 | 25 |
 | widest public signature | 22 | 22 |
-| files recompiled by an interface change | 210 | 49 |
+| files recompiled by an interface change | 210 | 50 |
 | self tests runnable without a deck | 0 of 19 | 19 of 19 |
 | self test lines in a production run | 56–82 | 1 |
 | layering violations | 1 | 0 |
-| `nonlingeo()` lines / locals | 11,313 / 631 | 11,206 / 593 |
+| `nonlingeo()` lines / locals | 11,313 / 631 | 10,577 / 618 |
 
 The widest signature has not moved, and that row is kept to say so
 honestly: `erosion_mark` still takes twenty-two arguments and is not going
@@ -193,6 +251,17 @@ Read the first row with one caveat: part of the fall from 295 is the
 self-test exemption being introduced, not parameters going away. The
 conversions themselves account for the rest, and each one is a separate
 commit with its own byte-for-byte A/B.
+
+Read the last row with another. The locals count did not grow from 593 to
+618; it was never 593. `arch.py` read the typedef names out of `CalculiX.h`
+alone, and after the header split that file had two of them left, so the
+declaration scanner stopped recognising `trialctx nlgt;` as a declaration
+and stopped counting early — for four commits. The measurement is fixed and
+the budget re-recorded upward, which is the one direction a ratchet is not
+supposed to move; it is recorded that way because the alternative is a
+number that flatters the work. A tool that decides whether a commit is
+acceptable and has no self test of its own will do this, and `arch.py` did
+it twice in one round before it got one.
 
 Everything below the first two rows is infrastructure, and it was taken
 first on purpose: `ccx_selftest` pays for itself on every later step, and an
@@ -217,6 +286,20 @@ allowed to drift back up is not a measurement, it is a mood.
 
 The layering entry is a floor rather than a ratchet: the table was adopted on
 a tree with zero violations, so any violation at all is new.
+
+Two of the counters `arch.py` keeps are *not* in that table, and the reason
+showed up the first time a 350-line block was given a name. Extracting
+`dogleg_lincheck()` moved `nonlingeo()` down by 317 lines and `DAMAGE TR`
+from nine sites to eight — and raised the count of public functions from 179
+to 180 and of signatures over the six-argument budget from 24 to 25, because
+the new function takes the four objects it composes plus five fork arrays
+`trialctx` does not hold (it is a transcription of stock `results()`, which
+has never heard of `dambase` or `damjac`). Both rise *by construction* on
+every extraction. They are recorded upward here with that said out loud,
+rather than treated as a regression, because a ratchet that forbids naming
+a block is pushing against the thing it exists to encourage. The number that
+would have been a regression is `duplicated_params`, and it did not move: 71
+before, 71 after. Width is the symptom; duplication is the disease.
 
 ## The objects
 
@@ -385,17 +468,17 @@ function. That was checked by compiling the pre-move file, not assumed.
 Three checks, in this order. None of them is optional and none of them is a
 matter of opinion.
 
-1. **The gate.** `CCX_EXE=... test/regress/run.py` — sixteen cases in about
-   six minutes on one core, covering the load-path judgement, the
-   crack-face kink, bulk damage with deletion and cutbacks, and the
-   analytical mixed-mode branch. It checks measured scalars against
+1. **The gate.** `CCX_EXE=... test/regress/run.py` — nineteen cases in about
+   six minutes on four cores, covering the load-path judgement, the
+   crack-face kink, bulk damage with deletion and cutbacks, the analytical
+   mixed-mode branch, and the three probes that no case used to arm. It checks measured scalars against
    `cases.json`, byte identity between cases that must agree, that every
    switch a case asked for actually reached the binary, and that every
    required self test reported PASSED.
 
 2. **Byte identity against the binary before the change.**
    `tools/abruns.py A_RUNDIR B_RUNDIR` compares two whole gate runs file by
-   file: 16 cases, 144 files. Exactly two things may differ, both clocks
+   file: 19 cases, 172 files. Exactly two things may differ, both clocks
    rather than arithmetic — the `UTIME` record of a `.frd`, and
    `provenance.txt`, which records the binary's hash on purpose. Every
    extraction described here was accepted on **0 differ**.
@@ -422,9 +505,10 @@ matter of opinion.
 
 ### What the gate covers, and what it does not
 
-Of the loops that have moved, three are executed by gate cases and one is
-not, and the difference is worth stating case by case rather than letting
-"144 files identical" carry weight it has not earned:
+Of the loops that have moved, four are executed by gate cases that already
+existed, three were executed by nothing and have been given one, and one
+cannot be — and the difference is worth stating case by case rather than
+letting "every file identical" carry weight it has not earned:
 
 | moved loop | exercised by | evidence |
 |---|---|---|
@@ -433,6 +517,8 @@ not, and the difference is worth stating case by case rather than letting
 | `rescue_attempt()` | 3 cases | 8 `FIRED`, 2 `ACCEPTED` each |
 | `pathdrv_predictor()` | both `mixed-analytic` cases | 5000 accepted increments |
 | `opcheck_probe()` | nothing — **now `fast-plain-opcheck`** | 47 probe lines diffed by hand across the move, then given a case |
+| `release_arm()` | nothing — **now `fast-plain-release`** | two 91-line blocks proved character-identical to each other, then given a case |
+| `dogleg_lincheck()` | nothing — **now `fast-plain-lincheck`** | 150 probe lines identical across the move with the probe armed, then given a case |
 | `damcont_corrector()` | **nothing, and it cannot be** | see below |
 
 `damcont_corrector()` is the honest bad case. Level 4 arms on every deck in
@@ -449,8 +535,12 @@ the middle of a thirteen-thousand-line function.
 
 There is a limit to what check 2 can say, and it has to be said out loud:
 **byte identity over the gate proves nothing about code the gate does not
-execute.** 133 of the 153 switches are set by no case, so every mechanism
+execute.** 128 of the 153 switches are set by no case, so every mechanism
 behind one of them is moved on the strength of the compiler and of reading.
+And a switch that IS set does not clear the mechanism under it:
+`CCX_DAMAGE_TR_DOGLEG` is set by three cases, and the 350 lines of
+`LINCHECK` in the same family ran zero times until `fast-plain-lincheck`
+armed them. Coverage is of switches; execution is of code.
 When a mechanism like that is moved, run it directly, before and after, and
 diff its own output — that is how the operator check was verified (47
 `[OPCHECK]` lines identical across the move) — and then, if the mechanism
