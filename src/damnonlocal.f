@@ -143,7 +143,7 @@
 !
       real*8, allocatable :: chainf(:)
       integer, allocatable :: iprobee(:)
-      integer :: chnbuilt=0,ichainon=0
+      integer :: chnbuilt=0,ichainon=0,iinner=0,ichainset=0
       end module damnlmod
 !
 !     ------------------------------------------------------------------
@@ -200,7 +200,32 @@
 !     next step and this is the half of it that is already measured.
 !
       call getenv('CCX_DAMAGE_NONLOCAL_CHAIN',carg)
-      if(carg(1:1).eq.'1') ichainon=1
+      if(carg(1:1).ne.' ') then
+        ichainset=1
+        if(carg(1:1).eq.'1') ichainon=1
+      endif
+!
+!     CCX_DAMAGE_NONLOCAL_INNER=1 refreshes the regularised driving
+!     variable ONCE PER NEWTON ITERATION instead of once per increment.
+!     That is what gives the chain factor an addressee: while the field is
+!     frozen for the whole loop the exact Jacobian has a zero on that path
+!     (see damnlchain), so a diagonal cannot help a scheme that does not
+!     contain it.
+!
+!     IT ARMS THE CHAIN FACTOR TOO, unless CCX_DAMAGE_NONLOCAL_CHAIN says
+!     otherwise explicitly.  The two are halves of one change and each
+!     half is expected to look WORSE alone: refreshing inside Newton makes
+!     the coupling Gauss-Seidel, which costs iterations unless the tangent
+!     accounts for it, and the tangent term costs a little unless the
+!     field it differentiates actually moves.  Measured separately, the
+!     chain half alone cost +0.17 percent iterations.  Setting CHAIN
+!     explicitly still wins, so the halves can still be measured apart.
+!
+      call getenv('CCX_DAMAGE_NONLOCAL_INNER',carg)
+      if(carg(1:1).eq.'1') then
+        iinner=1
+        if(ichainset.eq.0) ichainon=1
+      endif
 !
       call getenv('CCX_DAMAGE_NONLOCAL_LOCALIZING',carg)
       if(carg(1:1).ne.' ') then
@@ -236,6 +261,70 @@
 !     reader.  ell<=0 means "no NONLOCAL= on this card" and is recorded as
 !     such rather than rejected: a deck may regularise one material and
 !     not another.
+!
+!     ==================================================================
+!     Refresh the regularised driving variable INSIDE the Newton loop.
+!
+!     WHERE THIS MUST BE CALLED FROM, and why it cannot be anywhere else.
+!     The average needs xstate for every element of a neighbourhood at the
+!     SAME iteration.  results.c runs resultsmech on num_cpus threads split
+!     by element range and joins them afterwards, so before the join part
+!     of xstate still belongs to the previous iteration: an element would
+!     be averaged over a mixture of two iterations and the answer would
+!     depend on the thread count.  No lock fixes that.  So the only sound
+!     call site is AFTER the join - in practice, in the Newton loop of
+!     nonlingeo.c, immediately after results() returns.
+!
+!     WHAT IT DOES AND DOES NOT DO.  It does not make the problem
+!     monolithic.  It turns "ebar frozen for the increment" into "ebar
+!     updated once per iteration", i.e. a Gauss-Seidel coupling inside
+!     Newton.  Peerlings et al. 1996 is the monolithic alternative and
+!     needs a nodal degree of freedom; this does not, and does not claim
+!     that convergence rate.
+!
+!     Inert unless CCX_DAMAGE_NONLOCAL_INNER=1, so a binary built with it
+!     is byte for byte the previous one until the switch is set.
+!     ==================================================================
+!
+      subroutine damnlrefresh(ipkon,kon,lakon,co,ne0,mi,xstate,
+     &     xstateini,nstate_,ielmat,dam)
+      use damnlmod
+      implicit none
+      character*8 lakon(*)
+      integer ipkon(*),kon(*),ne0,mi(*),nstate_,ielmat(mi(3),*)
+      real*8 co(3,*),xstate(nstate_,mi(1),*),
+     &     xstateini(nstate_,mi(1),*),dam(mi(1),*)
+!
+      if(ellsave.le.0.d0) return
+      call damnlellinit()
+      if(iinner.eq.0) return
+!
+!     The same dispatch calcdamagebase makes at the start of an
+!     increment.  Kept identical on purpose: if the two ever disagree,
+!     the field seen inside Newton would not be the field the increment
+!     commits.
+!
+      if(imodenl.eq.2) then
+        call damfrozen(ipkon,kon,lakon,co,ne0,mi,xstate,
+     &       xstateini,nstate_)
+      elseif(imodenl.eq.1) then
+        call damgradient(ipkon,kon,lakon,co,ne0,mi,xstate,
+     &       xstateini,nstate_,ielmat,dam)
+      else
+        call damnonlocal(ipkon,kon,lakon,co,ne0,mi,xstate,
+     &       xstateini,nstate_)
+      endif
+      return
+      end
+!
+      subroutine damnlinnerget(ion)
+      use damnlmod
+      implicit none
+      integer ion
+      call damnlellinit()
+      ion=iinner
+      return
+      end
 !
       subroutine damnlellsetmat(imat,ell)
       use damnlmod
