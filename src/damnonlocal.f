@@ -89,6 +89,36 @@
       real*8, allocatable :: ell2e(:)
       real*8 :: ellmf(16)=1.d0,nlocn=0.d0,nlocr=0.d0
       integer :: ellinit=0,nlocon=0,ellmn=0
+!
+!     T1 CHAIN FACTOR and PROBE MODE.
+!
+!     chainf(i) is d(ebar_i)/d(e_i): how much the REGULARISED driving
+!     variable of element i moves when its own LOCAL one moves.  It is
+!     what turns a local derivative into the diagonal of the nonlocal
+!     one, and it is defined per backend - see damnlchain.  chnbuilt is
+!     0 until a backend has filled it, so a backend that has no cheap
+!     expression for it (GRADIENT) simply reports "not available" and
+!     nothing downstream changes.
+!
+!     iprobee(i) is set while resultsmech perturbs the strain of element
+!     i to measure dD/d(eps).  With it set, damnonlocalval reports "not
+!     available" for THAT element, which makes damageupdatepoint fall
+!     back to its LOCAL driving variable through the contract that
+!     accessor already has.  That is the whole reason calcdamage.f needs
+!     no change.
+!
+!     IT IS PER ELEMENT, NOT A SINGLE FLAG, AND THAT IS NOT DEFENSIVE.
+!     results.c runs resultsmech on pthreads (pthread_create of
+!     resultsmechmt), splitting the ELEMENT range across threads.  One
+!     shared flag would let thread A, probing its own element, silently
+!     switch thread B's element to the local driving variable and change
+!     B's answer.  Indexing by element makes every write land in a slot
+!     only its own thread touches, so the threads cannot see each other.
+!     The gate runs at OMP_NUM_THREADS=1 and would never have shown it.
+!
+      real*8, allocatable :: chainf(:)
+      integer, allocatable :: iprobee(:)
+      integer :: chnbuilt=0,ichainon=1
       end module damnlmod
 !
 !     ------------------------------------------------------------------
@@ -134,6 +164,16 @@
 !     LOCALIZING gradient damage: "n,R".  g(D)=(1-R)*(1-D)**n+R, so the
 !     interaction radius collapses inside the band and is unchanged in
 !     the undamaged material.  R keeps the operator non-degenerate.
+!
+!     CCX_DAMAGE_NONLOCAL_CHAIN=0 restores the pre-T1 tangent: the probe
+!     never opens and damnlchain refuses, so the rank-1 term goes back to
+!     being zero on the softening branch.  It exists so the two states can
+!     be measured against each other on ONE binary; the default is on,
+!     because at ell=0 the mechanism cannot engage at all and every gate
+!     case is byte for byte unmoved either way.
+!
+      call getenv('CCX_DAMAGE_NONLOCAL_CHAIN',carg)
+      if(carg(1:1).eq.'0') ichainon=0
 !
       call getenv('CCX_DAMAGE_NONLOCAL_LOCALIZING',carg)
       if(carg(1:1).ne.' ') then
@@ -185,9 +225,92 @@
       iok=0
       val=0.d0
       if(ellsave.le.0.d0) return
+!
+!     PROBE MODE.  While resultsmech is measuring dD/d(eps) the
+!     regularised value must not be handed out: it is a stored field and
+!     no strain perturbation can move it, so every difference quotient
+!     taken against it is exactly zero.  Reporting "not available" here
+!     makes the caller use its own local value, which is the quantity
+!     whose derivative is actually wanted; damnlchain then supplies the
+!     factor that turns that local derivative into the nonlocal one.
+!
       if(.not.allocated(dpsave)) return
       if((iel.lt.1).or.(iel.gt.nesave)) return
+      if(allocated(iprobee)) then
+        if(iprobee(iel).ne.0) return
+      endif
       val=dpsave(iel)
+      iok=1
+      return
+      end
+!
+!     ------------------------------------------------------------------
+!
+      subroutine damnlprobeset(iel,ion)
+      use damnlmod
+      implicit none
+      integer iel,ion
+      if(.not.allocated(iprobee)) return
+      if((iel.lt.1).or.(iel.gt.nesave)) return
+      iprobee(iel)=ion
+      return
+      end
+!
+!     ------------------------------------------------------------------
+!
+!     d(ebar_e)/d(e_e) for one element.  iok=0 means "no cheap expression
+!     for this backend", and the caller must then leave its tangent
+!     exactly as it was.
+!
+!     INTEGRAL (imodenl=0).  ebar_e = sum_f w_ef V_f e_f / sum_f w_ef V_f
+!     with w(d)=exp(-(d/ell)^2), so the self term has d=0 and w_ee V_e is
+!     simply V_e.  The factor is therefore V_e / sum_f w_ef V_f, which is
+!     EXACT, not an approximation, and the denominator is the same
+!     normalisation the averaging loop already forms.
+!
+!     FROZEN (imodenl=2).  No spatial averaging at all - the arm exists
+!     to separate the internal length from the integration scheme - so
+!     ebar_e IS e_e and the factor is exactly 1.
+!
+!     GRADIENT (imodenl=1).  NOT AVAILABLE, deliberately.  Here ebar
+!     solves (I - ell^2 div grad) ebar = e, so the sensitivity is a row
+!     of the INVERSE of that operator, i.e. a solve with a unit source -
+!     not a ratio of weights.  Substituting the integral form's factor
+!     would put a number unrelated to the operator into the tangent, so
+!     this backend keeps its present behaviour until the diagonal is
+!     computed from the same CG that produces ebar.
+!
+      subroutine damnlchain(iel,val,iok)
+      use damnlmod
+      implicit none
+      integer iel,iok
+      real*8 val
+      iok=0
+      val=1.d0
+      if(ellsave.le.0.d0) return
+!
+!     The factor and the probe are one mechanism: reporting a factor that
+!     the caller cannot pair with an open probe would scale a derivative
+!     that is still zero.  So refuse unless the marker exists.
+!
+      call damnlellinit()
+      if(ichainon.eq.0) return
+      if(.not.allocated(iprobee)) return
+      if((iel.lt.1).or.(iel.gt.nesave)) return
+      if(imodenl.eq.2) then
+        iok=1
+        return
+      endif
+      if(imodenl.ne.0) return
+      if(chnbuilt.eq.0) return
+      if(.not.allocated(chainf)) return
+      if((iel.lt.1).or.(iel.gt.nesave)) return
+      val=chainf(iel)
+      if(val.le.0.d0) then
+        val=1.d0
+        return
+      endif
+      if(val.gt.1.d0) val=1.d0
       iok=1
       return
       end
@@ -223,7 +346,14 @@
       if(nbuilt.eq.0) then
         if(allocated(cen)) deallocate(cen,evol,wgt,dploc,dpsave,
      &       nbhead,nbnext,nblist,nbstart,nbcount)
+        if(allocated(chainf)) deallocate(chainf,iprobee)
         allocate(cen(3,ne0),evol(ne0),dploc(ne0),dpsave(ne0))
+        allocate(chainf(ne0),iprobee(ne0))
+        chnbuilt=0
+        do i=1,ne0
+          chainf(i)=1.d0
+          iprobee(i)=0
+        enddo
         do i=1,ne0
           dpsave(i)=0.d0
         enddo
@@ -382,10 +512,20 @@
         enddo
         if(sv.gt.0.d0) then
           dpsave(i)=swv/sv
+!
+!         The self weight is exp(0)*evol(i)=evol(i), and sv is the
+!         normalisation formed just above from the SURVIVING neighbours,
+!         so this is d(ebar_i)/d(e_i) for the integral average, exactly.
+!         It is recorded here rather than recomputed because the loop
+!         that has both numbers is this one.
+!
+          chainf(i)=evol(i)/sv
         else
           dpsave(i)=dploc(i)
+          chainf(i)=1.d0
         endif
       enddo
+      chnbuilt=1
 !
       return
       end
@@ -430,10 +570,19 @@
       if(allocated(dpsave).and.(nesave.ne.ne0)) then
         deallocate(dpsave)
         if(allocated(dploc)) deallocate(dploc)
+        if(allocated(chainf)) deallocate(chainf,iprobee)
         fbuilt=0
+        chnbuilt=0
       endif
       if(.not.allocated(dpsave)) allocate(dpsave(ne0))
       if(.not.allocated(dploc)) allocate(dploc(ne0))
+      if(.not.allocated(iprobee)) then
+        allocate(chainf(ne0),iprobee(ne0))
+        do i=1,ne0
+          chainf(i)=1.d0
+          iprobee(i)=0
+        enddo
+      endif
       nesave=ne0
       if(fbuilt.eq.0) then
         fbuilt=1
@@ -609,6 +758,11 @@
         enddo
         if(.not.allocated(dpsave)) allocate(dpsave(ne0))
         if(.not.allocated(dploc)) allocate(dploc(ne0))
+!
+!       The gradient backend has no weight ratio to report; damnlchain
+!       refuses for imodenl=1 and this keeps the flag honest as well.
+!
+        chnbuilt=0
         gbuilt=1
         nesave=ne0
         write(*,*) '[DAMAGE NONLOCAL] gradient backend, ell=',ellsave,
