@@ -342,6 +342,52 @@
     "tangent_ratio": 1000000.0,
     "in_band": 6
    }
+  },
+  {
+   "name": "fast-plain-nochain",
+   "what": "the T1 nonlocal chain rule ARMED and proved inert anyway. The deck runs with no internal length, so damnlchain cannot report a factor and the probe never opens, whatever the switch says. MEASURED against fast-plain: m.sta, m.damage, m.cvg and m.dat byte for byte identical, m.frd differing only in its UTIME stamp. This is the compatibility claim for T1 stated as a test rather than an assertion - every one of the other cases runs at ell=0, so if T1 could move them it would move this one first. The case used to pass =0; it was flipped to =1 when the default became off, because a case that sets the default tests nothing.",
+   "kind": "fast",
+   "variant": "plain",
+   "env": [
+    "CCX_DAMAGE_NONLOCAL_CHAIN=1"
+   ],
+   "expect": {
+    "rc": 0,
+    "last_inc": 507,
+    "theta": "0.100000E+01",
+    "deletions": 90
+   },
+   "identical_sta_as": "fast-plain",
+   "same_deletion_set_as": "fast-plain",
+   "equal_to": {
+    "case": "fast-plain",
+    "rtol": 0.0,
+    "atol": 0.0,
+    "files": [
+     "m.sta",
+     "m.damage",
+     "m.cvg",
+     "m.dat"
+    ]
+   }
+  },
+  {
+   "name": "fast-plain-opcheck",
+   "what": "the assembled tangent checked against a one-sided difference of the internal force, column by column, at an element that is actively softening (element 1193, dam=1.480 at increment 23, category ASSEMBLED - it carries a rank-1 damage term). src/opcheck.c and the six CCX_STRUCT_FD_* switches were already in the tree with no case naming them, so the one criterion that can call a tangent WRONG rather than merely SLOW had never run in the gate. The probe stops the run at the increment it checks, so the trajectory expectations are that truncated run's, not the full deck's. MEASURED with the local model: 18 columns, 28731 coefficients agreeing and 69 not, worst |ctr-asm| 3.50e-04. Both expectations are CEILINGS, set a little above the measurement, because the count is a property of the operator and pinning it exactly would go red on any harmless change of trajectory. DISCLOSURE: the same probe under CCX_DAMAGE_NONLOCAL=0.2 gives 591 wrong of 47409 and a worst error of 1.76e-01 - five times the rate and five hundred times the error. That is not pinned here because the two runs are at the same increment but not the same physical state, so the comparison is indicative rather than controlled; see forum 2026-09-17.",
+   "kind": "fast",
+   "variant": "plain",
+   "env": [
+    "CCX_STRUCT_FD_INC=23",
+    "CCX_STRUCT_FD_ELEM=1193"
+   ],
+   "expect": {
+    "rc": 0,
+    "last_inc": 22,
+    "theta": "0.355000E-01",
+    "deletions": 16,
+    "opcheck_wrong": 80,
+    "opcheck_maxerr": 0.0005
+   }
   }
  ],
  "selftests_required": [

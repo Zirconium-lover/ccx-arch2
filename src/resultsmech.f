@@ -93,6 +93,8 @@
       character*32 fdskipenv
       real*8 damggmin,spmean,damcbulk,damcmu,damcden,damcnumax
       real*8 damtanhi,damtanh,damqn,damsn
+      real*8 damchain,damageDref
+      integer ichainok
       integer damtandump
       integer damgmintan,damcompress
       integer damginit
@@ -1139,6 +1141,59 @@ c          write(*,*) 'resultsmech4 ',i,jj,(stre(m1),m1=1,6)
             do m1=1,nstate_
               xstatesav(m1)=xstate(m1,jj,i)
             enddo
+!
+!           T1.  NONLOCAL CHAIN RULE FOR dD/d(eps).
+!
+!           Measured on test/fast at ell=0.5: 32 of 35 dD/deps dumps are
+!           EXACTLY zero, over the whole softening branch from D=0.090 to
+!           D=0.900, and the same holds for every backend.  The cause is
+!           not the averaging and not the internal length - it is that
+!           damageupdatepoint replaces its local driving variable with a
+!           STORED regularised field, which no strain perturbation can
+!           move.  Differencing against it can only give zero, while the
+!           six mechmodel calls below are paid in full.
+!
+!           The fix is the chain rule.  With D_e = F(ebar_e) and
+!           ebar_e = sum_f w_ef V_f e_f / sum_f w_ef V_f,
+!
+!               dD_e/d(eps_e) = F'(ebar_e) * c_e * d(e_e)/d(eps_e)
+!
+!           where c_e = d(ebar_e)/d(e_e) comes from damnlchain.  So the
+!           probe is run against the LOCAL driving variable, which gives
+!           F'(e_e) * d(e_e)/d(eps_e), and the result is scaled by c_e.
+!
+!           For the branch this block runs in that factorisation is
+!           EXACT, not an approximation: past initiation the law is
+!           D = D_base + L*max(0,e)/u_f, so F' is the constant L/u_f and
+!           F'(e_e) and F'(ebar_e) are the same number.
+!
+!           damnlchain refuses for the GRADIENT backend, where the
+!           sensitivity is a row of the inverse Helmholtz operator rather
+!           than a ratio of weights, and it is unavailable at ell=0.  In
+!           both cases ichainok is 0 and the code below is the original,
+!           unchanged, down to the last operation.
+!
+            call damnlchain(i,damchain,ichainok)
+            if(ichainok.eq.1) then
+!
+!             The reference must be measured on the same footing as the
+!             perturbations, so it is taken with the probe open too.
+!             The probe is opened for THIS element only: results.c runs
+!             this routine on pthreads split by element range.
+!             damtrial0 is the NONLOCAL value and differencing against it
+!             would mix two models.
+!
+              call damnlprobeset(i,1)
+              call damageupdatepoint(i,jj,ipkon,lakon,kon,co,mi,
+     &             ielmat,ne0,ndmat_,ntmat_,ndmcon,dmcon,dam,
+     &             dambase,stre,xstate,xstateini,nstate_)
+              damageDref=dam(jj,i)-1.d0
+              if(damageDref.lt.0.d0) damageDref=0.d0
+              if(damageDref.gt.1.d0) damageDref=1.d0
+            else
+              damchain=1.d0
+              damageDref=damageDtrial
+            endif
             do k=1,6
               do m1=1,6
                 emecp(m1)=emec(m1)
@@ -1172,8 +1227,14 @@ c          write(*,*) 'resultsmech4 ',i,jj,(stre(m1),m1=1,6)
               damageDp=dam(jj,i)-1.d0
               if(damageDp.lt.0.d0) damageDp=0.d0
               if(damageDp.gt.1.d0) damageDp=1.d0
-              damageq(k)=(damageDp-damageDtrial)/damageh
+              damageq(k)=(damageDp-damageDref)/damageh
             enddo
+            if(ichainok.eq.1) then
+              call damnlprobeset(i,0)
+              do k=1,6
+                damageq(k)=damchain*damageq(k)
+              enddo
+            endif
             do m1=1,nstate_
               xstate(m1,jj,i)=xstatesav(m1)
             enddo

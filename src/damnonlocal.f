@@ -89,6 +89,61 @@
       real*8, allocatable :: ell2e(:)
       real*8 :: ellmf(16)=1.d0,nlocn=0.d0,nlocr=0.d0
       integer :: ellinit=0,nlocon=0,ellmn=0
+!
+!     W6.  ell as a MATERIAL constant, read from *DAMAGE INITIATION by
+!     damnlellsetmat rather than from the environment.  ellcard(imat) is
+!     the card's value, 0 meaning "this material did not give one"; ncard
+!     counts how many did, so the run can say whether any card was seen
+!     at all without scanning the array.
+!
+!     WHY A SETTER AND NOT dmcon.  There is no room in dmcon: nonlingeo.c
+!     checks the constant count EXACTLY (nconst==4 for Rice-Tracey, and
+!     (nconst-3) even for the tabulated locus), so one appended constant
+!     turns damage_progressive_material into a silent no - the deck runs,
+!     with the legacy hard-deletion model, and says nothing. Found by
+!     Agent 2, confirmed here at nonlingeo.c:1002-1003 and at
+!     calcdamage.f:1023, where npoints is derived from the same count.
+!
+!     WHY THAT IS SAFE HERE, WHEN THE SAME SHAPE WAS A BUG ELSEWHERE.
+!     CB1's cbmode was module state too and was read before anything set
+!     it, because its read was LAZY - the first reader triggered it, and
+!     one reader ran before the writer ever did. This value is set by the
+!     input reader, and input parsing finishes before any solver path
+!     exists, so no reader can precede the write. The hazard is lazy
+!     initialisation, not module state.
+!
+      real*8 :: ellcard(64)=0.d0
+      integer :: ncard=0
+!
+!     T1 CHAIN FACTOR and PROBE MODE.
+!
+!     chainf(i) is d(ebar_i)/d(e_i): how much the REGULARISED driving
+!     variable of element i moves when its own LOCAL one moves.  It is
+!     what turns a local derivative into the diagonal of the nonlocal
+!     one, and it is defined per backend - see damnlchain.  chnbuilt is
+!     0 until a backend has filled it, so a backend that has no cheap
+!     expression for it (GRADIENT) simply reports "not available" and
+!     nothing downstream changes.
+!
+!     iprobee(i) is set while resultsmech perturbs the strain of element
+!     i to measure dD/d(eps).  With it set, damnonlocalval reports "not
+!     available" for THAT element, which makes damageupdatepoint fall
+!     back to its LOCAL driving variable through the contract that
+!     accessor already has.  That is the whole reason calcdamage.f needs
+!     no change.
+!
+!     IT IS PER ELEMENT, NOT A SINGLE FLAG, AND THAT IS NOT DEFENSIVE.
+!     results.c runs resultsmech on pthreads (pthread_create of
+!     resultsmechmt), splitting the ELEMENT range across threads.  One
+!     shared flag would let thread A, probing its own element, silently
+!     switch thread B's element to the local driving variable and change
+!     B's answer.  Indexing by element makes every write land in a slot
+!     only its own thread touches, so the threads cannot see each other.
+!     The gate runs at OMP_NUM_THREADS=1 and would never have shown it.
+!
+      real*8, allocatable :: chainf(:)
+      integer, allocatable :: iprobee(:)
+      integer :: chnbuilt=0,ichainon=0
       end module damnlmod
 !
 !     ------------------------------------------------------------------
@@ -135,6 +190,18 @@
 !     interaction radius collapses inside the band and is unchanged in
 !     the undamaged material.  R keeps the operator non-degenerate.
 !
+!     CCX_DAMAGE_NONLOCAL_CHAIN=1 arms the chain rule.  OFF BY DEFAULT,
+!     and the default was changed from on to off in review: the factor is
+!     the diagonal of the monolithic problem, while the scheme that runs
+!     here freezes the driving variable for the whole Newton loop, whose
+!     exact Jacobian has a zero on this path.  Until the refresh moves
+!     inside the loop, arming it improves the Jacobian of a problem this
+!     code does not solve.  The switch stays because that change is the
+!     next step and this is the half of it that is already measured.
+!
+      call getenv('CCX_DAMAGE_NONLOCAL_CHAIN',carg)
+      if(carg(1:1).eq.'1') ichainon=1
+!
       call getenv('CCX_DAMAGE_NONLOCAL_LOCALIZING',carg)
       if(carg(1:1).ne.' ') then
         nlocn=2.d0
@@ -165,6 +232,55 @@
       return
       end
 !
+!     W6 setter, called once per material from the *DAMAGE INITIATION
+!     reader.  ell<=0 means "no NONLOCAL= on this card" and is recorded as
+!     such rather than rejected: a deck may regularise one material and
+!     not another.
+!
+      subroutine damnlellsetmat(imat,ell)
+      use damnlmod
+      implicit none
+      integer imat
+      real*8 ell
+      if((imat.lt.1).or.(imat.gt.64)) then
+        write(*,*) '*ERROR in damnlellsetmat: material index out of'
+        write(*,*) '       range for the nonlocal length table:',imat
+        call exit(201)
+      endif
+      if(ell.le.0.d0) return
+      ellcard(imat)=ell
+      ncard=ncard+1
+      return
+      end
+!
+!     Hand back what the cards said.  iok=0 means no card carried
+!     NONLOCAL=, which is how a caller tells "not regularised" from
+!     "regularised with a length of zero", a distinction the single
+!     global ellsave cannot make.
+!
+      subroutine damnlellgetmat(imat,ell,iok)
+      use damnlmod
+      implicit none
+      integer imat,iok
+      real*8 ell
+      iok=0
+      ell=0.d0
+      if(ncard.le.0) return
+      if((imat.lt.1).or.(imat.gt.64)) return
+      if(ellcard(imat).le.0.d0) return
+      ell=ellcard(imat)
+      iok=1
+      return
+      end
+!
+      subroutine damnlellcardcount(n)
+      use damnlmod
+      implicit none
+      integer n
+      n=ncard
+      return
+      end
+!
       subroutine damnonlocalget(ellout)
       use damnlmod
       implicit none
@@ -185,9 +301,111 @@
       iok=0
       val=0.d0
       if(ellsave.le.0.d0) return
+!
+!     PROBE MODE.  While resultsmech is measuring dD/d(eps) the
+!     regularised value must not be handed out: it is a stored field and
+!     no strain perturbation can move it, so every difference quotient
+!     taken against it is exactly zero.  Reporting "not available" here
+!     makes the caller use its own local value, which is the quantity
+!     whose derivative is actually wanted; damnlchain then supplies the
+!     factor that turns that local derivative into the nonlocal one.
+!
       if(.not.allocated(dpsave)) return
       if((iel.lt.1).or.(iel.gt.nesave)) return
+      if(allocated(iprobee)) then
+        if(iprobee(iel).ne.0) return
+      endif
       val=dpsave(iel)
+      iok=1
+      return
+      end
+!
+!     ------------------------------------------------------------------
+!
+      subroutine damnlprobeset(iel,ion)
+      use damnlmod
+      implicit none
+      integer iel,ion
+      if(.not.allocated(iprobee)) return
+      if((iel.lt.1).or.(iel.gt.nesave)) return
+      iprobee(iel)=ion
+      return
+      end
+!
+!     ------------------------------------------------------------------
+!
+!     d(ebar_e)/d(e_e) for one element.  iok=0 means "no cheap expression
+!     for this backend", and the caller must then leave its tangent
+!     exactly as it was.
+!
+!     INTEGRAL (imodenl=0).  ebar_e = sum_f w_ef V_f e_f / sum_f w_ef V_f
+!     with w(d)=exp(-(d/ell)^2), so the self term has d=0 and w_ee V_e is
+!     simply V_e, and the factor is V_e / sum_f w_ef V_f.
+!
+!     WHAT THAT NUMBER IS, EXACTLY.  It is the diagonal of the MONOLITHIC
+!     nonlocal problem - the one in which ebar responds to the trial
+!     state.  It is NOT the Jacobian of the scheme this code runs, which
+!     refreshes dpsave once per increment and therefore has a zero here
+!     too, for the same reason spelled out under FROZEN below.  So this
+!     is an approximation applied to a scheme it does not belong to, and
+!     it pays nothing until the refresh moves inside the Newton loop:
+!     measured, +0.17 percent iterations and 2 coefficients of 47400
+!     moved in the structural probe.  That is why it is OFF by default.
+!     Do not read "exact" into it - an earlier version of this comment
+!     said exactly that and was wrong.
+!
+!     FROZEN (imodenl=2).  REFUSED, and the reason is the one that decides
+!     this whole routine.  It is tempting to say that with no spatial
+!     averaging ebar_e IS e_e, so the factor is 1.  That is wrong.
+!     damfrozen writes dpsave once per increment, from calcdamagebase,
+!     which nonlingeo.c calls only after the Newton loop has converged -
+!     so during the iterations dpsave is a CONSTANT and
+!
+!         d(ebar_e)/d(e_e^trial) = 0 ,  not 1 .
+!
+!     A frozen value does not answer to the trial state; that is what the
+!     word means.  The exact Jacobian of the scheme as implemented has a
+!     zero on this path, so the original zero was CORRECT and a factor of
+!     1 would insert a term the iteration does not contain.  Reported by
+!     Agent 2 in review of T1, and confirmed at the three calcdamagebase
+!     call sites in nonlingeo.c - all three are outside the Newton loop.
+!
+!     GRADIENT (imodenl=1).  NOT AVAILABLE, deliberately.  Here ebar
+!     solves (I - ell^2 div grad) ebar = e, so the sensitivity is a row
+!     of the INVERSE of that operator, i.e. a solve with a unit source -
+!     not a ratio of weights.  Substituting the integral form's factor
+!     would put a number unrelated to the operator into the tangent, so
+!     this backend keeps its present behaviour until the diagonal is
+!     computed from the same CG that produces ebar.
+!
+      subroutine damnlchain(iel,val,iok)
+      use damnlmod
+      implicit none
+      integer iel,iok
+      real*8 val
+      iok=0
+      val=1.d0
+      if(ellsave.le.0.d0) return
+!
+!     The factor and the probe are one mechanism: reporting a factor that
+!     the caller cannot pair with an open probe would scale a derivative
+!     that is still zero.  So refuse unless the marker exists.
+!
+      call damnlellinit()
+      if(ichainon.eq.0) return
+      if(.not.allocated(iprobee)) return
+      if((iel.lt.1).or.(iel.gt.nesave)) return
+      if(imodenl.eq.2) return
+      if(imodenl.ne.0) return
+      if(chnbuilt.eq.0) return
+      if(.not.allocated(chainf)) return
+      if((iel.lt.1).or.(iel.gt.nesave)) return
+      val=chainf(iel)
+      if(val.le.0.d0) then
+        val=1.d0
+        return
+      endif
+      if(val.gt.1.d0) val=1.d0
       iok=1
       return
       end
@@ -223,7 +441,14 @@
       if(nbuilt.eq.0) then
         if(allocated(cen)) deallocate(cen,evol,wgt,dploc,dpsave,
      &       nbhead,nbnext,nblist,nbstart,nbcount)
+        if(allocated(chainf)) deallocate(chainf,iprobee)
         allocate(cen(3,ne0),evol(ne0),dploc(ne0),dpsave(ne0))
+        allocate(chainf(ne0),iprobee(ne0))
+        chnbuilt=0
+        do i=1,ne0
+          chainf(i)=1.d0
+          iprobee(i)=0
+        enddo
         do i=1,ne0
           dpsave(i)=0.d0
         enddo
@@ -382,10 +607,20 @@
         enddo
         if(sv.gt.0.d0) then
           dpsave(i)=swv/sv
+!
+!         The self weight is exp(0)*evol(i)=evol(i), and sv is the
+!         normalisation formed just above from the SURVIVING neighbours,
+!         so this is d(ebar_i)/d(e_i) for the integral average, exactly.
+!         It is recorded here rather than recomputed because the loop
+!         that has both numbers is this one.
+!
+          chainf(i)=evol(i)/sv
         else
           dpsave(i)=dploc(i)
+          chainf(i)=1.d0
         endif
       enddo
+      chnbuilt=1
 !
       return
       end
@@ -430,10 +665,19 @@
       if(allocated(dpsave).and.(nesave.ne.ne0)) then
         deallocate(dpsave)
         if(allocated(dploc)) deallocate(dploc)
+        if(allocated(chainf)) deallocate(chainf,iprobee)
         fbuilt=0
+        chnbuilt=0
       endif
       if(.not.allocated(dpsave)) allocate(dpsave(ne0))
       if(.not.allocated(dploc)) allocate(dploc(ne0))
+      if(.not.allocated(iprobee)) then
+        allocate(chainf(ne0),iprobee(ne0))
+        do i=1,ne0
+          chainf(i)=1.d0
+          iprobee(i)=0
+        enddo
+      endif
       nesave=ne0
       if(fbuilt.eq.0) then
         fbuilt=1
@@ -609,6 +853,11 @@
         enddo
         if(.not.allocated(dpsave)) allocate(dpsave(ne0))
         if(.not.allocated(dploc)) allocate(dploc(ne0))
+!
+!       The gradient backend has no weight ratio to report; damnlchain
+!       refuses for imodenl=1 and this keeps the flag honest as well.
+!
+        chnbuilt=0
         gbuilt=1
         nesave=ne0
         write(*,*) '[DAMAGE NONLOCAL] gradient backend, ell=',ellsave,
