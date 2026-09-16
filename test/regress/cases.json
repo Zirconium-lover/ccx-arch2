@@ -345,11 +345,11 @@
   },
   {
    "name": "fast-plain-nochain",
-   "what": "the T1 nonlocal chain rule proved inert where it must be. The deck runs with no internal length, so damnlchain cannot report a factor and the probe never opens; the switch that disables T1 must therefore change nothing at all. MEASURED against fast-plain: m.sta, m.damage, m.cvg and m.dat are byte for byte identical, and m.frd differs only in its UTIME stamp. This is the compatibility claim for T1 stated as a test rather than as an assertion - every one of the other 16 cases runs at ell=0, so if T1 could move them it would move this one first.",
+   "what": "the T1 nonlocal chain rule ARMED and proved inert anyway. The deck runs with no internal length, so damnlchain cannot report a factor and the probe never opens, whatever the switch says. MEASURED against fast-plain: m.sta, m.damage, m.cvg and m.dat byte for byte identical, m.frd differing only in its UTIME stamp. This is the compatibility claim for T1 stated as a test rather than an assertion - every one of the other cases runs at ell=0, so if T1 could move them it would move this one first. The case used to pass =0; it was flipped to =1 when the default became off, because a case that sets the default tests nothing.",
    "kind": "fast",
    "variant": "plain",
    "env": [
-    "CCX_DAMAGE_NONLOCAL_CHAIN=0"
+    "CCX_DAMAGE_NONLOCAL_CHAIN=1"
    ],
    "expect": {
     "rc": 0,

@@ -90,6 +90,31 @@
       real*8 :: ellmf(16)=1.d0,nlocn=0.d0,nlocr=0.d0
       integer :: ellinit=0,nlocon=0,ellmn=0
 !
+!     W6.  ell as a MATERIAL constant, read from *DAMAGE INITIATION by
+!     damnlellsetmat rather than from the environment.  ellcard(imat) is
+!     the card's value, 0 meaning "this material did not give one"; ncard
+!     counts how many did, so the run can say whether any card was seen
+!     at all without scanning the array.
+!
+!     WHY A SETTER AND NOT dmcon.  There is no room in dmcon: nonlingeo.c
+!     checks the constant count EXACTLY (nconst==4 for Rice-Tracey, and
+!     (nconst-3) even for the tabulated locus), so one appended constant
+!     turns damage_progressive_material into a silent no - the deck runs,
+!     with the legacy hard-deletion model, and says nothing. Found by
+!     Agent 2, confirmed here at nonlingeo.c:1002-1003 and at
+!     calcdamage.f:1023, where npoints is derived from the same count.
+!
+!     WHY THAT IS SAFE HERE, WHEN THE SAME SHAPE WAS A BUG ELSEWHERE.
+!     CB1's cbmode was module state too and was read before anything set
+!     it, because its read was LAZY - the first reader triggered it, and
+!     one reader ran before the writer ever did. This value is set by the
+!     input reader, and input parsing finishes before any solver path
+!     exists, so no reader can precede the write. The hazard is lazy
+!     initialisation, not module state.
+!
+      real*8 :: ellcard(64)=0.d0
+      integer :: ncard=0
+!
 !     T1 CHAIN FACTOR and PROBE MODE.
 !
 !     chainf(i) is d(ebar_i)/d(e_i): how much the REGULARISED driving
@@ -118,7 +143,7 @@
 !
       real*8, allocatable :: chainf(:)
       integer, allocatable :: iprobee(:)
-      integer :: chnbuilt=0,ichainon=1
+      integer :: chnbuilt=0,ichainon=0
       end module damnlmod
 !
 !     ------------------------------------------------------------------
@@ -165,15 +190,17 @@
 !     interaction radius collapses inside the band and is unchanged in
 !     the undamaged material.  R keeps the operator non-degenerate.
 !
-!     CCX_DAMAGE_NONLOCAL_CHAIN=0 restores the pre-T1 tangent: the probe
-!     never opens and damnlchain refuses, so the rank-1 term goes back to
-!     being zero on the softening branch.  It exists so the two states can
-!     be measured against each other on ONE binary; the default is on,
-!     because at ell=0 the mechanism cannot engage at all and every gate
-!     case is byte for byte unmoved either way.
+!     CCX_DAMAGE_NONLOCAL_CHAIN=1 arms the chain rule.  OFF BY DEFAULT,
+!     and the default was changed from on to off in review: the factor is
+!     the diagonal of the monolithic problem, while the scheme that runs
+!     here freezes the driving variable for the whole Newton loop, whose
+!     exact Jacobian has a zero on this path.  Until the refresh moves
+!     inside the loop, arming it improves the Jacobian of a problem this
+!     code does not solve.  The switch stays because that change is the
+!     next step and this is the half of it that is already measured.
 !
       call getenv('CCX_DAMAGE_NONLOCAL_CHAIN',carg)
-      if(carg(1:1).eq.'0') ichainon=0
+      if(carg(1:1).eq.'1') ichainon=1
 !
       call getenv('CCX_DAMAGE_NONLOCAL_LOCALIZING',carg)
       if(carg(1:1).ne.' ') then
@@ -202,6 +229,55 @@
       implicit none
       real*8 ellin
       ellsave=ellin
+      return
+      end
+!
+!     W6 setter, called once per material from the *DAMAGE INITIATION
+!     reader.  ell<=0 means "no NONLOCAL= on this card" and is recorded as
+!     such rather than rejected: a deck may regularise one material and
+!     not another.
+!
+      subroutine damnlellsetmat(imat,ell)
+      use damnlmod
+      implicit none
+      integer imat
+      real*8 ell
+      if((imat.lt.1).or.(imat.gt.64)) then
+        write(*,*) '*ERROR in damnlellsetmat: material index out of'
+        write(*,*) '       range for the nonlocal length table:',imat
+        call exit(201)
+      endif
+      if(ell.le.0.d0) return
+      ellcard(imat)=ell
+      ncard=ncard+1
+      return
+      end
+!
+!     Hand back what the cards said.  iok=0 means no card carried
+!     NONLOCAL=, which is how a caller tells "not regularised" from
+!     "regularised with a length of zero", a distinction the single
+!     global ellsave cannot make.
+!
+      subroutine damnlellgetmat(imat,ell,iok)
+      use damnlmod
+      implicit none
+      integer imat,iok
+      real*8 ell
+      iok=0
+      ell=0.d0
+      if(ncard.le.0) return
+      if((imat.lt.1).or.(imat.gt.64)) return
+      if(ellcard(imat).le.0.d0) return
+      ell=ellcard(imat)
+      iok=1
+      return
+      end
+!
+      subroutine damnlellcardcount(n)
+      use damnlmod
+      implicit none
+      integer n
+      n=ncard
       return
       end
 !
@@ -264,13 +340,35 @@
 !
 !     INTEGRAL (imodenl=0).  ebar_e = sum_f w_ef V_f e_f / sum_f w_ef V_f
 !     with w(d)=exp(-(d/ell)^2), so the self term has d=0 and w_ee V_e is
-!     simply V_e.  The factor is therefore V_e / sum_f w_ef V_f, which is
-!     EXACT, not an approximation, and the denominator is the same
-!     normalisation the averaging loop already forms.
+!     simply V_e, and the factor is V_e / sum_f w_ef V_f.
 !
-!     FROZEN (imodenl=2).  No spatial averaging at all - the arm exists
-!     to separate the internal length from the integration scheme - so
-!     ebar_e IS e_e and the factor is exactly 1.
+!     WHAT THAT NUMBER IS, EXACTLY.  It is the diagonal of the MONOLITHIC
+!     nonlocal problem - the one in which ebar responds to the trial
+!     state.  It is NOT the Jacobian of the scheme this code runs, which
+!     refreshes dpsave once per increment and therefore has a zero here
+!     too, for the same reason spelled out under FROZEN below.  So this
+!     is an approximation applied to a scheme it does not belong to, and
+!     it pays nothing until the refresh moves inside the Newton loop:
+!     measured, +0.17 percent iterations and 2 coefficients of 47400
+!     moved in the structural probe.  That is why it is OFF by default.
+!     Do not read "exact" into it - an earlier version of this comment
+!     said exactly that and was wrong.
+!
+!     FROZEN (imodenl=2).  REFUSED, and the reason is the one that decides
+!     this whole routine.  It is tempting to say that with no spatial
+!     averaging ebar_e IS e_e, so the factor is 1.  That is wrong.
+!     damfrozen writes dpsave once per increment, from calcdamagebase,
+!     which nonlingeo.c calls only after the Newton loop has converged -
+!     so during the iterations dpsave is a CONSTANT and
+!
+!         d(ebar_e)/d(e_e^trial) = 0 ,  not 1 .
+!
+!     A frozen value does not answer to the trial state; that is what the
+!     word means.  The exact Jacobian of the scheme as implemented has a
+!     zero on this path, so the original zero was CORRECT and a factor of
+!     1 would insert a term the iteration does not contain.  Reported by
+!     Agent 2 in review of T1, and confirmed at the three calcdamagebase
+!     call sites in nonlingeo.c - all three are outside the Newton loop.
 !
 !     GRADIENT (imodenl=1).  NOT AVAILABLE, deliberately.  Here ebar
 !     solves (I - ell^2 div grad) ebar = e, so the sensitivity is a row
@@ -297,10 +395,7 @@
       if(ichainon.eq.0) return
       if(.not.allocated(iprobee)) return
       if((iel.lt.1).or.(iel.gt.nesave)) return
-      if(imodenl.eq.2) then
-        iok=1
-        return
-      endif
+      if(imodenl.eq.2) return
       if(imodenl.ne.0) return
       if(chnbuilt.eq.0) return
       if(.not.allocated(chainf)) return
