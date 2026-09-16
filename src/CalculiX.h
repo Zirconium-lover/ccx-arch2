@@ -4163,6 +4163,16 @@ void FORTRAN(damnonlocalset,(double *ell));
 
 void FORTRAN(damnonlocalmode,(ITG *imode));
 
+/* [DAMAGE NONLOCAL] refresh the regularised driving variable once per
+   results() call instead of once per increment.  Called from results.c,
+   after the resultsmech threads have joined - see the comment there for
+   why that is the only sound site.  Inert unless
+   CCX_DAMAGE_NONLOCAL_INNER=1. */
+
+void FORTRAN(damnlrefresh,(ITG *ipkon,ITG *kon,char *lakon,double *co,
+			   ITG *ne0,ITG *mi,double *xstate,double *xstateini,
+			   ITG *nstate_,ITG *ielmat,double *dam));
+
 void FORTRAN(damconnectsets,(ITG *ipkon,ITG *kon,char *lakon,ITG *ne,
           ITG *nk,char *set,ITG *nset,ITG *istartset,ITG *iendset,
           ITG *ialset,char *namea,char *nameb,ITG *iconn,ITG *nreach,
