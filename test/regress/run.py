@@ -156,6 +156,23 @@ def one(case,outroot,exe,required,lines):
         if m: got['in_band']=int(m.group(1))
         m=re.search(r'worst relative error against the law: ([0-9.e+-]+)',r.stdout)
         if m: got['law_error']=float(m.group(1))
+    if ('opcheck_wrong' in exp) or ('opcheck_maxerr' in exp):
+        # The structural probe compares the ASSEMBLED tangent, column by
+        # column, against a one-sided difference of the internal force.  It
+        # already prints a verdict per column; what was missing is a number a
+        # case can hold on to, so the whole run is aggregated here.  Both are
+        # ceilings, not equalities: the count is a property of the operator,
+        # and pinning it exactly would make every harmless retrajectory red.
+        try: txt=open(log,errors='replace').read()
+        except OSError: txt=''
+        rows=re.findall(r'ok=(\d+)\s+kink=(\d+)\s+wrong=(\d+)\s+both=(\d+)',
+                        txt)
+        errs=[float(x) for x in
+              re.findall(r'\|ctr-asm\|=([0-9.eE+-]+)',txt)]
+        if rows:
+            got['opcheck_wrong']=sum(int(r[2]) for r in rows)
+            got['opcheck_cols']=len(rows)
+        if errs: got['opcheck_maxerr']=max(errs)
     if 'check_mixed' in exp:
         r=sh('python3 %s/test/pathfollow/check_mixed.py %s'%(ROOT,rundir),base_env([]))
         got['check_mixed']='PASSED' if 'PASSED' in r.stdout else 'FAILED'
@@ -166,7 +183,7 @@ def one(case,outroot,exe,required,lines):
         have=got.get(k)
         if k in ('worst_ratio','tangent_ratio'):
             ok = have is not None and abs(have-want)<=1e-2*abs(want)
-        elif k=='law_error':
+        elif k in ('law_error','opcheck_wrong','opcheck_maxerr'):
             ok = have is not None and have<=want
         else:
             ok = have==want
