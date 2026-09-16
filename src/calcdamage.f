@@ -112,7 +112,110 @@
 !
       integer :: cbmode=-1,cbne=0,cbnip=0,cbwarn=0,cbmeanw=0
       real*8, allocatable :: cbfroz(:,:)
+!
+!     W2 ENERGY evolution.  cbevol(imat) is the evolution kind read from
+!     the material card: 1 = DISPLACEMENT, the historical u_f, 2 = ENERGY,
+!     where the same slot carries G_f instead.  cbuf(ip,element) is the
+!     effective u_f derived from G_f, frozen at initiation beside the width
+!     and for the same reason.
+!
+      integer, allocatable :: cbevol(:)
+      real*8, allocatable :: cbuf(:,:)
+      integer :: cbnmat=0,cbune=0,cbunip=0
       end module damcbmod
+!
+!     ------------------------------------------------------------------
+!
+      subroutine damcbevolset(imat,kind)
+!
+!     Record the evolution kind of a material.  Called from the reader.
+!
+!     WHY NOT dmcon.  The obvious place is one more constant on the card,
+!     and that would silently switch progressive damage OFF:
+!     damage_progressive_material in nonlingeo.c tests the constant COUNT
+!     exactly - nconst==4 for Rice-Tracey, and a parity test on (nconst-3)
+!     for the tabulated locus - so an extra constant fails the test, the
+!     deck still runs, and it runs on the legacy hard-deletion path
+!     instead.  dm2failurestrain derives its point count from the same
+!     total and would break too.  Keeping the count fixed and carrying the
+!     kind here leaves every one of those readers correct.
+!
+      use damcbmod
+      implicit none
+      integer imat,kind,n,i
+      integer, allocatable :: tmp(:)
+!
+      if(imat.lt.1) return
+      if(.not.allocated(cbevol)) then
+        cbnmat=max(64,imat)
+        allocate(cbevol(cbnmat))
+        do i=1,cbnmat
+          cbevol(i)=1
+        enddo
+      elseif(imat.gt.cbnmat) then
+        n=max(2*cbnmat,imat)
+        allocate(tmp(n))
+        do i=1,n
+          tmp(i)=1
+        enddo
+        do i=1,cbnmat
+          tmp(i)=cbevol(i)
+        enddo
+        deallocate(cbevol)
+        allocate(cbevol(n))
+        do i=1,n
+          cbevol(i)=tmp(i)
+        enddo
+        deallocate(tmp)
+        cbnmat=n
+      endif
+      cbevol(imat)=kind
+      return
+      end
+!
+      subroutine damcbevolget(imat,kind)
+      use damcbmod
+      implicit none
+      integer imat,kind
+      kind=1
+      if(.not.allocated(cbevol)) return
+      if((imat.lt.1).or.(imat.gt.cbnmat)) return
+      kind=cbevol(imat)
+      return
+      end
+!
+      subroutine damcbufget(iel,iint,val,iok)
+!
+!     The effective u_f frozen at initiation.  iok=0 means "not available"
+!     and the caller must not evolve damage this increment.
+!
+      use damcbmod
+      implicit none
+      integer iel,iint,iok
+      real*8 val
+      iok=0
+      val=0.d0
+      if(.not.allocated(cbuf)) return
+      if((iel.lt.1).or.(iel.gt.cbune)) return
+      if((iint.lt.1).or.(iint.gt.cbunip)) return
+      if(cbuf(iint,iel).le.0.d0) return
+      val=cbuf(iint,iel)
+      iok=1
+      return
+      end
+!
+      subroutine damcbufset(iel,iint,val)
+      use damcbmod
+      implicit none
+      integer iel,iint
+      real*8 val
+      if(.not.allocated(cbuf)) return
+      if((iel.lt.1).or.(iel.gt.cbune)) return
+      if((iint.lt.1).or.(iint.gt.cbunip)) return
+      if(val.le.0.d0) return
+      cbuf(iint,iel)=val
+      return
+      end
 !
 !     ------------------------------------------------------------------
 !
@@ -185,6 +288,31 @@
       do i=1,cbne
         do j=1,cbnip
           cbfroz(j,i)=0.d0
+        enddo
+      enddo
+      return
+      end
+!
+      subroutine damcbufinit(ne0,nip)
+!
+!     Size the frozen effective-u_f cache.  Separate from damcbinit because
+!     ENERGY evolution is independent of the crack-band switch: a deck may
+!     ask for G_f while keeping the legacy (6V)^(1/3) width.
+!
+      use damcbmod
+      implicit none
+      integer ne0,nip,i,j
+!
+      if(allocated(cbuf)) then
+        if((cbune.ge.ne0).and.(cbunip.ge.nip)) return
+        deallocate(cbuf)
+      endif
+      cbune=ne0
+      cbunip=nip
+      allocate(cbuf(cbunip,cbune))
+      do i=1,cbune
+        do j=1,cbunip
+          cbuf(j,i)=0.d0
         enddo
       enddo
       return
@@ -553,7 +681,8 @@
 !     CB1 crack-band width.  cbmodev is the switch, cbiok the
 !     availability flag of the frozen value.
 !
-      integer cbmodev,cbiok,cbset
+      integer cbmodev,cbiok,cbset,cbkind
+      real*8 cbsvm,cbsh,cbufv
 !
       real*8 dpnlv
 !     
@@ -594,6 +723,7 @@
 !     and only reads it.
 !
       call damcbinit(ne0,mi(1))
+      call damcbufinit(ne0,mi(1))
       call damcbmodeget(cbmodev)
 !
       call damnonlocalget(ellnl)
@@ -1024,6 +1154,51 @@
               if(cbiok.eq.1) charlen=cbwid
             endif
 !
+!           W2: ENERGY evolution.  The card slot that DISPLACEMENT reads as
+!           u_f is G_f here, and the law needs u_f, so it is derived:
+!
+!             G_f = int_0^{u_f} (1 - d/u_f) sigma_0 dd = sigma_0 u_f / 2
+!             =>  u_f = 2 G_f / sigma_0
+!
+!           exactly, for the linear-in-displacement law actually
+!           implemented.  sigma_0 is the equivalent stress AT INITIATION at
+!           THIS point, which under hardening differs from point to point -
+!           that is the whole reason G_f is the material constant and u_f is
+!           not.  One u_f card prescribes a different dissipated energy at
+!           every point of a hardening model; one G_f card prescribes the
+!           same energy and a different u_f.
+!
+!           Frozen exactly like the width, on the same committed inputs and
+!           for the same reasons: refreshed while initiation has not been
+!           committed, fixed once it has, so the last refresh is the
+!           increment in which the crack forms.  sti is committed, so the
+!           value cannot move with the Newton iterate or with a rollback.
+!
+            call damcbevolget(imat,cbkind)
+            if(cbkind.eq.2) then
+              if(dambase(jj,i).lt.xlimit) then
+                cbsh=(sti(1,jj,i)+sti(2,jj,i)+sti(3,jj,i))/3.d0
+                cbsvm=dsqrt(1.5d0*(
+     &               (sti(1,jj,i)-cbsh)**2+(sti(2,jj,i)-cbsh)**2+
+     &               (sti(3,jj,i)-cbsh)**2+2.d0*(sti(4,jj,i)**2+
+     &               sti(5,jj,i)**2+sti(6,jj,i)**2)))
+                if(cbsvm.gt.1.d-10) then
+                  call damcbufset(i,jj,2.d0*ufail/cbsvm)
+                endif
+              endif
+              call damcbufget(i,jj,cbufv,cbiok)
+              if(cbiok.eq.1) then
+                ufail=cbufv
+              else
+!
+!               No equivalent stress has been seen yet, so G_f cannot be
+!               converted.  Leave the point alone this increment rather
+!               than guess: D is still at its baseline here.
+!
+                cycle
+              endif
+            endif
+!
             if((ufail.le.0.d0).or.(charlen.le.0.d0)) then
               write(*,*) '*ERROR in calcdamage: invalid DE1 data'
               write(*,*) '       element=',i,' u_f=',ufail,
@@ -1406,8 +1581,8 @@
      &     xstateini(nstate_,mi(1),*),shy,s1,s2,s3,svm,triax,
      &     dpeq,xlimit,ufail,ef,damagebaseval,damagetarget,
      &     damageD,dpeqpost,ddam,damtrial,alphai,charlen,
-     &     ax,ay,az,bx,by,bz,cx,cy,cz,det6v,cbwid,xlp(3,20)
-      integer cbmodev,cbiok,nope4,ncor4,i4,k4
+     &     ax,ay,az,bx,by,bz,cx,cy,cz,det6v,cbwid,xlp(3,20),cbufv
+      integer cbmodev,cbiok,nope4,ncor4,i4,k4,cbkind
 !
       if((iel.lt.1).or.(iel.gt.ne0)) return
       if(ipkon(iel).lt.0) return
@@ -1462,6 +1637,25 @@
         call exit(201)
       endif
       if(ufail.le.0.d0) return
+!
+!     W2: under ENERGY evolution the card carried G_f, and the law needs
+!     u_f.  The conversion is done in calcdamagebase, where the stress is
+!     committed, and frozen at initiation; this routine only reads it - the
+!     same division of labour as the width, and for the same reason: the
+!     only stress available here is the trial one.
+!
+!     Not yet converted means no equivalent stress has been committed for
+!     this point yet.  Leaving the point alone is right rather than
+!     cautious: G_f cannot be turned into u_f without a sigma_0, and
+!     inventing one from the trial state would put the trial state into the
+!     law.  D is still at its baseline at that stage.
+!
+      call damcbevolget(imat,cbkind)
+      if(cbkind.eq.2) then
+        call damcbufget(iel,iint,cbufv,cbiok)
+        if(cbiok.eq.0) return
+        ufail=cbufv
+      endif
 !
 !     CB1: the projected width, when it is armed, comes from the cache
 !     that calcdamagebase filled from the COMMITTED stress.  This routine

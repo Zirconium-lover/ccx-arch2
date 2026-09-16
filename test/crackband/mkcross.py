@@ -126,6 +126,8 @@ def build(a):
         % p["r"])
     add("**   exact peak end displacement u = %.8f  (precedes damage)"
         % p["u_peak"])
+    add("**   evolution=%s  sigma_0=%.6f  u_f=%.6f  G_f=%.6f"
+        % (a.evolution, p["sig0"], a.uf, p["sig0"] * a.uf / 2.0))
     add("**   The SPECIMEN is identical across the sweep, so the")
     add("**   force-displacement curves are directly comparable with no")
     add("**   normalisation; any spread is mesh dependence and nothing else.")
@@ -167,9 +169,19 @@ def build(a):
         add("%g, 0." % a.sigy)
         add("%g, %g" % (sigh, a.epsh))
         if dam:
-            add("*DAMAGE INITIATION, CRITERION=RICETRACEY,"
-                " EVOLUTION=DISPLACEMENT")
-            add("%g, 1.0, %g, 0." % (a.eps0, a.uf))
+            if a.evolution == "ENERGY":
+                # G_f = sigma_0*u_f/2 for the linear law, with sigma_0 the
+                # flow stress at initiation.  Passing the EQUIVALENT G_f
+                # makes the two cards describe the same material, which is
+                # what the equivalence check tests.
+                add("*DAMAGE INITIATION, CRITERION=RICETRACEY,"
+                    " EVOLUTION=ENERGY")
+                gf = a.gf if a.gf > 0.0 else p["sig0"] * a.uf / 2.0
+                add("%g, 1.0, %g, 0." % (a.eps0, gf))
+            else:
+                add("*DAMAGE INITIATION, CRITERION=RICETRACEY,"
+                    " EVOLUTION=DISPLACEMENT")
+                add("%g, 1.0, %g, 0." % (a.eps0, a.uf))
     add("*SOLID SECTION, ELSET=EBULK, MATERIAL=BULK")
     add("*SOLID SECTION, ELSET=EWEAK, MATERIAL=WEAK")
     add("*BOUNDARY")
@@ -190,6 +202,11 @@ def build(a):
 def main():
     q = argparse.ArgumentParser()
     q.add_argument("-o", "--out", default="cross.inp")
+    q.add_argument("--evolution", choices=("DISPLACEMENT", "ENERGY"),
+                   default="DISPLACEMENT")
+    q.add_argument("--gf", type=float, default=-1.0,
+                   help="fracture energy for EVOLUTION=ENERGY; "
+                        "default derives the equivalent of --uf")
     for nm, tp, df in (("e", float, E), ("nu", float, NU),
                        ("sigy", float, SIGY), ("hmod", float, HMOD),
                        ("epsh", float, EPSH), ("eps0", float, EPS0),

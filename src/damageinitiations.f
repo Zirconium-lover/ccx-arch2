@@ -68,6 +68,19 @@
         elseif(textpart(i)(1:10).eq.'EVOLUTION=') then
           if(textpart(i)(11:22).eq.'DISPLACEMENT') then
             ievolution=1
+          elseif(textpart(i)(11:16).eq.'ENERGY') then
+!
+!           W2.  Same layout and the same constant COUNT as DISPLACEMENT -
+!           the slot that holds u_f there holds G_f here.  The count must
+!           not change: damage_progressive_material in nonlingeo.c tests it
+!           exactly (nconst==4, and a parity test on nconst-3 for the
+!           tabulated locus), so one extra constant would switch
+!           progressive damage off silently and run the deck on the legacy
+!           hard-deletion path instead.  dm2failurestrain derives its point
+!           count from the same total.  Hence the kind travels through
+!           damcbevolset rather than through dmcon.
+!
+            ievolution=2
           else
             write(*,*)
      &           '*ERROR reading *DAMAGE INITIATION: evolution'
@@ -95,13 +108,13 @@
       enddo
 !
       if(itype.eq.1) then
-        if(ievolution.eq.1) then
+        if(ievolution.ge.1) then
           nconstants=4
         else
           nconstants=3
         endif
       elseif(itype.eq.2) then
-        if(ievolution.eq.1) then
+        if(ievolution.ge.1) then
           write(*,*) '*ERROR reading *DAMAGE INITIATION:'
           write(*,*) '       DE1 displacement evolution is presently'
           write(*,*) '       not implemented for Johnson-Cook.'
@@ -110,7 +123,7 @@
         endif
         nconstants=10
       elseif(itype.eq.3) then
-        if(ievolution.ne.1) then
+        if(ievolution.lt.1) then
           write(*,*) '*ERROR reading *DAMAGE INITIATION:'
           write(*,*) '       DM2 DUCTILE requires'
           write(*,*) '       EVOLUTION=DISPLACEMENT.'
@@ -146,6 +159,12 @@
 !     the damage initiation is stored as a mechanical user material
 !
       ndmcon(1,nmat)=nconstants
+!
+!     The evolution kind cannot live in dmcon without changing the constant
+!     count, and the count is load bearing (see the comment at
+!     EVOLUTION=ENERGY above).  It goes to the module that reads it instead.
+!
+      call damcbevolset(nmat,max(1,ievolution))
 !
       do
         do j=1,(nconstants-1)/8+1
@@ -205,7 +224,7 @@
 !         check constants for Johnson-Cook
 !
           if(isum.eq.nconstants+1) then
-            if((itype.eq.1).and.(ievolution.eq.1)) then
+            if((itype.eq.1).and.(ievolution.ge.1)) then
               if(dabs(dmcon(3,ntmat,nmat)-1.d0).gt.1.d-12) then
                 write(*,*) '*ERROR reading *DAMAGE INITIATION:'
                 write(*,*) '       DE1 presently requires the'
@@ -215,8 +234,14 @@
               endif
               if(dmcon(4,ntmat,nmat).le.0.d0) then
                 write(*,*) '*ERROR reading *DAMAGE INITIATION:'
-                write(*,*) '       failure plastic displacement u_f'
-                write(*,*) '       must be strictly positive for DE1.'
+                if(ievolution.eq.2) then
+                  write(*,*) '       fracture energy G_f must be'
+                  write(*,*) '       strictly positive for'
+                  write(*,*) '       EVOLUTION=ENERGY.'
+                else
+                  write(*,*) '       failure plastic displacement u_f'
+                  write(*,*) '       must be strictly positive for DE1.'
+                endif
                 ier=1
                 return
               endif
@@ -231,8 +256,13 @@
               endif
               if(dmcon(3,ntmat,nmat).le.0.d0) then
                 write(*,*) '*ERROR reading *DAMAGE INITIATION:'
-                write(*,*) '       DM2 failure displacement u_f'
-                write(*,*) '       must be strictly positive.'
+                if(ievolution.eq.2) then
+                  write(*,*) '       DM2 fracture energy G_f must be'
+                  write(*,*) '       strictly positive.'
+                else
+                  write(*,*) '       DM2 failure displacement u_f'
+                  write(*,*) '       must be strictly positive.'
+                endif
                 ier=1
                 return
               endif
