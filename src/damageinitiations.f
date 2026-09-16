@@ -33,11 +33,12 @@
      &     ntmat_,j,nconstants,isum,imax,ntmat,ndmat_,itype,
      &     ievolution,npoints,ipt,idxeta,idxeps
 !
-      real*8 dmcon(0:ndmat_,ntmat_,*),etaold
+      real*8 dmcon(0:ndmat_,ntmat_,*),etaold,ellcard
 !
       ntmat=0
       itype=0
       ievolution=0
+      ellcard=0.d0
       nconstants=0
       npoints=0
 !
@@ -86,6 +87,31 @@
      &           '*ERROR reading *DAMAGE INITIATION: evolution'
             write(*,*) '       is not known.'
             write(*,*) '       evolution:',textpart(i)(11:90)
+            ier=1
+            return
+          endif
+        elseif(textpart(i)(1:9).eq.'NONLOCAL=') then
+!
+!         W6.  The internal length of the nonlocal damage model is a
+!         MATERIAL constant - Bazant & Jirasek 2002, Peerlings et al. 1996 -
+!         and until now it was a run-time setting, CCX_DAMAGE_NONLOCAL,
+!         with per-material multipliers given as a positional, comma
+!         separated list in deck order.  That made the .inp stop being a
+!         complete description of the problem: the same file on the same
+!         binary answered differently depending on the environment.
+!
+!         It is a PARAMETER rather than a constant for the same reason
+!         EVOLUTION=ENERGY is: dmcon has no free slot, and the constant
+!         count is tested exactly in nonlingeo.c, so one more constant
+!         switches progressive damage off without a word.  The value goes to
+!         the module that reads it, through the accessor Agent 1 wrote for
+!         this purpose (damnonlocal.f, damnlellsetmat).
+!
+          read(textpart(i)(10:39),'(f30.0)',iostat=istat) ellcard
+          if((istat.ne.0).or.(ellcard.le.0.d0)) then
+            write(*,*) '*ERROR reading *DAMAGE INITIATION:'
+            write(*,*) '       NONLOCAL= must be a strictly positive'
+            write(*,*) '       internal length.'
             ier=1
             return
           endif
@@ -165,6 +191,13 @@
 !     EVOLUTION=ENERGY above).  It goes to the module that reads it instead.
 !
       call damcbevolset(nmat,max(1,ievolution))
+!
+!     W6: the internal length, to the module that averages with it.  The
+!     environment variable stays a GLOBAL OVERRIDE with priority, so a deck
+!     that does not carry NONLOCAL= behaves exactly as before and an A/B
+!     driven from the environment is not broken by this.
+!
+      if(ellcard.gt.0.d0) call damnlellsetmat(nmat,ellcard)
 !
       do
         do j=1,(nconstants-1)/8+1

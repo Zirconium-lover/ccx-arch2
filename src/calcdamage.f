@@ -184,6 +184,64 @@
       return
       end
 !
+      subroutine damcbufail(imat,itype,dmcon,ndmat_,ntmat_,iel,iint,
+     &     ufail,iok)
+!
+!     THE ONLY way the damage path should obtain u_f.
+!
+!     WHY IT EXISTS.  Under EVOLUTION=ENERGY the card slot that
+!     EVOLUTION=DISPLACEMENT reads as u_f carries G_f instead, and which of
+!     the two it is cannot be stored in dmcon: the constant count is tested
+!     exactly in nonlingeo.c, so one more constant switches progressive
+!     damage off silently.  The kind therefore lives outside dmcon, and
+!     Agent 1's objection to that is correct and worth restating - a reader
+!     that takes dmcon(4) or dmcon(3) and does not ask for the kind will
+!     take an energy for a displacement, without a word.  That is the same
+!     shape of defect as imode=2, as cbmode, and as the constant count
+!     itself: a value living somewhere other than the structure that
+!     describes it.
+!
+!     The remedy is not to encode the kind somewhere clever.  It is to stop
+!     offering the raw slot: value and meaning leave this routine together,
+!     and a caller cannot obtain one without the other.  Encoding the
+!     combination in the type code instead - itype=4 for DUCTILE+ENERGY -
+!     was the alternative, and it was declined because ENERGY is orthogonal
+!     to the criterion, so the type space would grow with the product of
+!     the options rather than their sum, and a RICETRACEY+ENERGY code would
+!     already be the next one needed.
+!
+!     iok=0 means the effective u_f is not available yet, which happens
+!     only under ENERGY before any equivalent stress has been committed for
+!     this point, and means the caller must not evolve damage.
+!
+      implicit none
+      integer imat,itype,ndmat_,ntmat_,iel,iint,iok,kind
+      real*8 dmcon(0:ndmat_,ntmat_,*),ufail,cbufv
+!
+      iok=0
+      ufail=0.d0
+!
+!     The raw slot.  Its MEANING is decided by damcbevolget, never here.
+!
+      if(itype.eq.1) then
+        ufail=dmcon(4,1,imat)
+      elseif(itype.eq.3) then
+        ufail=dmcon(3,1,imat)
+      else
+        return
+      endif
+      if(ufail.le.0.d0) return
+!
+      call damcbevolget(imat,kind)
+      if(kind.eq.2) then
+        call damcbufget(iel,iint,cbufv,iok)
+        if(iok.eq.0) return
+        ufail=cbufv
+      endif
+      iok=1
+      return
+      end
+!
       subroutine damcbufget(iel,iint,val,iok)
 !
 !     The effective u_f frozen at initiation.  iok=0 means "not available"
@@ -1103,6 +1161,13 @@
      &       (ndmcon(1,imat).ge.4)).or.
      &       (int(dmcon(1,1,imat)).eq.3)) then
             ide1=1
+!
+!           The RAW slot, deliberately: this is the WRITER side.  Under
+!           EVOLUTION=ENERGY it holds G_f, and the conversion to u_f a few
+!           lines below is what turns it into a length.  Every READER must
+!           go through damcbufail instead, which hands back value and
+!           meaning together - see the comment on that routine.
+!
             if(int(dmcon(1,1,imat)).eq.1) then
               ufail=dmcon(4,1,imat)
             else
@@ -1600,13 +1665,22 @@
       if(itype.eq.1) then
         if(ndmcon(1,imat).lt.4) return
         xlimit=dmcon(3,1,imat)
-        ufail=dmcon(4,1,imat)
       elseif(itype.eq.3) then
         xlimit=dmcon(2,1,imat)
-        ufail=dmcon(3,1,imat)
       else
         return
       endif
+!
+!     u_f comes from damcbufail and from nowhere else: under
+!     EVOLUTION=ENERGY the slot holds G_f, and value and meaning have to
+!     leave one routine together or a reader will take one for the other.
+!     iok=0 means it is not available yet - only possible under ENERGY
+!     before an equivalent stress has been committed here - and then this
+!     point must not evolve.
+!
+      call damcbufail(imat,itype,dmcon,ndmat_,ntmat_,iel,iint,ufail,
+     &     cbiok)
+      if(cbiok.eq.0) return
       call damcbmodeget(cbmodev)
 !
 !     Node count of this element, needed for the corner count.
@@ -1637,26 +1711,6 @@
         call exit(201)
       endif
       if(ufail.le.0.d0) return
-!
-!     W2: under ENERGY evolution the card carried G_f, and the law needs
-!     u_f.  The conversion is done in calcdamagebase, where the stress is
-!     committed, and frozen at initiation; this routine only reads it - the
-!     same division of labour as the width, and for the same reason: the
-!     only stress available here is the trial one.
-!
-!     Not yet converted means no equivalent stress has been committed for
-!     this point yet.  Leaving the point alone is right rather than
-!     cautious: G_f cannot be turned into u_f without a sigma_0, and
-!     inventing one from the trial state would put the trial state into the
-!     law.  D is still at its baseline at that stage.
-!
-      call damcbevolget(imat,cbkind)
-      if(cbkind.eq.2) then
-        call damcbufget(iel,iint,cbufv,cbiok)
-        if(cbiok.eq.0) return
-        ufail=cbufv
-      endif
-!
 !     CB1: the projected width, when it is armed, comes from the cache
 !     that calcdamagebase filled from the COMMITTED stress.  This routine
 !     runs inside the stress update, where the only stress available is
