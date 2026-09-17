@@ -115,6 +115,29 @@
       real*8 :: ellcard(64)=0.d0
       integer :: ncard=0
 !
+!     Integration points per element, filled by the same pass that fills
+!     evol.  A C3D4 has one and the old code hard-coded that; every other
+!     family has more, and averaging only slot 1 would read one point and
+!     call it the element.
+!
+      integer, allocatable :: nipe(:)
+!
+!     Element -> material map for the per-material internal length.
+!     Filled by damnlmatmap, which the caller supplies because the
+!     averaging routines do not receive ielmat.  matbuilt=0 means nobody
+!     has supplied it, and then every element falls back to the single
+!     global length - which is exactly the behaviour before W6, so a tree
+!     in which no caller has been updated yet still answers as it did.
+!
+      integer, allocatable :: elmat(:)
+      integer :: matbuilt=0
+!
+!     ellover records that the environment overrode a card, so the run
+!     can say so once instead of leaving the answer depending on
+!     something the input deck does not mention.
+!
+      integer :: ellover=0,ellsaid=0
+!
 !     T1 CHAIN FACTOR and PROBE MODE.
 !
 !     chainf(i) is d(ebar_i)/d(e_i): how much the REGULARISED driving
@@ -199,6 +222,13 @@
 !     code does not solve.  The switch stays because that change is the
 !     next step and this is the half of it that is already measured.
 !
+!     The environment value arrives through damnonlocalset, called from
+!     nonlingeo.c only when CCX_DAMAGE_NONLOCAL is set, so a nonzero
+!     ellsave at this point means the environment spoke.  Combined with a
+!     card, that is an override and is announced by damnlellsay.
+!
+      if(ellsave.gt.0.d0) ellover=1
+!
       call getenv('CCX_DAMAGE_NONLOCAL_CHAIN',carg)
       if(carg(1:1).ne.' ') then
         ichainset=1
@@ -248,6 +278,169 @@
       end
 !
 !     ------------------------------------------------------------------
+!
+!     ==================================================================
+!     Element geometry and integration-point count for the nonlocal
+!     average, for every volume family the damage model can reach.
+!
+!     WHY THIS EXISTS.  Both the neighbour list and the local driving
+!     variable were written for C3D4 and skipped everything else, which
+!     was correct while DE1 itself refused non-tetrahedra.  CB1 lifted
+!     that refusal, so a hexahedral deck now reaches the damage law with
+!     no regularisation available to it - the two halves have to move
+!     together or the internal length silently stops applying to exactly
+!     the meshes CB1 just enabled.
+!
+!     CENTROID is the mean of the CORNER nodes.  Midside nodes are left
+!     out on purpose: including them biases the centre towards the curved
+!     faces of a distorted quadratic element, and the centre is only used
+!     to place the element in the neighbour search, where a bias is a
+!     systematic error in who is a neighbour of whom.
+!
+!     VOLUME is the corner hull, decomposed into tetrahedra: one for a
+!     tet, three for a wedge, six for a hexahedron in the standard
+!     diagonal split. For a quadratic element with curved edges this is
+!     the straight-edged volume, which is what the weight needs - the
+!     weight asks how much material sits near a point, and the corner
+!     hull answers that to the accuracy the Gaussian kernel can use.
+!
+!     IOK=0 means the family is not one this routine knows, and the
+!     caller must then leave the element out of the average entirely
+!     rather than average it with a wrong weight.
+!     ==================================================================
+!
+      subroutine damnlelgeom(lakonl,kon,co,indexe,cx,cy,cz,vol,nip,iok)
+      implicit none
+      character*8 lakonl
+      integer kon(*),indexe,nip,iok,ncor,j,node,it,nt
+      integer itet(4,6)
+      real*8 co(3,*),cx,cy,cz,vol,xl(3,8),d6,a(3),b(3),c(3)
+!
+      iok=0
+      cx=0.d0
+      cy=0.d0
+      cz=0.d0
+      vol=0.d0
+      nip=0
+      if(lakonl(1:1).ne.'C') return
+!
+!     corner count and integration-point count per family.  The point
+!     counts mirror calcdamage.f, which is the routine whose state this
+!     average consumes: if the two ever disagree, the average would read
+!     slots calcdamage never filled.
+!
+      if(lakonl(4:5).eq.'8R') then
+        ncor=8
+        nip=1
+      elseif(lakonl(4:4).eq.'8') then
+        ncor=8
+        nip=8
+      elseif(lakonl(4:5).eq.'20') then
+        ncor=8
+        if(lakonl(6:6).eq.'R') then
+          nip=8
+        else
+          nip=27
+        endif
+      elseif(lakonl(4:5).eq.'10') then
+        ncor=4
+        nip=4
+      elseif(lakonl(4:4).eq.'4') then
+        ncor=4
+        nip=1
+      elseif(lakonl(4:5).eq.'15') then
+        ncor=6
+        nip=9
+      elseif(lakonl(4:4).eq.'6') then
+        ncor=6
+        nip=2
+      else
+        return
+      endif
+!
+      do j=1,ncor
+        node=kon(indexe+j)
+        if(node.le.0) return
+        xl(1,j)=co(1,node)
+        xl(2,j)=co(2,node)
+        xl(3,j)=co(3,node)
+        cx=cx+xl(1,j)
+        cy=cy+xl(2,j)
+        cz=cz+xl(3,j)
+      enddo
+      cx=cx/dble(ncor)
+      cy=cy/dble(ncor)
+      cz=cz/dble(ncor)
+!
+      if(ncor.eq.4) then
+        nt=1
+        itet(1,1)=1
+        itet(2,1)=2
+        itet(3,1)=3
+        itet(4,1)=4
+      elseif(ncor.eq.6) then
+!
+!       wedge 1-2-3 / 4-5-6 into three tetrahedra
+!
+        nt=3
+        itet(1,1)=1
+        itet(2,1)=2
+        itet(3,1)=3
+        itet(4,1)=5
+        itet(1,2)=1
+        itet(2,2)=3
+        itet(3,2)=6
+        itet(4,2)=5
+        itet(1,3)=1
+        itet(2,3)=6
+        itet(3,3)=4
+        itet(4,3)=5
+      else
+!
+!       hexahedron into six tetrahedra sharing the 1-7 diagonal
+!
+        nt=6
+        itet(1,1)=1
+        itet(2,1)=2
+        itet(3,1)=3
+        itet(4,1)=7
+        itet(1,2)=1
+        itet(2,2)=3
+        itet(3,2)=4
+        itet(4,2)=7
+        itet(1,3)=1
+        itet(2,3)=4
+        itet(3,3)=8
+        itet(4,3)=7
+        itet(1,4)=1
+        itet(2,4)=8
+        itet(3,4)=5
+        itet(4,4)=7
+        itet(1,5)=1
+        itet(2,5)=5
+        itet(3,5)=6
+        itet(4,5)=7
+        itet(1,6)=1
+        itet(2,6)=6
+        itet(3,6)=2
+        itet(4,6)=7
+      endif
+!
+      do it=1,nt
+        do j=1,3
+          a(j)=xl(j,itet(2,it))-xl(j,itet(1,it))
+          b(j)=xl(j,itet(3,it))-xl(j,itet(1,it))
+          c(j)=xl(j,itet(4,it))-xl(j,itet(1,it))
+        enddo
+        d6=a(1)*(b(2)*c(3)-b(3)*c(2))
+     &    -a(2)*(b(1)*c(3)-b(3)*c(1))
+     &    +a(3)*(b(1)*c(2)-b(2)*c(1))
+        vol=vol+dabs(d6)/6.d0
+      enddo
+      if(vol.le.0.d0) return
+      iok=1
+      return
+      end
 !
       subroutine damnonlocalset(ellin)
       use damnlmod
@@ -299,6 +492,11 @@
       call damnlellinit()
       if(iinner.eq.0) return
 !
+!     Supply the element -> material map while ielmat is in scope, so the
+!     per-material internal length applies on this path.  Idempotent.
+!
+      call damnlmatmap(ipkon,lakon,ielmat,ne0,mi)
+!
 !     The same dispatch calcdamagebase makes at the start of an
 !     increment.  Kept identical on purpose: if the two ever disagree,
 !     the field seen inside Newton would not be the field the increment
@@ -323,6 +521,112 @@
       integer ion
       call damnlellinit()
       ion=iinner
+      return
+      end
+!
+!     Supply the element -> material map.  Called by whoever has ielmat
+!     in scope; it is idempotent and cheap, so calling it every increment
+!     costs nothing and calling it never costs only the per-material
+!     length, which then falls back to the global one.
+!
+      subroutine damnlmatmap(ipkon,lakon,ielmat,ne0,mi)
+      use damnlmod
+      implicit none
+      character*8 lakon(*)
+      integer ne0,mi(*),ipkon(*),ielmat(mi(3),*),i
+      if(ncard.le.0) return
+      if(allocated(elmat)) then
+        if(size(elmat).lt.ne0) deallocate(elmat)
+      endif
+      if(.not.allocated(elmat)) allocate(elmat(ne0))
+      do i=1,ne0
+        elmat(i)=0
+        if(lakon(i)(1:1).ne.'C') cycle
+        elmat(i)=ielmat(1,i)
+      enddo
+      matbuilt=1
+      return
+      end
+!
+!     The internal length that applies to ONE element.
+!
+!     PRECEDENCE, agreed in review: the card sets the value and the
+!     environment overrides it.  The override is announced once, naming
+!     the material, what the card asked for and what is actually used -
+!     otherwise the answer depends on something the deck does not
+!     mention, which is the disease W6 exists to cure.
+!
+!     The largest internal length any material asks for, so the neighbour
+!     search can size its radius to cover all of them.  Falls back to the
+!     global value when no card carried NONLOCAL=.
+!
+!     Say once, in the log, that the environment overrode what the deck
+!     asked for.  Precedence agreed in review: the card sets the value,
+!     CCX_DAMAGE_NONLOCAL overrides it.  An override that is not printed
+!     would put the answer back under the control of something the input
+!     file does not mention, which is the disease W6 exists to cure, so
+!     the announcement is not decoration.
+!
+      subroutine damnlellsay()
+      use damnlmod
+      implicit none
+      integer i
+      if(ellsaid.ne.0) return
+      ellsaid=1
+      if(ncard.le.0) return
+      if(ellover.eq.0) then
+        write(*,*) '[DAMAGE NONLOCAL] internal length from the',
+     &       ' material card, per material:'
+        do i=1,64
+          if(ellcard(i).gt.0.d0) then
+            write(*,'(a,i5,a,e13.6)')
+     &        ' [DAMAGE NONLOCAL]   material ',i,'  ell=',ellcard(i)
+          endif
+        enddo
+      else
+        write(*,*) '[DAMAGE NONLOCAL] CCX_DAMAGE_NONLOCAL OVERRIDES',
+     &       ' the NONLOCAL= parameter on the material card.'
+        do i=1,64
+          if(ellcard(i).gt.0.d0) then
+            write(*,'(a,i5,a,e13.6,a,e13.6)')
+     &        ' [DAMAGE NONLOCAL]   material ',i,'  card asked ',
+     &        ellcard(i),'  applied ',ellsave
+          endif
+        enddo
+      endif
+      call flush(6)
+      return
+      end
+!
+      subroutine damnlellmax(ellmax)
+      use damnlmod
+      implicit none
+      real*8 ellmax
+      integer i
+      ellmax=ellsave
+      if(ncard.le.0) return
+      if(ellover.eq.1) return
+      do i=1,64
+        if(ellcard(i).gt.ellmax) ellmax=ellcard(i)
+      enddo
+      return
+      end
+!
+      subroutine damnlellel(iel,ell)
+      use damnlmod
+      implicit none
+      integer iel,im
+      real*8 ell
+      ell=ellsave
+      if(ncard.le.0) return
+      if(matbuilt.eq.0) return
+      if(.not.allocated(elmat)) return
+      if((iel.lt.1).or.(iel.gt.size(elmat))) return
+      im=elmat(iel)
+      if((im.lt.1).or.(im.gt.64)) return
+      if(ellcard(im).le.0.d0) return
+      if(ellover.eq.1) return
+      ell=ellcard(im)
       return
       end
 !
@@ -515,15 +819,28 @@
 !
       integer ipkon(*),kon(*),ne0,mi(*),nstate_,
      &     i,j,k,m,indexe,node,nn,ip,jp,kp,ib,jb,kb,
-     &     ncell,ix,iy,iz,icell,jcell,ifree
+     &     ncell,ix,iy,iz,icell,jcell,ifree,nipel,iokel,ip1
       real*8 co(3,*),xstate(nstate_,mi(1),*),
      &     xstateini(nstate_,mi(1),*),ell,
-     &     xc,yc,zc,d2,w,swv,sv,det6,rmax,
+     &     xc,yc,zc,d2,w,swv,sv,det6,rmax,volel,elli,
      &     xmin,xmax,ymin,ymax,zmin,zmax,csize
 !
       ell=ellsave
       if(ell.le.0.d0) return
-      rmax=2.d0*ell
+      call damnlellinit()
+      call damnlellsay()
+!
+!     W6.  The search radius must cover the LARGEST length any material
+!     asks for, otherwise a material with a longer ell would silently get
+!     a truncated neighbourhood - the average would still be computed and
+!     would still look reasonable, which is the worst way for a length to
+!     stop applying.  The per-element length itself enters the weight
+!     below; only the radius is global, and it is generous rather than
+!     wrong.
+!
+      call damnlellmax(rmax)
+      if(rmax.le.0.d0) rmax=ell
+      rmax=2.d0*rmax
 !
       if((nbuilt.ne.0).and.(nesave.ne.ne0)) nbuilt=0
 !
@@ -548,47 +865,35 @@
         ymax=-1.d30
         zmin=1.d30
         zmax=-1.d30
+        if(allocated(nipe)) deallocate(nipe)
+        allocate(nipe(ne0))
         do i=1,ne0
           evol(i)=0.d0
           cen(1,i)=0.d0
           cen(2,i)=0.d0
           cen(3,i)=0.d0
-          if(lakon(i)(1:4).ne.'C3D4') cycle
+          nipe(i)=0
           if(ipkon(i).lt.0) then
             indexe=-ipkon(i)-2
           else
             indexe=ipkon(i)
           endif
           if(indexe.lt.0) cycle
-          xc=0.d0
-          yc=0.d0
-          zc=0.d0
-          do j=1,4
-            node=kon(indexe+j)
-            xc=xc+co(1,node)
-            yc=yc+co(2,node)
-            zc=zc+co(3,node)
-          enddo
-          cen(1,i)=xc/4.d0
-          cen(2,i)=yc/4.d0
-          cen(3,i)=zc/4.d0
-          det6=
-     &   (co(1,kon(indexe+2))-co(1,kon(indexe+1)))*
-     &  ((co(2,kon(indexe+3))-co(2,kon(indexe+1)))*
-     &   (co(3,kon(indexe+4))-co(3,kon(indexe+1)))-
-     &   (co(3,kon(indexe+3))-co(3,kon(indexe+1)))*
-     &   (co(2,kon(indexe+4))-co(2,kon(indexe+1))))
-     & -(co(2,kon(indexe+2))-co(2,kon(indexe+1)))*
-     &  ((co(1,kon(indexe+3))-co(1,kon(indexe+1)))*
-     &   (co(3,kon(indexe+4))-co(3,kon(indexe+1)))-
-     &   (co(3,kon(indexe+3))-co(3,kon(indexe+1)))*
-     &   (co(1,kon(indexe+4))-co(1,kon(indexe+1))))
-     & +(co(3,kon(indexe+2))-co(3,kon(indexe+1)))*
-     &  ((co(1,kon(indexe+3))-co(1,kon(indexe+1)))*
-     &   (co(2,kon(indexe+4))-co(2,kon(indexe+1)))-
-     &   (co(2,kon(indexe+3))-co(2,kon(indexe+1)))*
-     &   (co(1,kon(indexe+4))-co(1,kon(indexe+1))))
-          evol(i)=dabs(det6)/6.d0
+!
+!         Every volume family, not only C3D4.  CB1 lifted the DE1
+!         refusal on non-tetrahedra, and a hexahedral deck that reaches
+!         the damage law with no regularisation available to it is worse
+!         than one that is refused: the internal length would silently
+!         stop applying to exactly the meshes that were just enabled.
+!
+          call damnlelgeom(lakon(i),kon,co,indexe,xc,yc,zc,volel,
+     &         nipel,iokel)
+          if(iokel.eq.0) cycle
+          cen(1,i)=xc
+          cen(2,i)=yc
+          cen(3,i)=zc
+          nipe(i)=nipel
+          evol(i)=volel
           xmin=dmin1(xmin,cen(1,i))
           xmax=dmax1(xmax,cen(1,i))
           ymin=dmin1(ymin,cen(2,i))
@@ -625,6 +930,8 @@
           ifree=0
           do i=1,ne0
             nn=0
+            call damnlellel(i,elli)
+            if(elli.le.0.d0) elli=ell
             if(evol(i).gt.0.d0) then
               ix=min(ip-1,max(0,int((cen(1,i)-xmin)/csize)))
               iy=min(jp-1,max(0,int((cen(2,i)-ymin)/csize)))
@@ -641,8 +948,14 @@
                       if(d2.le.rmax*rmax) then
                         nn=nn+1
                         if(m.eq.2) then
+!
+!                         The kernel width is the length of the element
+!                         being averaged - i, the receiver - not of the
+!                         neighbour: ell is a property of the material
+!                         whose damage is being regularised.
+!
                           nblist(ifree+nn)=j
-                          wgt(ifree+nn)=dexp(-d2/(ell*ell))*evol(j)
+                          wgt(ifree+nn)=dexp(-d2/(elli*elli))*evol(j)
                         endif
                       endif
                       j=nbnext(j)
@@ -675,7 +988,21 @@
       do i=1,ne0
         dploc(i)=0.d0
         if(evol(i).le.0.d0) cycle
-        dploc(i)=xstate(1,1,i)-xstateini(1,1,i)
+!
+!       The element's driving variable is the mean over ITS OWN
+!       integration points.  The old code read slot 1 and nothing else,
+!       which is the whole element only for a C3D4; on a C3D8 it would
+!       have called one of eight points the element, and on a C3D20 one
+!       of twenty-seven.  nipe(i) comes from the same table calcdamage
+!       uses, so no slot is read that calcdamage never wrote.
+!
+        nipel=nipe(i)
+        if(nipel.lt.1) nipel=1
+        if(nipel.gt.mi(1)) nipel=mi(1)
+        do ip1=1,nipel
+          dploc(i)=dploc(i)+xstate(1,ip1,i)-xstateini(1,ip1,i)
+        enddo
+        dploc(i)=dploc(i)/dble(nipel)
       enddo
 !
       do i=1,ne0
@@ -745,9 +1072,9 @@
       implicit none
 !
       character*8 lakon(*)
-      integer ipkon(*),kon(*),ne0,mi(*),nstate_,i
+      integer ipkon(*),kon(*),ne0,mi(*),nstate_,i,indexf,nipf,iokf,ipf
       real*8 co(3,*),xstate(nstate_,mi(1),*),
-     &     xstateini(nstate_,mi(1),*)
+     &     xstateini(nstate_,mi(1),*),xcf,ycf,zcf,volf
 !
       if(ellsave.le.0.d0) return
 !
@@ -783,8 +1110,22 @@
         dploc(i)=0.d0
         dpsave(i)=0.d0
         if(ipkon(i).lt.0) cycle
-        if(lakon(i)(1:4).ne.'C3D4') cycle
-        dploc(i)=xstate(1,1,i)-xstateini(1,1,i)
+!
+!       Same generalisation as the integral backend: every volume family,
+!       and the mean over the element's own integration points.  This arm
+!       is a control and must stay comparable with the one it controls,
+!       so it cannot keep the C3D4 assumption after the other dropped it.
+!
+        indexf=ipkon(i)
+        if(indexf.lt.0) cycle
+        call damnlelgeom(lakon(i),kon,co,indexf,xcf,ycf,zcf,volf,
+     &       nipf,iokf)
+        if(iokf.eq.0) cycle
+        if(nipf.gt.mi(1)) nipf=mi(1)
+        do ipf=1,nipf
+          dploc(i)=dploc(i)+xstate(1,ipf,i)-xstateini(1,ipf,i)
+        enddo
+        dploc(i)=dploc(i)/dble(nipf)
         dpsave(i)=dploc(i)
       enddo
 !
@@ -876,6 +1217,7 @@
 !
       if(ellsave.le.0.d0) return
       call damnlellinit()
+      call damnlmatmap(ipkon,lakon,ielmat,ne0,mi)
       ell2=ellsave*ellsave
 !
 !     ---------------- geometry cache, reference configuration ---------
