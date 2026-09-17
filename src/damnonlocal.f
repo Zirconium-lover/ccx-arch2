@@ -614,6 +614,66 @@
       return
       end
 !
+!
+!     ==================================================================
+!     IS THE INTERNAL LENGTH RESOLVED BY THE MESH AT ALL?
+!
+!     One warning for both backends, because it is one disease with two
+!     symptoms.  When the requested ell falls below what the mesh can
+!     resolve, the model is ARMED BUT DEGENERATE: every element averages
+!     essentially itself, so the user asked for regularisation and did
+!     not get it - and that has been accepted in silence.
+!
+!     Measured, both on the reference deck:
+!
+!       INTEGRAL, ell=0.01, mean neighbours 0.98
+!           the run DIVERGES - increments 4U, 5U, 6U in a row - while at
+!           ell=0.2, mean neighbours 27.6, the same configuration
+!           completes.  So it is not that a directional width is heavier;
+!           it holds fine when the regularisation is real.
+!       GRADIENT, ell=0.01
+!           the run COMPLETED and the answer was WRONG: the field handed
+!           to the damage law differed from the local one by up to 83 per
+!           cent, entirely from the element->node->element projection.
+!
+!     A wrong answer that converges and a divergence with the right
+!     answer look nothing alike, which is exactly why neither was
+!     recognised as the same thing for as long as it was.
+!
+!     THE NUMBER IS PARTICIPATION, NOT ell/h.  How many elements actually
+!     enter the average is what the question asks, it is already measured
+!     for the integral backend, and it needs no threshold chosen by
+!     taste: an element is always in its own neighbourhood, so a count
+!     below TWO means not one neighbour joined it.  That is not a tuned
+!     bound, it is the definition of averaging nothing.  The other agent
+!     proposed this measure; the floor of two is where it becomes
+!     arithmetic rather than judgement.
+!
+      subroutine damnlresolve(part,ell,iwhat)
+      implicit none
+      real*8 part,ell
+      integer iwhat
+!
+      if(ell.le.0.d0) return
+      if(part.ge.2.d0) return
+      write(*,*) '*WARNING in damnonlocal: the internal length is NOT'
+      write(*,*) '         resolved by this mesh.  ell=',ell
+      if(iwhat.eq.0) then
+        write(*,*) '         mean elements per neighbourhood=',part
+      else
+        write(*,*) '         est. elements within 2*ell=',part
+      endif
+      write(*,*) '         Below 2 the average has no neighbour to'
+      write(*,*) '         average with, so the model is ARMED but'
+      write(*,*) '         DEGENERATE: the regularisation asked for is'
+      write(*,*) '         not being applied.  Measured consequences on'
+      write(*,*) '         the reference deck: the integral backend'
+      write(*,*) '         DIVERGES here, the gradient one COMPLETES'
+      write(*,*) '         with a driving variable off by up to 83 per'
+      write(*,*) '         cent.  Refine the mesh or raise ell.'
+      return
+      end
+!
       subroutine damnonlocalset(ellin)
       use damnlmod
       implicit none
@@ -1284,6 +1344,7 @@
         write(*,*) '[DAMAGE NONLOCAL] ell=',ell,' radius=',rmax,
      &       ' mean neighbours=',dble(ifree)/dble(max(1,nact)),
      &       ' over ',nact,' regularised of ',ne0
+        call damnlresolve(dble(ifree)/dble(max(1,nact)),ell,0)
         call flush(6)
       endif
 !
@@ -1537,10 +1598,10 @@
      &     xstateini(nstate_,mi(1),*),dam(mi(1),*)
 !
       integer i,j,a,b,indexe,it,maxit,nd,im,nc,nod(8),iokel,iokg
-      integer ionnl,nskip,nptot,ip,nipel,ib,ndneg
+      integer ionnl,nskip,nptot,ip,nipel,ib,ndneg,nact
       real*8 ell2,s,rz,rzold,pap,alpha,beta,rnorm,rnorm0,tol,fm,
      &     dloc,gloc,ml(8),kel(8,8),cx,cy,cz,volel,wsum,elli,ellrep,
-     &     dnwrst,dgmx,dgden
+     &     dnwrst,dgmx,dgden,vsum,part
 !
       call damnlactive(ionnl)
       if(ionnl.eq.0) return
@@ -1651,6 +1712,31 @@
         call damnlellmax(ellrep)
         write(*,*) '[DAMAGE NONLOCAL] gradient backend, ell=',ellrep,
      &       ' nodes=',nknl,' packed=',nkpack
+!
+!       The same participation number, ESTIMATED rather than counted:
+!       this backend keeps no neighbour list, so how many elements sit
+!       within 2*ell is the volume of that ball over the mean element
+!       volume, floored at one because an element always counts itself.
+!       Checked against the integral backend, which counts exactly: at
+!       ell=0.2 on the reference deck this gives about 36 where the count
+!       is 27.6 - the kernel is Gaussian and truncated, so the estimate
+!       is high by construction - and at ell=0.01 both give one.  It is
+!       used only to decide whether ANY neighbour joins, where a factor
+!       of 1.3 cannot change the answer.
+!
+        vsum=0.d0
+        nact=0
+        do i=1,ne0
+          if(gnc(i).le.0) cycle
+          vsum=vsum+vele(i)
+          nact=nact+1
+        enddo
+        if((nact.gt.0).and.(vsum.gt.0.d0).and.(ellrep.gt.0.d0)) then
+          part=4.18879020478639d0*(2.d0*ellrep)**3
+     &         /(vsum/dble(nact))
+          if(part.lt.1.d0) part=1.d0
+          call damnlresolve(part,ellrep,1)
+        endif
         if(nskip.gt.0) then
           write(*,*) '*WARNING in damgradient: ',nskip,
      &         ' element(s) REFUSED and are NOT regularised:'
