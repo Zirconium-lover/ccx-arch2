@@ -421,6 +421,29 @@ def main():
         preflight_names.append('energy equivalence')
     else: shutil.rmtree(eedir,ignore_errors=True)
 
+    # Does a nonlocal backend reduce to the LOCAL model as ell goes to zero?
+    # The most basic thing either backend must do, and the gate could not ask
+    # it: ell=0 in the PDE is ebar=e, and an average over a radius holding
+    # only the element is the element.  The gradient backend failed it for as
+    # long as it existed - it smoothed element->node->element over a distance
+    # set by the MESH, so it carried an internal length nobody gave it - and
+    # nothing caught that, because a run which regularises by the wrong
+    # amount still looks like a run.
+    #
+    # Three solver runs at 48 seconds, the most expensive check here.  Worth
+    # it: the pre-fix binary fails it with 47 elements the local run never
+    # breaks, and passes every other check in this gate.
+    e0=sh('bash %s/test/nonlocal/run_ell0_test.sh %s'
+          %(ROOT,tempfile.mkdtemp(prefix='ell0_')),
+          dict(base_env([]),CCX_EXE=exe))
+    e0l=[x for x in (e0.stdout or '').strip().splitlines() if 'VERDICT' in x]
+    print("preflight  ell->0 reduction: %s"
+          %(e0l[-1].strip() if e0l else
+            ((e0.stdout or '').strip().splitlines() or ['no output'])[-1].strip()))
+    if e0.returncode!=0:
+        preflight_bad+=1
+        preflight_names.append('ell->0 reduction')
+
     # The path-follower diagnostic judges a mechanism nobody could judge
     # before; a diagnostic that has itself gone wrong is worse than none,
     # so its own self test runs here with the others.
