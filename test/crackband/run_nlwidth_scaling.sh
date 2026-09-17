@@ -43,6 +43,11 @@ export OMP_NUM_THREADS=${OMP_NUM_THREADS:-1} MKL_NUM_THREADS=${MKL_NUM_THREADS:-
 mkdir -p "$OUT"
 VISC=${VISC:-1.e-3}
 NS=${NS:-24}
+# NLW=1 turns on CCX_DAMAGE_NLWIDTH, which is the point of this script's
+# second life: with it off the columns below measure the defect, and with it
+# on the same columns are the check that the defect is gone.  W_post must
+# stop depending on ell; nothing else about the sweep changes.
+NLW=${NLW:-0}
 # ell = 0 is the local arm, the reference every ratio below is taken against.
 ELLS=${ELLS:-"0 0.25 0.5 1.0"}
 
@@ -56,34 +61,30 @@ for ell in $ELLS; do
       "s/EVOLUTION=DISPLACEMENT\$/EVOLUTION=DISPLACEMENT, NONLOCAL=$ell/g" \
       "$d/t.inp"
   ( cd "$d" && env CCX_DAMAGE_CHARLEN=1 CCX_DAMAGE_VISCOSITY="$VISC" \
-        "$EXE" t > run.log 2>&1 )
+        CCX_DAMAGE_NLWIDTH="$NLW" "$EXE" t > run.log 2>&1 )
   printf "  ell=%-5s rc=%-4s theta=%s\n" "$ell" "$?" \
          "$(awk '{t=$3}END{print t}' "$d/t.sta" 2>/dev/null)"
 done
 echo
-echo "  nslice=$NS, element size h=$(python3 -c "print(6.0/$NS)"), viscosity $VISC"
-python3 - "$OUT" "$NS" "$ELLS" <<'PY'
+echo "  nslice=$NS, h=$(python3 -c "print(6.0/$NS)"), viscosity $VISC, NLWIDTH=$NLW"
+python3 - "$OUT" "$NS" "$ELLS" "$ROOT" <<'PY'
 import sys,os,re
-out,ns,ells=sys.argv[1],int(sys.argv[2]),sys.argv[3].split()
-sys.path.insert(0,os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                               "test","crackband"))
+out,ns,ells,root=sys.argv[1],int(sys.argv[2]),sys.argv[3].split(),sys.argv[4]
+sys.path.insert(0,os.path.join(root,"test","crackband"))
 h=6.0/ns
 
-def width(d):
-    """Largest simultaneously damaged volume, as a length along the bar.
+from bandwidth import width as _bw
 
-    Taken as the maximum over the accepted history and not the final state,
-    because an element reaching D=1 is deleted and drops out of the counts:
-    the final state of a severed bar reports almost no damage at all.  Six
-    Kuhn tetrahedra fill one slice, so count/6 is the number of slices and
-    count/6*h is the length.
+
+def width(d):
+    """Threshold-free band width; see bandwidth.py for why not a count.
+
+    The count over D>0.5 this used to print gave three different verdicts
+    for the three thresholds de1stats writes, so it was retracted rather
+    than tuned.
     """
-    best=0
-    for i,l in enumerate(open(os.path.join(d,"t.de1stats"))):
-        if l.startswith('#'): continue
-        f=l.split()
-        if len(f)>8: best=max(best,int(f[7]))
-    return best/6.0*h
+    return _bw(d)[0]
+
 
 def curve(path,uend=0.30):
     out,pend=[],None
@@ -169,6 +170,16 @@ print()
 print("  The two laws this set can tell apart, taken against the SMALLEST")
 print("  nonlocal arm rather than the local one, because the local arm has")
 print("  no ell to scale:")
+# One machine-readable line, so a judge can compare two invocations of this
+# script instead of comparing against a constant somebody picked.  The
+# quantity is the ratio of the largest to the smallest W_post across the
+# NONLOCAL arms: 1.0 is a fracture energy that does not depend on ell, which
+# is what the model claims to have.
+nlp=[work(c,0.30)-work(c,usp) for e,_,c,_ in rows if e>0]
+if len(nlp)>=2 and min(nlp)>0:
+    print("  NLWIDTH=%s ELL_DEPENDENCE=%.4f" % (os.environ.get("NLW","?"),
+                                                max(nlp)/min(nlp)))
+print()
 nl=[r for r in rows if r[0]>0]
 if len(nl)>=2:
     e0,wd0,c0,_=nl[0]

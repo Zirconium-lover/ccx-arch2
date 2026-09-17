@@ -1,6 +1,6 @@
 # Crack-band width: what is here and how to check it
 
-Eight files, no obvious entry point, so this is the map.  Every number below
+Ten files, no obvious entry point, so this is the map.  Every number below
 is stamped with the commit it was measured on and the command that
 reproduces it, because a number written into prose drifts silently when
 somebody else's change moves it.  That failure has already happened once
@@ -64,6 +64,8 @@ switch is set.
 | `run_energy_equiv.sh` | checks that `EVOLUTION=ENERGY` and `EVOLUTION=DISPLACEMENT` agree when `u_f = 2 G_f / sigma_0` |
 | `run_nlobjectivity.sh` | the other sweep - refines **along** the axis at fixed `ell`, so the band must choose its own width, which is the sweep an internal length has to be objective against |
 | `run_nlwidth_scaling.sh` | holds the mesh and moves `ell`, which separates what the refinement sweep cannot: whether the width follows the internal length, and whether the dissipation follows with it |
+| `bandwidth.py` | the band width as `sum(D*V)/A`, with no threshold - it replaced a count over `D>0.5` that gave three verdicts for the three thresholds `de1stats` writes |
+| `run_nlwidth_gate.sh` | runs that sweep with `CCX_DAMAGE_NLWIDTH` off and on and requires the `ell` dependence to come down; a relative criterion, so there is no ceiling to pick |
 
 ## Why the sweep refines the cross-section
 
@@ -148,33 +150,43 @@ are checked rather than assumed.
   nonlocal arm moves from 1.000 to 1.333 - so that arm is quoted but not
   leaned on, and the verdict is the same at both viscosities.
 
-Measured on `4d06196`, `ell = 0.5`, viscosity `1.e-3`:
+Measured on `4d06196`, `ell = 0.5`, viscosity `1.e-3`, width by
+`bandwidth.py`:
 
 | quantity | local | `NONLOCAL=0.5` |
 |---|---|---|
-| band width, `h` = 1.0 / 0.5 / 0.25 | 1.000 -> 0.667 -> 0.417 | 1.000 -> 0.833 -> 1.083 |
-| the same in element layers | 1.00 -> 1.33 -> 1.67 | 1.00 -> 1.67 -> 4.33 |
+| band width, `h` = 1.0 / 0.5 / 0.25 | 1.049 -> 0.619 -> 0.592 | 1.407 -> 1.066 -> 1.261 |
+| nonlocal / local | | 1.34 -> 1.72 -> 2.13 |
 | peak force | 373.8 / 368.2 / 372.1 | 374.9 / 370.6 / 373.3 |
 | work before the peak | spread 1.07 % | spread 1.03 % |
 | work after the peak | spread 145 % | spread 124 % |
 
-**The width is held and the energy is not, and those are two different
-verdicts about the same run.**  The local band is one to two elements wide on
-every mesh - a width proportional to `h`, which is the pathology - while the
-nonlocal band spans 1 to 4.3 elements at a length that stays near `2*ell`.
-So the averaging does set the width.  The dissipation meanwhile disagrees by
-more than a factor of two, and the regularisation improves it by 20 points
-out of 145, which is nothing.
+**A RETRACTED ROW BELONGS HERE.**  The first version of this table measured
+the width as the count of integration points over `D>0.5` and reported
+`1.000 -> 0.667 -> 0.417` against `1.000 -> 0.833 -> 1.083`, concluding that
+the local band collapses while the nonlocal one holds.  `de1stats` writes
+three thresholds, so testing that choice cost nothing and was not done.  On
+the same runs `D>0.1` says the local band holds too and `D>0.9` says the
+nonlocal band collapses too.  The verdict was a property of the number 0.5.
+
+With the threshold-free measure the local band does **not** collapse: it falls
+and nearly stops, and a sharper notch on finer meshes (span 1.0, `h` = 0.5 /
+0.25 / 0.125) leaves it at 0.634 / 0.545 / 0.642 - so the floor is not the
+notch either, and what holds it there is not known.  What survives is the
+ratio, which needs no absolute scale and rises monotonically at both
+viscosities (1.34 -> 1.72 -> 2.13 at `1.e-3`, 1.39 -> 1.83 -> 2.08 at
+`3.e-3`).  The dissipation disagrees by more than a factor of two either way,
+and the regularisation improves it by 20 points out of 145, which is nothing.
 
 The refinement sweep cannot say why, because every candidate cause moves
 with `h`.  `run_nlwidth_scaling.sh` holds `h` = 0.25 and moves `ell`:
 
 | `ell` | width | width / `2*ell` | layers | `W_pre` | `W_post` |
 |---|---|---|---|---|---|
-| 0 (local) | 0.4167 | - | 1.67 | 6.3839 | 8.8725 |
-| 0.25 | 0.7500 | 1.500 | 3.00 | 6.3851 | 11.2615 |
-| 0.5 | 1.0833 | 1.083 | 4.33 | 6.3859 | 16.5533 |
-| 1.0 | 1.7500 | 0.875 | 7.00 | 6.3860 | 29.9855 |
+| 0 (local) | 0.5918 | - | 2.37 | 6.3839 | 8.8725 |
+| 0.25 | 0.8267 | 1.653 | 3.31 | 6.3851 | 11.2615 |
+| 0.5 | 1.2608 | 1.261 | 5.04 | 6.3859 | 16.5533 |
+| 1.0 | 2.1690 | 1.084 | 8.68 | 6.3860 | 29.9855 |
 
 `W_pre` is identical to 0.03 %, so nothing outside the fracture process
 moves.  The width follows `ell` and the dissipated work follows the width.
@@ -190,10 +202,16 @@ property Bazant and Oh 1983 build the crack band for.  A band `w` wide holds
                                         charlen = w  ->  G_f, always
 ```
 
-Against `G_f = 4.08` read from the deck's own header: `-8.0 %`, `-6.4 %`,
-`+5.0 %` on the three nonlocal arms, and `+30.5 %` on the local one, where
-the band is 1.67 elements and a count of points over a threshold is at its
-coarsest.
+Against `G_f = 4.08` read from the deck's own header, the ratio
+`W_post / (G_f * w/h)` comes out at 0.92, 0.84, 0.80, 0.85 - nearly constant,
+which is the statement that matters: **the dissipation is proportional to the
+number of element layers in the band, not to the band's width.**
+
+The constant itself is NOT established.  The same fit on `h` = 0.5 gives a
+slope of `1.39 G_f` against `0.83 G_f` here, so the proportionality transfers
+between meshes and the coefficient does not.  An earlier version of this
+section claimed the prediction held to `-8.0 / -6.4 / +5.0 %` with nothing
+fitted; that accuracy belonged to the `D>0.5` threshold and is withdrawn.
 
 **So the gradient backend is not failing objectivity - it is doing its job,
 and the softening law is not.**  `calcdamage.f:1973` replaces the local
@@ -206,14 +224,43 @@ and exactly the case an internal length abolishes.  Jirasek and Bauer 2012
 section 5 state the requirement directly: the width entering the softening
 law must be the width of the band that actually forms.
 
-The substitution that removes it is one line in the width cache, and it is
-not taken here: it changes the answer of every existing nonlocal run, the
-length has to arrive from the nonlocal side, and which length it should be -
-`2*ell`, the measured width, or `u_f` scaled by `h/w` instead - is a
-modelling decision and not a local one.  The numbers above are what such a
-change has to be judged against, and `run_nlwidth_scaling.sh` is the shape
-of the gate: after the fix `W_post` must stop depending on `ell`, which it
-currently does by a factor of 2.66.
+## The substitution, and what it did
+
+`CCX_DAMAGE_NLWIDTH=1` makes the width in the softening law the width the
+averaging forms, `2*ell`, wherever the mesh resolves it, and leaves the
+element's own width elsewhere.  Off by default, so every earlier answer is
+unchanged to the bit and the gate does not move.
+
+Two guards, and both make it a no-op rather than a guess.  The length comes
+from `damnlelleff(iel,ell,iok)` - the length that element was actually
+averaged with, including the material factor and the localising `g(D)`, not a
+global maximum - and it is used only at `iok=1`, by the criterion that lives
+in `damnonlocal.f` and is deliberately not repeated in `calcdamage.f`, so the
+two copies cannot drift apart.  And it never goes below the element's own
+width, since a band cannot be narrower than the element carrying it.
+
+Measured on the same sweep, `h` = 0.25, the same binary, the decks unchanged:
+
+| | `NLWIDTH=0` | `NLWIDTH=1` |
+|---|---|---|
+| `W_post` at `ell` = 0.25 / 0.5 / 1.0 | 11.26 / 16.55 / 29.99 | 5.69 / 4.42 / 6.12 |
+| `ell` dependence of `W_post` | **x2.66** | **x1.38** |
+| `W_post / (G_f * w/h)` | 0.84 / 0.80 / 0.85 | 0.48 / 0.25 / 0.24 |
+| local arm, unchanged by design | 8.87 | 8.87 |
+
+Read the third row first.  Off, that ratio is constant - the dissipation is
+one `G_f` per element layer, which is the defect.  On, it is no longer
+constant, so the per-layer charge is gone, and the `ell` dependence falls
+from 2.66 to 1.38.
+
+**It is not finished, and the honest number is 1.38 and not 1.0.**  The
+residual is non-monotone (5.69, 4.42, 6.12) across three arms, which is the
+size of an unexplained effect rather than of a converged one, and this
+directory has no business naming a cause for it yet.  `run_nlwidth_gate.sh`
+therefore judges by comparison - the same sweep with the switch off and on,
+and the dependence must come down - because a fixed ceiling would have to be
+picked above whatever today's value happens to be, and picking a threshold to
+pass is the mistake the retracted width measure above already made once.
 
 ## The unit test
 
