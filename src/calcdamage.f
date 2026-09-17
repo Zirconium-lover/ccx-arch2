@@ -1300,6 +1300,27 @@
 !           Newton iterations of an increment and across rollback
 !           retries of it, which is what keeps the law transactional.
 !
+!           THE SAME FREEZING STRUCTURE COST 8 PER CENT IN sigma_0, AND
+!           IT COSTS 0.007 PER CENT HERE.  Measured, not assumed, because
+!           the two caches freeze the same way and the question had to be
+!           asked of both.  The u_f cache took the LAST value before the
+!           threshold, and by then the neighbouring points of the band
+!           have initiated and are unloading this one, so it sampled a
+!           stress on the way down - see damcbufset.  Element 19 of the
+!           equivalence deck, the last two refreshes:
+!
+!             dambase=0.931604   L=1.0000000
+!             dambase=0.981067   L=0.9999312
+!
+!           The same unloading moves the width by seven thousandths of a
+!           per cent.  The asymmetry is not luck: sigma_0 is a MAGNITUDE
+!           and drops the moment the point leaves the yield surface,
+!           while L depends on the principal DIRECTION, which is set by
+!           how the element is held by its neighbours and barely turns.
+!
+!           So this cache needs no peak rule, and that is now a
+!           measurement rather than a plausible argument.
+!
             if(cbmodev.eq.1) then
               cbset=0
               if(dambase(jj,i).lt.xlimit) then
