@@ -66,7 +66,22 @@ export CCX_DAMAGE_DELETE_MAT=${CCX_DAMAGE_DELETE_MAT:-ALL}
 export CCX_DAMAGE_LINESEARCH=${CCX_DAMAGE_LINESEARCH:-ADAPTIVE}
 export CCX_DAMAGE_REEQ_RESCUE2=${CCX_DAMAGE_REEQ_RESCUE2:-1}
 export CCX_DAMAGE_REEQ_SCALE=${CCX_DAMAGE_REEQ_SCALE:-PHYSICAL}
-export CCX_DAMAGE_TANGENT=${CCX_DAMAGE_TANGENT:-UNSYM}
+# CCX_DAMAGE_TANGENT is deliberately NOT exported here.
+#
+# It used to be forced to UNSYM on every case, which meant the gate
+# validated a configuration the binary does not use by default: eighteen
+# cases with the rank-1 damage term on, one case checking the default.
+# That is the wrong way round - a gate should validate what ships and pin
+# the deviation, not the other way about.  fast-plain-unsym is now the one
+# case that turns it on.
+#
+# It is not free to remove: four cases moved by two or three increments
+# and the fifth digit of theta, with the deletion sets unchanged.  Those
+# baselines were re-measured and say so in their own descriptions.
+#
+# Measured on multi-point elements, UNSYM is also actively harmful there -
+# a C3D8 deck fails at theta=0.135 with it and 0.215 without - so a
+# hexahedral case must not inherit it either.
 export CCX_DAMAGE_TOPOLOGY=${CCX_DAMAGE_TOPOLOGY:-DEFERRED}
 export CCX_DAMAGE_TR_DOGLEG=${CCX_DAMAGE_TR_DOGLEG:-1}
 export CCX_DAMAGE_VISCOSITY=${CCX_DAMAGE_VISCOSITY:-1.e-4}

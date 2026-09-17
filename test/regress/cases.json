@@ -54,12 +54,12 @@
    }
   },
   {
-   "name": "fast-plain-notangent",
-   "what": "the same deck with the damage-consistent tangent switched OFF entirely. MEASURED against fast-plain: the fracture is IDENTICAL - m.damage byte-for-byte, the same 90 deletions in the same order at the same times - and the terminal grip reaction prints the same seven digits, 3.999343E+00. What moves is the per-node split of that reaction, by at most 2.18e-04 relative, and the transverse displacements, by at most 7.1e-09 absolute on a field whose axial component is 1.0. The run takes 0.2 percent FEWER Newton iterations and 33 percent LESS wall time (26.55 s against 35.33 s). This case exists because until it was added the gate had never once run without CCX_DAMAGE_TANGENT: run_s3rad.sh exports UNSYM unconditionally, so the switch had no test and its cost had never been paid attention to. The m.dat tolerance is 5e-04 relative with a 1e-07 absolute floor: the floor is what keeps a 7e-09 wobble on a near-zero transverse component from being read as a 3e-04 relative difference, and 5e-04 is a little above the 2.18e-04 actually measured. DISCLOSURE: what was fixed before the run, per 09-STEERING, was the PHYSICAL criterion - the same deletion set, the same severance theta, the same converged answer - and that criterion passed on its own terms. The numeric m.dat tolerance was first guessed at 1e-04, the case went red, and 5e-04 was chosen after seeing the data. That is a tolerance fitted to the measurement, and it is only admissible because the criterion it replaced is the one that decides, and that one was not moved.",
+   "name": "fast-plain-unsym",
+   "what": "the same deck with the damage-consistent tangent switched ON. It used to be the reverse - the gate forced UNSYM on every case and this one turned it off - and it was flipped when the unconditional export was removed, because a case that asks for what is now the default tests nothing and passes: 'Not wrong: UNINFORMATIVE, which is the expensive kind', as run_fast's own docstring puts it about a different case that had already failed this way. Agent 2 caught it. MEASURED against fast-plain: the fracture is IDENTICAL - m.damage byte-for-byte, the same 90 deletions in the same order at the same times - and the terminal grip reaction prints the same seven digits. What moves is the per-node split of that reaction, by at most 2.18e-04 relative, and the transverse displacements, by at most 7.1e-09 absolute on a field whose axial component is 1.0. The run takes 0.2 percent MORE Newton iterations and 33 percent MORE wall time. DISCLOSURE: on C3D4 the rank-1 term is zero on the softening branch, which is why the fracture does not move; on MULTI-POINT elements it is not zero and is harmful - a C3D8 deck fails at theta=0.135 with it against 0.215 without - so this case pins a deviation that is known to cost, not a recommended setting.",
    "kind": "fast",
    "variant": "plain",
    "env": [
-    "CCX_DAMAGE_TANGENT="
+    "CCX_DAMAGE_TANGENT=UNSYM"
    ],
    "expect": {
     "rc": 0,
@@ -138,14 +138,14 @@
   },
   {
    "name": "fast-wrapped",
-   "what": "the eroding phase wrapped in facets: reaches a node with no bulk support, and walls on the crack-face kink",
+   "what": "the eroding phase wrapped in facets: reaches a node with no bulk support, and walls on the crack-face kink REBASELINED when the unconditional CCX_DAMAGE_TANGENT=UNSYM export was removed from run_s3rad.sh, so this case now runs the binary's DEFAULT tangent instead of a forced one. What moved is trajectory and nothing else: last_inc 99 -> 96 and the fifth digit of theta, 0.158766E+00 -> 0.158754E+00. The deletion set was checked element by element against the run with the export and is IDENTICAL (64 elements, same members) - that check is what makes this a rebaseline rather than a change of answer, and if it had moved the removal would have been stopped instead. Measured cost of the removal on this gate: 154 s against 179 s for the full 20 cases at -j 2, one thread per process - NOT the 37 percent the binary's banner quotes, which was measured on s3rad rather than on these decks.",
    "kind": "fast",
    "variant": "wrapped",
    "env": [],
    "expect": {
     "rc": 201,
-    "last_inc": 99,
-    "theta": "0.158766E+00",
+    "last_inc": 96,
+    "theta": "0.158754E+00",
     "deletions": 64,
     "masked_max": 1,
     "worst_ratio": 0.00044641
@@ -185,7 +185,7 @@
   },
   {
    "name": "fast-wrapped-nospc",
-   "what": "the same wall without the load-path mask, which must not change it. MEASURED, once the override actually reached the binary: m.sta and m.damage are byte-identical to fast-wrapped - same wall at increment 99, same 64 deletions in the same order - and m.cvg differs at exactly one place, increment 93 attempt 2 iteration 3, CORR.DISP 0.1018 against 0.1438. That single difference IS the mask: it excludes a node from the displacement norm and changes nothing else.",
+   "what": "the same wall without the load-path mask, which must not change it. MEASURED, once the override actually reached the binary: m.sta and m.damage are byte-identical to fast-wrapped - same wall at increment 99, same 64 deletions in the same order - and m.cvg differs at exactly one place, increment 93 attempt 2 iteration 3, CORR.DISP 0.1018 against 0.1438. That single difference IS the mask: it excludes a node from the displacement norm and changes nothing else. REBASELINED when the unconditional CCX_DAMAGE_TANGENT=UNSYM export was removed from run_s3rad.sh, so this case now runs the binary's DEFAULT tangent instead of a forced one. What moved is trajectory and nothing else: last_inc 99 -> 96 and theta 0.158766E+00 -> 0.158754E+00. The deletion set was checked element by element against the run with the export and is IDENTICAL (64 elements, same members) - that check is what makes this a rebaseline rather than a change of answer, and if it had moved the removal would have been stopped instead. Measured cost of the removal on this gate: 154 s against 179 s for the full 20 cases at -j 2, one thread per process - NOT the 37 percent the binary's banner quotes, which was measured on s3rad rather than on these decks.",
    "kind": "fast",
    "variant": "wrapped",
    "env": [
@@ -193,8 +193,8 @@
    ],
    "expect": {
     "rc": 201,
-    "last_inc": 99,
-    "theta": "0.158766E+00",
+    "last_inc": 96,
+    "theta": "0.158754E+00",
     "deletions": 64
    },
    "equal_to": {
@@ -227,7 +227,7 @@
   },
   {
    "name": "fast-wrapped-cut",
-   "what": "the same wall with the load-path WIDTH measured on every committed batch but the stopping threshold set to 1e-09, which nothing reaches. This is the no-perturbation proof: a measurement that silently changes the run it measures is worse than no measurement, so all five output files must be byte-identical to fast-wrapped. The measure's self test - fifteen checks including the one where deleting a wide bridge collapses the cut by 99.9 percent while every boolean rule still says CONNECTED - runs before the switch is allowed to arm and must report PASSED.",
+   "what": "the same wall with the load-path WIDTH measured on every committed batch but the stopping threshold set to 1e-09, which nothing reaches. This is the no-perturbation proof: a measurement that silently changes the run it measures is worse than no measurement, so all five output files must be byte-identical to fast-wrapped. The measure's self test - fifteen checks including the one where deleting a wide bridge collapses the cut by 99.9 percent while every boolean rule still says CONNECTED - runs before the switch is allowed to arm and must report PASSED. REBASELINED when the unconditional CCX_DAMAGE_TANGENT=UNSYM export was removed from run_s3rad.sh, so this case now runs the binary's DEFAULT tangent instead of a forced one. What moved is trajectory and nothing else: last_inc 99 -> 96 and theta 0.158766E+00 -> 0.158754E+00. The deletion set was checked element by element against the run with the export and is IDENTICAL (64 elements, same members) - that check is what makes this a rebaseline rather than a change of answer, and if it had moved the removal would have been stopped instead. Measured cost of the removal on this gate: 154 s against 179 s for the full 20 cases at -j 2, one thread per process - NOT the 37 percent the binary's banner quotes, which was measured on s3rad rather than on these decks.",
    "kind": "fast",
    "variant": "wrapped",
    "env": [
@@ -235,8 +235,8 @@
    ],
    "expect": {
     "rc": 201,
-    "last_inc": 99,
-    "theta": "0.158766E+00",
+    "last_inc": 96,
+    "theta": "0.158754E+00",
     "deletions": 64
    },
    "same_deletion_set_as": "fast-wrapped",
@@ -391,7 +391,7 @@
   },
   {
    "name": "fast-plain-charlen",
-   "what": "the same deck with the DIRECTIONAL crack-band width armed, CCX_DAMAGE_CHARLEN=1, instead of the legacy (6V)^(1/3).  This case exists because the switch changes a length that stands in the damage law itself, D += L*dEps_p/u_f, so it cannot be covered by a byte-identity case - the answer is expected to move - and because nothing else in the gate executes the projection at all.  What it pins is the part that must NOT move: the fracture.  MEASURED, 90 deletions and the SAME 90 ELEMENTS as fast-plain, which is what same_deletion_set_as asserts; only the trajectory shifts, 508 increments against 507.  The shift is one-sided and explainable: 68 of the 90 elements fail EARLIER and none later, by at most 6.72 per cent in load fraction, because on these tetrahedra the projection onto the major principal direction is LARGER than the cube root of six volumes, and a larger L accumulates damage faster.  The reference for the width itself is not here but in test/crackband/run_cbwidth_test.sh, which checks it against hand-computable geometry, and the reason the two lengths agree so closely on this deck at all is that on the corner tetrahedron of a cube they are exactly equal - see case 5 there.  DISCLOSURE: this case runs the projection on C3D4 only, because the deck is C3D4.  The lift of the C3D4 restriction that the same switch performs is not covered by the gate; it is reproduced by test/hex/mkhex.py, which needs a case kind of its own in run.py and is therefore still outside.",
+   "what": "the same deck with the DIRECTIONAL crack-band width armed, CCX_DAMAGE_CHARLEN=1, instead of the legacy (6V)^(1/3).  This case exists because the switch changes a length that stands in the damage law itself, D += L*dEps_p/u_f, so it cannot be covered by a byte-identity case - the answer is expected to move - and because nothing else in the gate executes the projection at all.  What it pins is the part that must NOT move: the fracture.  MEASURED, 90 deletions and the SAME 90 ELEMENTS as fast-plain, which is what same_deletion_set_as asserts; only the trajectory shifts, 508 increments against 507.  The shift is one-sided and explainable: 68 of the 90 elements fail EARLIER and none later, by at most 6.72 per cent in load fraction, because on these tetrahedra the projection onto the major principal direction is LARGER than the cube root of six volumes, and a larger L accumulates damage faster.  The reference for the width itself is not here but in test/crackband/run_cbwidth_test.sh, which checks it against hand-computable geometry, and the reason the two lengths agree so closely on this deck at all is that on the corner tetrahedron of a cube they are exactly equal - see case 5 there.  DISCLOSURE: this case runs the projection on C3D4 only, because the deck is C3D4.  The lift of the C3D4 restriction that the same switch performs is not covered by the gate; it is reproduced by test/hex/mkhex.py, which needs a case kind of its own in run.py and is therefore still outside. REBASELINED when the unconditional CCX_DAMAGE_TANGENT=UNSYM export was removed from run_s3rad.sh, so this case now runs the binary's DEFAULT tangent instead of a forced one. What moved is trajectory and nothing else: last_inc 508 -> 506; theta stays 1.0 exactly. The deletion set was checked element by element against the run with the export and is IDENTICAL (90 elements, same members) - that check is what makes this a rebaseline rather than a change of answer, and if it had moved the removal would have been stopped instead. Measured cost of the removal on this gate: 154 s against 179 s for the full 20 cases at -j 2, one thread per process - NOT the 37 percent the binary's banner quotes, which was measured on s3rad rather than on these decks.",
    "kind": "fast",
    "variant": "plain",
    "env": [
@@ -399,7 +399,7 @@
    ],
    "expect": {
     "rc": 0,
-    "last_inc": 508,
+    "last_inc": 506,
     "theta": "0.100000E+01",
     "deletions": 90
    },
