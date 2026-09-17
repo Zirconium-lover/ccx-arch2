@@ -391,7 +391,7 @@
   },
   {
    "name": "fast-plain-charlen",
-   "what": "the same deck with the DIRECTIONAL crack-band width armed, CCX_DAMAGE_CHARLEN=1, instead of the legacy (6V)^(1/3).  This case exists because the switch changes a length that stands in the damage law itself, D += L*dEps_p/u_f, so it cannot be covered by a byte-identity case - the answer is expected to move - and because nothing else in the gate executes the projection at all.  What it pins is the part that must NOT move: the fracture.  MEASURED, 90 deletions and the SAME 90 ELEMENTS as fast-plain, which is what same_deletion_set_as asserts; only the trajectory shifts, 508 increments against 507.  The shift is one-sided and explainable: 68 of the 90 elements fail EARLIER and none later, by at most 6.72 per cent in load fraction, because on these tetrahedra the projection onto the major principal direction is LARGER than the cube root of six volumes, and a larger L accumulates damage faster.  The reference for the width itself is not here but in test/crackband/run_cbwidth_test.sh, which checks it against hand-computable geometry, and the reason the two lengths agree so closely on this deck at all is that on the corner tetrahedron of a cube they are exactly equal - see case 5 there.  DISCLOSURE: this case runs the projection on C3D4 only, because the deck is C3D4.  The lift of the C3D4 restriction that the same switch performs is covered SEPARATELY, by hex-nonlocal-card - which was outside the gate when this description was first written and is not any more.  That case pins a geometric neighbour count rather than a verdict, because the two failures it guards against were both silent: a hexahedral deck ran unregularised while looking healthy. REBASELINED when the unconditional CCX_DAMAGE_TANGENT=UNSYM export was removed from run_s3rad.sh, so this case now runs the binary's DEFAULT tangent instead of a forced one. What moved is trajectory and nothing else: last_inc 508 -> 506; theta stays 1.0 exactly. The deletion set was checked element by element against the run with the export and is IDENTICAL (90 elements, same members) - that check is what makes this a rebaseline rather than a change of answer, and if it had moved the removal would have been stopped instead. Measured cost of the removal on this gate: 154 s against 179 s for the full 20 cases at -j 2, one thread per process - NOT the 37 percent the binary's banner quotes, which was measured on s3rad rather than on these decks.",
+   "what": "the same deck with the DIRECTIONAL crack-band width armed, CCX_DAMAGE_CHARLEN=1, instead of the legacy (6V)^(1/3).  This case exists because the switch changes a length that stands in the damage law itself, D += L*dEps_p/u_f, so it cannot be covered by a byte-identity case - the answer is expected to move - and because nothing else in the gate executes the projection at all.  What it pins is the part that must NOT move: the fracture.  MEASURED, 90 deletions and the SAME 90 ELEMENTS as fast-plain, which is what same_deletion_set_as asserts; only the trajectory shifts, 508 increments against 507.  The shift is one-sided and explainable: 68 of the 90 elements fail EARLIER and none later, by at most 6.72 per cent in load fraction, because on these tetrahedra the projection onto the major principal direction is LARGER than the cube root of six volumes, and a larger L accumulates damage faster.  The reference for the width itself is not here but in test/crackband/run_cbwidth_test.sh, which checks it against hand-computable geometry, and the reason the two lengths agree so closely on this deck at all is that on the corner tetrahedron of a cube they are exactly equal - see case 5 there.  DISCLOSURE: this case runs the projection on C3D4 only, because the deck is C3D4.  The lift of the C3D4 restriction that the same switch performs is covered SEPARATELY, by hex-nonlocal-card (integral backend) and hex-gradient-card (gradient backend) - which was outside the gate when this description was first written and is not any more.  That case pins a geometric neighbour count rather than a verdict, because the two failures it guards against were both silent: a hexahedral deck ran unregularised while looking healthy. REBASELINED when the unconditional CCX_DAMAGE_TANGENT=UNSYM export was removed from run_s3rad.sh, so this case now runs the binary's DEFAULT tangent instead of a forced one. What moved is trajectory and nothing else: last_inc 508 -> 506; theta stays 1.0 exactly. The deletion set was checked element by element against the run with the export and is IDENTICAL (90 elements, same members) - that check is what makes this a rebaseline rather than a change of answer, and if it had moved the removal would have been stopped instead. Measured cost of the removal on this gate: 154 s against 179 s for the full 20 cases at -j 2, one thread per process - NOT the 37 percent the binary's banner quotes, which was measured on s3rad rather than on these decks.",
    "kind": "fast",
    "variant": "plain",
    "env": [
@@ -417,6 +417,24 @@
    ],
    "expect": {
     "neighbours": 1.0
+   }
+  },
+  {
+   "name": "hex-gradient-card",
+   "kind": "hex",
+   "mode": "uniaxial",
+   "nonlocal_ell": 0.3,
+   "env": [
+    "CCX_DAMAGE_CHARLEN=1",
+    "CCX_DAMAGE_TANGENT=",
+    "CCX_DAMAGE_NONLOCAL_MODE=GRADIENT"
+   ],
+   "what": "the IMPLICIT GRADIENT backend on hexahedra, with the internal length taken from the MATERIAL CARD. Nothing in the gate ran this backend at all before this case, which is how it carried two silent failures at once: it skipped every element that was not C3D4 - so a hexahedral deck got NO regularisation while the banner named a backend - and it read ell from the ENVIRONMENT only, so a card-only deck ran with ell=0, i.e. ebar=e, which is again no regularisation. Neither shows up as a wrong answer to look at: a run that regularises nothing converges BETTER, so any expectation on convergence or deletions would have gone GREEN on both. What is pinned is therefore GEOMETRIC and exact: packed=576 is the size of the packed conductivity, 16 hexahedra times 8*9/2=36, so it is zero if the family is skipped and wrong if the packing is; gradell=0.3 is the length the backend armed itself with, which is 0.0 if the card is not read; gradrefused=0 says no element was dropped. Measured on the merged tree. Convergence is NOT pinned: this deck does not reach the end of its step with the internal length on, the same characterised limitation of the staggered scheme that hex-nonlocal-card carries, and pinning it would cement it.",
+   "expect": {
+    "rc": 201,
+    "packed": 576,
+    "gradell": 0.3,
+    "gradrefused": 0
    }
   }
  ],

@@ -141,6 +141,36 @@ def run_close(case,rundir,exe):
     r=sh('%s -i close > run.log 2>&1'%exe,env,cwd=rundir)
     return r.returncode,rundir/'run.log',rundir/'close.sta',None
 
+def gradient_facts(log):
+    """What the GRADIENT backend printed about itself.
+
+    Two numbers, both GEOMETRIC and therefore exact: the number of packed
+    conductivity entries (sum over elements of nc*(nc+1)/2, so 10 per
+    tetrahedron and 36 per hexahedron) and the internal length the backend
+    actually armed itself with.
+
+    They are pinned because both of this backend's failures were SILENT and
+    neither moved a trajectory into the red: it skipped every element that
+    was not a tetrahedron, and it read the internal length from the
+    environment only, so a card-only deck ran with ell=0 - that is, with no
+    regularisation at all - while printing a backend banner. A run that
+    regularises nothing converges BETTER, so no expectation on convergence
+    would ever have caught it."""
+    out={}
+    for ln in open(log,errors='replace'):
+        if 'gradient backend' in ln:
+            m=re.search(r'ell=\s*([0-9.eE+-]+)\s+nodes=\s*(\d+)'
+                        r'\s+packed=\s*(\d+)',ln)
+            if m:
+                out['gradell']=float(m.group(1))
+                out['gradnodes']=int(m.group(2))
+                out['packed']=int(m.group(3))
+        if 'WARNING in damgradient' in ln:
+            m=re.search(r'damgradient:\s*(\d+)',ln)
+            if m: out['gradrefused']=int(m.group(1))
+    out.setdefault('gradrefused',0)
+    return out
+
 def run_hex(case,rundir,exe):
     """The hexahedral deck, run directly rather than through run_fast.sh.
 
@@ -219,6 +249,8 @@ def one(case,outroot,exe,required,lines):
         except OSError: txt=''
         m=re.search(r'mean neighbours=\s*([0-9.E+-]+)',txt)
         if m: got['neighbours']=float(m.group(1))
+    if any(k in exp for k in ('packed','gradell','gradrefused','gradnodes')):
+        got.update(gradient_facts(log))
     if 'check_mixed' in exp:
         r=sh('python3 %s/test/pathfollow/check_mixed.py %s'%(ROOT,rundir),base_env([]))
         got['check_mixed']='PASSED' if 'PASSED' in r.stdout else 'FAILED'
@@ -229,7 +261,7 @@ def one(case,outroot,exe,required,lines):
         have=got.get(k)
         if k in ('worst_ratio','tangent_ratio'):
             ok = have is not None and abs(have-want)<=1e-2*abs(want)
-        elif k=='neighbours':
+        elif k in ('neighbours','gradell'):
             ok = have is not None and abs(have-want)<=1e-9*max(1.,abs(want))
         elif k in ('law_error','opcheck_wrong','opcheck_maxerr'):
             ok = have is not None and have<=want
@@ -342,7 +374,9 @@ def main():
     for name,script in (('crack-band width',
                          'test/crackband/run_cbwidth_test.sh'),
                         ('element geometry',
-                         'test/nonlocal/run_elgeom_test.sh')):
+                         'test/nonlocal/run_elgeom_test.sh'),
+                        ('element matrices',
+                         'test/nonlocal/run_elmk_test.sh')):
         g=sh('bash %s/%s'%(ROOT,script),base_env([]))
         last=(g.stdout.strip().splitlines() or ['no output'])[-1]
         print("preflight  %s self test: %s"%(name,last.strip()))

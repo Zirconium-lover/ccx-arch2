@@ -3823,7 +3823,28 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
          58 GB at ell=0.45 on demo_realistic_clusters3 against 31.6 GB of
          machine, because one hydride element's neighbourhood holds
          thousands of tiny elements.  The PDE form is O(nnz) on any mesh
-         and is the only one that can be used on a graded mesh at all. */
+         and is the only one that can be used on a graded mesh at all.
+
+         GRADIENT handles EVERY volume family.  It used to cache
+         hand-written linear-tetrahedron shape gradients and skip
+         everything else, so a hexahedral deck got no regularisation at
+         all while the banner still named a backend; and it took the
+         internal length from CCX_DAMAGE_NONLOCAL only, so a deck that
+         put NONLOCAL= on its material card ran it with ell=0, that is
+         ebar=e.  Both are fixed and both are pinned by the gate case
+         hex-gradient-card - on GEOMETRY rather than on convergence,
+         because a backend that regularises nothing converges BETTER
+         (measured: the broken one completes the deck at theta=1.0 where
+         the fixed one stops at 0.235), so no trajectory expectation
+         would have caught either.
+
+         The tetrahedral gradients it replaced were wrong as well, on any
+         element whose Jacobian is not symmetric: they read the ROWS of
+         J^-1 where the COLUMNS are meant.  A corner tetrahedron of a cube
+         has a symmetric J, which is why every closed form checked out
+         under both.  On a general tetrahedron the old rule fails a
+         linear-field patch test by 45 per cent; test/nonlocal/
+         elmk_test.f keeps that as a guard so the rule cannot come back. */
       if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_NONLOCAL_MODE"))!=NULL){
         if((strcmp(damage_de13_env,"GRADIENT")==0)||
            (strcmp(damage_de13_env,"gradient")==0)){
