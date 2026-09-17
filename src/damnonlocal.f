@@ -68,17 +68,33 @@
       integer :: nbuilt=0,nesave=0
 !
 !     GRADIENT backend state.  imodenl: 0 = integral (the original), 1 =
-!     implicit gradient.  bgrad/vele/elnod cache the linear-tetrahedron
-!     shape-function gradients, volumes and connectivity on the REFERENCE
+!     implicit gradient.  gmass/gkpk/elnod cache the ELEMENT MATRICES of
+!     the implicit-gradient equation - the lumped mass int N_a dV and the
+!     conductivity int grad N_a . grad N_b dV - on the REFERENCE
 !     configuration, for the same reason the neighbour list is built there:
 !     the internal length is a material property and must not drift as the
 !     mesh distorts.  nknl is the node count, derived from kon rather than
 !     threaded through calcdamagebase and four call sites in nonlingeo.c.
 !
-      integer :: imodenl=0,gbuilt=0,nknl=0,fbuilt=0
-      real*8, allocatable :: bgrad(:,:,:),vele(:),ebar(:),
-     &     gdiag(:),grhs(:),gp(:),gap(:),gz(:),gr(:)
-      integer, allocatable :: elnod(:,:)
+!     These used to be hand-written linear-tetrahedron gradients in
+!     bgrad(3,4,ne0), and every other family was skipped.  They now come
+!     from damnlelmk, which uses ccx's own element library; see the
+!     comment there for the two decisions that carries.
+!
+!     gkpk is PACKED: element i owns gnc(i)*(gnc(i)+1)/2 entries of the
+!     upper triangle starting at gkst(i), because a tetrahedral mesh
+!     should not pay a hexahedron's 36 slots for its 10.  The price is
+!     that the cache is built in two passes - one to size it, one to fill
+!     it - and damnlelmk is therefore called twice per element.  That is
+!     once per ANALYSIS, not per iteration, and it buys back roughly a
+!     factor of three on the dominant array for the mesh family the
+!     module is most often used on.
+!
+      integer :: imodenl=0,gbuilt=0,nknl=0,fbuilt=0,nkpack=0
+      real*8, allocatable :: vele(:),ebar(:),
+     &     gdiag(:),grhs(:),gp(:),gap(:),gz(:),gr(:),
+     &     gmass(:,:),gkpk(:)
+      integer, allocatable :: elnod(:,:),gnc(:),gkst(:)
 !
 !     PER-ELEMENT internal length.  ell2e(i) is what the two assembly
 !     loops read; everything else in the backend is unchanged.  ellmf
@@ -438,6 +454,159 @@
         vol=vol+dabs(d6)/6.d0
       enddo
       if(vol.le.0.d0) return
+      iok=1
+      return
+      end
+!
+!     ==================================================================
+!     Element matrices of the implicit-gradient equation, for ANY volume
+!     family - this is what lifts C3D4 out of the GRADIENT backend.
+!
+!     Peerlings et al. 1996 write the nonlocal equation as
+!
+!         ebar - div( ell^2 grad ebar ) = e
+!
+!     whose weak form on one element contributes
+!
+!         ml(a)    = int N_a dV            (row-sum lumped mass)
+!         kel(a,b) = int grad N_a . grad N_b dV
+!
+!     and NOTHING else.  The backend used to hardwire both for a linear
+!     tetrahedron, where ml = V/4 and grad N is constant, and skip every
+!     other family.  Both integrals exist for every family; only the
+!     quadrature and the shape functions change, and ccx already owns
+!     those.
+!
+!     Two decisions, and the reasons they are decisions and not defaults:
+!
+!     1. The shape functions come from ccx's OWN shape4tet/shape8h/
+!        shape6w and the quadrature from gauss.f, the same pair e_c3d.f
+!        uses.  A private copy of the element library would be a second
+!        source of truth for geometry that ccx already defines, and would
+!        drift from it at the first change to either.
+!
+!     2. ebar is interpolated LINEARLY, on the CORNER nodes, for every
+!        family including the quadratic ones.  That is the standard
+!        choice for the implicit-gradient model (Peerlings et al. 1996):
+!        the nonlocal field is taken one order below the displacement
+!        field, which is both cheaper and better behaved - an equal-order
+!        ebar on a quadratic element admits oscillations the averaging is
+!        supposed to remove.  The consequence to state plainly: on a
+!        quadratic element with CURVED edges the geometry seen here is
+!        the straight-edged one.  For the internal length that is a
+!        second-order error in a quantity that is itself a modelling
+!        constant; for a straight-edged quadratic element it is exact.
+!
+!     The lumping is row-sum, which for these shape functions is
+!     int N_a dV: positive for all three linear families, and exactly the
+!     V/4 the old tetrahedral path used.  That equality is not a
+!     coincidence to be trusted - it is checked in
+!     test/nonlocal/elmk_test.f against the closed form.
+!
+      subroutine damnlelmk(lakonl,kon,co,indexe,nc,nod,ml,kel,iok)
+      implicit none
+      character*8 lakonl
+      integer kon(*),indexe,nc,nod(8),iok,i,j,k,nip,ifam,node
+      real*8 co(3,*),ml(8),kel(8,8),xl(3,8),shp(4,8),xsj,xi,et,ze,w
+!
+      include "gauss.f"
+!
+      iok=0
+      nc=0
+      nip=0
+      ifam=0
+      do i=1,8
+        nod(i)=0
+        ml(i)=0.d0
+        do j=1,8
+          kel(i,j)=0.d0
+        enddo
+      enddo
+      if(lakonl(1:1).ne.'C') return
+!
+!     family by CORNER count.  The corner count is what ebar is
+!     interpolated on, so C3D20 and C3D8 land in the same branch by
+!     construction rather than by a list that has to be maintained.
+!     ifam: 1 = tetrahedron, 2 = wedge, 3 = hexahedron.
+!
+      if((lakonl(4:5).eq.'20').or.(lakonl(4:4).eq.'8')) then
+        nc=8
+        ifam=3
+        nip=8
+      elseif((lakonl(4:5).eq.'15').or.(lakonl(4:4).eq.'6')) then
+        nc=6
+        ifam=2
+        nip=6
+      elseif((lakonl(4:5).eq.'10').or.(lakonl(4:4).eq.'4')) then
+        nc=4
+        ifam=1
+        nip=4
+      else
+        nc=0
+        return
+      endif
+!
+      do j=1,nc
+        node=kon(indexe+j)
+        if(node.le.0) then
+          nc=0
+          return
+        endif
+        nod(j)=node
+        xl(1,j)=co(1,node)
+        xl(2,j)=co(2,node)
+        xl(3,j)=co(3,node)
+      enddo
+!
+      do k=1,nip
+        if(ifam.eq.3) then
+          xi=gauss3d2(1,k)
+          et=gauss3d2(2,k)
+          ze=gauss3d2(3,k)
+          w=weight3d2(k)
+          call shape8h(xi,et,ze,xl,xsj,shp,3)
+        elseif(ifam.eq.2) then
+          xi=gauss3d10(1,k)
+          et=gauss3d10(2,k)
+          ze=gauss3d10(3,k)
+          w=weight3d10(k)
+          call shape6w(xi,et,ze,xl,xsj,shp,3)
+        else
+          xi=gauss3d5(1,k)
+          et=gauss3d5(2,k)
+          ze=gauss3d5(3,k)
+          w=weight3d5(k)
+          call shape4tet(xi,et,ze,xl,xsj,shp,3)
+        endif
+!
+!       a non-positive Jacobian is a degenerate or inverted element;
+!       refuse the whole element rather than integrate part of it, so
+!       the caller can keep it out of the assembly instead of getting a
+!       matrix that is quietly wrong.
+!
+        if(xsj.le.0.d0) then
+          nc=0
+          return
+        endif
+        w=w*xsj
+        do i=1,nc
+          ml(i)=ml(i)+w*shp(4,i)
+          do j=1,nc
+            kel(i,j)=kel(i,j)+w*(shp(1,i)*shp(1,j)+shp(2,i)*shp(2,j)
+     &           +shp(3,i)*shp(3,j))
+          enddo
+        enddo
+      enddo
+!
+!     a lumped mass must be positive for every node, or the mass term
+!     stops being a norm and the CG below loses its guarantee
+!
+      do i=1,nc
+        if(ml(i).le.0.d0) then
+          nc=0
+          return
+        endif
+      enddo
       iok=1
       return
       end
@@ -1297,10 +1466,10 @@
       real*8 co(3,*),xstate(nstate_,mi(1),*),
      &     xstateini(nstate_,mi(1),*),dam(mi(1),*)
 !
-      integer i,j,a,n1,n2,n3,n4,indexe,it,maxit,nd,im
-      integer ionnl,nskip
-      real*8 ell2,det,dv,x1(3),e1(3),e2(3),e3(3),ji(3,3),
-     &     s,rz,rzold,pap,alpha,beta,rnorm,rnorm0,tol,fm,dloc,gloc
+      integer i,j,a,b,indexe,it,maxit,nd,im,nc,nod(8),iokel,iokg
+      integer ionnl,nskip,nptot,ip,nipel,ib
+      real*8 ell2,s,rz,rzold,pap,alpha,beta,rnorm,rnorm0,tol,fm,
+     &     dloc,gloc,ml(8),kel(8,8),cx,cy,cz,volel,wsum,elli,ellrep
 !
       call damnlactive(ionnl)
       if(ionnl.eq.0) return
@@ -1313,76 +1482,83 @@
       if((gbuilt.ne.0).and.(nesave.ne.ne0)) gbuilt=0
       nskip=0
       if(gbuilt.eq.0) then
-        if(allocated(bgrad)) deallocate(bgrad,vele,elnod)
-        allocate(bgrad(3,4,ne0),vele(ne0),elnod(4,ne0))
+        if(allocated(gmass)) deallocate(gmass,vele,elnod,gnc,gkst)
+        allocate(gmass(8,ne0),vele(ne0),elnod(8,ne0),gnc(ne0),
+     &       gkst(ne0))
+        if(allocated(nipe)) deallocate(nipe)
+        allocate(nipe(ne0))
         nknl=0
+        nptot=0
+!
+!       PASS ONE: masses, connectivity, and the size of the packed
+!       conductivity.  An element damnlelmk refuses - a family that is
+!       not a volume element, an inverted Jacobian - is counted and left
+!       out of the assembly with gnc=0, which every loop below tests.
+!       It is NOT silently averaged as if it were regularised, which is
+!       what the C3D4-only version did to every hexahedron in the mesh.
+!
         do i=1,ne0
           vele(i)=0.d0
-          elnod(1,i)=0
-          elnod(2,i)=0
-          elnod(3,i)=0
-          elnod(4,i)=0
+          gnc(i)=0
+          gkst(i)=0
+          nipe(i)=0
+          do j=1,8
+            elnod(j,i)=0
+            gmass(j,i)=0.d0
+          enddo
           if(ipkon(i).lt.0) cycle
-!
-!         THE GRADIENT BACKEND IS STILL C3D4 ONLY, AND NOW IT SAYS SO.
-!
-!         It caches linear-tetrahedron shape-function gradients, so a
-!         hexahedron has nothing here to compute with, and generalising it
-!         means gradients per family and per integration point - a larger
-!         job than the integral form needed, and a half-done one would be
-!         worse than none.
-!
-!         What is NOT acceptable is the silent skip this used to be.  Twice
-!         this session a regularisation that quietly did nothing looked
-!         exactly like one that worked: the integral backend skipped every
-!         element that was not a tetrahedron, and every guard asked a length
-!         only the environment could set.  Both cost hours precisely because
-!         nothing was printed.  So this counts what it drops and says it
-!         once, naming the backend that does handle those elements.
-!
-          if(lakon(i)(1:4).ne.'C3D4') then
+          indexe=ipkon(i)
+          call damnlelmk(lakon(i),kon,co,indexe,nc,nod,ml,kel,iokel)
+          if(iokel.eq.0) then
             nskip=nskip+1
             cycle
           endif
-          indexe=ipkon(i)
-          n1=kon(indexe+1)
-          n2=kon(indexe+2)
-          n3=kon(indexe+3)
-          n4=kon(indexe+4)
-          elnod(1,i)=n1
-          elnod(2,i)=n2
-          elnod(3,i)=n3
-          elnod(4,i)=n4
-          nknl=max(nknl,n1,n2,n3,n4)
-          do j=1,3
-            x1(j)=co(j,n1)
-            e1(j)=co(j,n2)-x1(j)
-            e2(j)=co(j,n3)-x1(j)
-            e3(j)=co(j,n4)-x1(j)
+!
+!         nipe comes from damnlelgeom, the same table calcdamage fills
+!         its state from: the driving variable below averages the
+!         element's integration points, and reading a slot calcdamage
+!         never filled would be an average over noise.
+!
+          call damnlelgeom(lakon(i),kon,co,indexe,cx,cy,cz,volel,
+     &         nipel,iokg)
+          if(iokg.eq.0) then
+            nskip=nskip+1
+            cycle
+          endif
+          gnc(i)=nc
+          nipe(i)=nipel
+          vele(i)=volel
+          gkst(i)=nptot
+          nptot=nptot+nc*(nc+1)/2
+          do j=1,nc
+            elnod(j,i)=nod(j)
+            gmass(j,i)=ml(j)
+            nknl=max(nknl,nod(j))
           enddo
-          det=e1(1)*(e2(2)*e3(3)-e2(3)*e3(2))
-     &       -e1(2)*(e2(1)*e3(3)-e2(3)*e3(1))
-     &       +e1(3)*(e2(1)*e3(2)-e2(2)*e3(1))
-          if(dabs(det).lt.1.d-30) cycle
-          vele(i)=dabs(det)/6.d0
+        enddo
 !
-!         the rows of J^-1 are grad(xi), grad(eta), grad(zeta), which for
-!         N1=1-xi-eta-zeta, N2=xi, N3=eta, N4=zeta are grad N_2,3,4
+!       PASS TWO: the packed upper triangles.
 !
-          ji(1,1)=(e2(2)*e3(3)-e2(3)*e3(2))/det
-          ji(1,2)=(e1(3)*e3(2)-e1(2)*e3(3))/det
-          ji(1,3)=(e1(2)*e2(3)-e1(3)*e2(2))/det
-          ji(2,1)=(e2(3)*e3(1)-e2(1)*e3(3))/det
-          ji(2,2)=(e1(1)*e3(3)-e1(3)*e3(1))/det
-          ji(2,3)=(e1(3)*e2(1)-e1(1)*e2(3))/det
-          ji(3,1)=(e2(1)*e3(2)-e2(2)*e3(1))/det
-          ji(3,2)=(e1(2)*e3(1)-e1(1)*e3(2))/det
-          ji(3,3)=(e1(1)*e2(2)-e1(2)*e2(1))/det
-          do j=1,3
-            bgrad(j,2,i)=ji(1,j)
-            bgrad(j,3,i)=ji(2,j)
-            bgrad(j,4,i)=ji(3,j)
-            bgrad(j,1,i)=-(ji(1,j)+ji(2,j)+ji(3,j))
+        nkpack=nptot
+        if(allocated(gkpk)) deallocate(gkpk)
+        allocate(gkpk(max(nptot,1)))
+        do i=1,max(nptot,1)
+          gkpk(i)=0.d0
+        enddo
+        do i=1,ne0
+          nc=gnc(i)
+          if(nc.le.0) cycle
+          indexe=ipkon(i)
+          call damnlelmk(lakon(i),kon,co,indexe,nc,nod,ml,kel,iokel)
+          if(iokel.eq.0) then
+            gnc(i)=0
+            cycle
+          endif
+          ib=gkst(i)
+          do b=1,nc
+            do a=1,b
+              gkpk(ib+a+b*(b-1)/2)=kel(a,b)
+            enddo
           enddo
         enddo
         if(allocated(ebar)) deallocate(ebar,gdiag,grhs,gp,gap,gz,gr)
@@ -1400,16 +1576,17 @@
         chnbuilt=0
         gbuilt=1
         nesave=ne0
-        write(*,*) '[DAMAGE NONLOCAL] gradient backend, ell=',ellsave,
-     &       ' nodes=',nknl
+        call damnlellmax(ellrep)
+        write(*,*) '[DAMAGE NONLOCAL] gradient backend, ell=',ellrep,
+     &       ' nodes=',nknl,' packed=',nkpack
         if(nskip.gt.0) then
           write(*,*) '*WARNING in damgradient: ',nskip,
-     &         ' element(s) are not C3D4 and are NOT regularised'
-          write(*,*) '         by the gradient backend, which caches'
-          write(*,*) '         linear-tetrahedron shape gradients:'
-          write(*,*) '         their damage stays LOCAL.'
-          write(*,*) '         Use CCX_DAMAGE_NONLOCAL_MODE=INTEGRAL,'
-          write(*,*) '         which handles every volume family.'
+     &         ' element(s) REFUSED and are NOT regularised:'
+          write(*,*) '         not a volume family, or a non-positive'
+          write(*,*) '         Jacobian.  Their damage stays LOCAL.'
+          write(*,*) '         This is no longer the C3D4 restriction,'
+          write(*,*) '         which was lifted: hexahedra, wedges and'
+          write(*,*) '         the quadratic families are regularised.'
         endif
         if(ellmn.gt.0) then
           write(*,*) '[DAMAGE NONLOCAL] ell multiplier per material:',
@@ -1428,20 +1605,50 @@
       do i=1,ne0
         dploc(i)=0.d0
         if(ipkon(i).lt.0) cycle
-        if(vele(i).le.0.d0) cycle
-        dploc(i)=xstate(1,1,i)-xstateini(1,1,i)
+        if(gnc(i).le.0) cycle
+!
+!       ONE INTEGRATION POINT IS NOT THE ELEMENT.  This read used to be
+!       xstate(1,1,i) alone, which is the element only when the element
+!       has one point.  On C3D4 it does, which is why the line survived
+!       the whole time the backend was tetrahedra-only - and why it would
+!       have become wrong in the same commit that let a hexahedron in,
+!       silently, by regularising one eighth of it.  The integral backend
+!       carries the identical loop.
+!
+        nipel=nipe(i)
+        if(nipel.lt.1) nipel=1
+        if(nipel.gt.mi(1)) nipel=mi(1)
+        do ip=1,nipel
+          dploc(i)=dploc(i)+xstate(1,ip,i)-xstateini(1,ip,i)
+        enddo
+        dploc(i)=dploc(i)/dble(nipel)
       enddo
 !
 !     ---------------- per-element internal length ---------------------
 !
-!     Filled every call: g depends on the damage, which moves.  With no
-!     environment set this is ell^2 for every element and the assembly
-!     below is arithmetically what it was.
+!     Filled every call: g depends on the damage, which moves.
+!
+!     THE LENGTH COMES FROM damnlellel, NOT FROM ellsave.  ellsave is
+!     only what the ENVIRONMENT set; a deck that puts NONLOCAL= on its
+!     *DAMAGE INITIATION card leaves it at zero.  This loop used to read
+!     ellsave directly, so on a card-only deck every ell2e came out
+!     ZERO - the gradient equation degenerated to ebar = e and the
+!     backend regularised NOTHING, while its banner printed a backend
+!     name and the run looked healthy.  That is the same seam that was
+!     closed for the integral backend in 18cc358 and 4f9ebea; the
+!     gradient half was never closed, and nothing pointed at it because
+!     no gate case runs this backend at all.
+!
+!     Found by reading the banner of the first hexahedral run this
+!     backend was ever able to do: it said ell=0.0 while the card said
+!     0.3.
 !
       if(.not.allocated(ell2e)) allocate(ell2e(ne0))
       do i=1,ne0
         ell2e(i)=ell2
         if(ipkon(i).lt.0) cycle
+        call damnlellel(i,elli)
+        if(elli.gt.0.d0) ell2e(i)=elli*elli
         fm=1.d0
         if(ellmn.gt.0) then
           im=ielmat(1,i)
@@ -1465,13 +1672,14 @@
       enddo
       do i=1,ne0
         if(ipkon(i).lt.0) cycle
-        if(vele(i).le.0.d0) cycle
-        dv=vele(i)*0.25d0
-        do a=1,4
+        nc=gnc(i)
+        if(nc.le.0) cycle
+        ib=gkst(i)
+        do a=1,nc
           nd=elnod(a,i)
-          s=bgrad(1,a,i)**2+bgrad(2,a,i)**2+bgrad(3,a,i)**2
-          gdiag(nd)=gdiag(nd)+dv+ell2e(i)*vele(i)*s
-          grhs(nd)=grhs(nd)+dv*dploc(i)
+          gdiag(nd)=gdiag(nd)+gmass(a,i)
+     &         +ell2e(i)*gkpk(ib+a+a*(a-1)/2)
+          grhs(nd)=grhs(nd)+gmass(a,i)*dploc(i)
         enddo
       enddo
 !
@@ -1547,12 +1755,26 @@
 !
 !     ---------------- back to the element -----------------------------
 !
+!     The element value is the MASS-WEIGHTED mean of its nodal values,
+!     which is int ebar dV / V.  On a linear tetrahedron every mass is
+!     V/4 and this is the plain quarter-sum the code used to take, so
+!     that family is unchanged to the last bit; on any other family a
+!     plain mean would weight a node of a graded element as much as one
+!     carrying eight times the volume.
+!
       do i=1,ne0
         dpsave(i)=0.d0
         if(ipkon(i).lt.0) cycle
-        if(vele(i).le.0.d0) cycle
-        dpsave(i)=0.25d0*(ebar(elnod(1,i))+ebar(elnod(2,i))
-     &       +ebar(elnod(3,i))+ebar(elnod(4,i)))
+        nc=gnc(i)
+        if(nc.le.0) cycle
+        s=0.d0
+        wsum=0.d0
+        do a=1,nc
+          s=s+gmass(a,i)*ebar(elnod(a,i))
+          wsum=wsum+gmass(a,i)
+        enddo
+        if(wsum.le.0.d0) cycle
+        dpsave(i)=s/wsum
         if(dpsave(i).lt.0.d0) dpsave(i)=0.d0
       enddo
 !
@@ -1564,30 +1786,32 @@
       subroutine damgradmv(ipkon,ne0,p,ap)
       use damnlmod
       implicit none
-      integer ipkon(*),ne0,i,a,nd
-      real*8 p(*),ap(*),g(3),dv,c
+      integer ipkon(*),ne0,i,a,b,nd,nc,ib,ik
+      real*8 p(*),ap(*),pa(8),s
 !
       do i=1,nknl
         ap(i)=0.d0
       enddo
       do i=1,ne0
         if(ipkon(i).lt.0) cycle
-        if(vele(i).le.0.d0) cycle
-        g(1)=0.d0
-        g(2)=0.d0
-        g(3)=0.d0
-        do a=1,4
-          c=p(elnod(a,i))
-          g(1)=g(1)+bgrad(1,a,i)*c
-          g(2)=g(2)+bgrad(2,a,i)*c
-          g(3)=g(3)+bgrad(3,a,i)*c
+        nc=gnc(i)
+        if(nc.le.0) cycle
+        ib=gkst(i)
+        do a=1,nc
+          pa(a)=p(elnod(a,i))
         enddo
-        dv=vele(i)*0.25d0
-        do a=1,4
+        do a=1,nc
+          s=0.d0
+          do b=1,nc
+            if(a.le.b) then
+              ik=ib+a+b*(b-1)/2
+            else
+              ik=ib+b+a*(a-1)/2
+            endif
+            s=s+gkpk(ik)*pa(b)
+          enddo
           nd=elnod(a,i)
-          ap(nd)=ap(nd)+dv*p(nd)
-     &         +ell2e(i)*vele(i)*(bgrad(1,a,i)*g(1)+bgrad(2,a,i)*g(2)
-     &         +bgrad(3,a,i)*g(3))
+          ap(nd)=ap(nd)+gmass(a,i)*pa(a)+ell2e(i)*s
         enddo
       enddo
       return

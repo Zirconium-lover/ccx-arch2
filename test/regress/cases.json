@@ -418,6 +418,24 @@
    "expect": {
     "neighbours": 1.0
    }
+  },
+  {
+   "name": "hex-gradient-card",
+   "kind": "hex",
+   "mode": "uniaxial",
+   "nonlocal_ell": 0.3,
+   "env": [
+    "CCX_DAMAGE_CHARLEN=1",
+    "CCX_DAMAGE_TANGENT=",
+    "CCX_DAMAGE_NONLOCAL_MODE=GRADIENT"
+   ],
+   "what": "the IMPLICIT GRADIENT backend on hexahedra, with the internal length taken from the MATERIAL CARD. Nothing in the gate ran this backend at all before this case, which is how it carried two silent failures at once: it skipped every element that was not C3D4 - so a hexahedral deck got NO regularisation while the banner named a backend - and it read ell from the ENVIRONMENT only, so a card-only deck ran with ell=0, i.e. ebar=e, which is again no regularisation. Neither shows up as a wrong answer to look at: a run that regularises nothing converges BETTER, so any expectation on convergence or deletions would have gone GREEN on both. What is pinned is therefore GEOMETRIC and exact: packed=576 is the size of the packed conductivity, 16 hexahedra times 8*9/2=36, so it is zero if the family is skipped and wrong if the packing is; gradell=0.3 is the length the backend armed itself with, which is 0.0 if the card is not read; gradrefused=0 says no element was dropped. Measured on the merged tree. Convergence is NOT pinned: this deck does not reach the end of its step with the internal length on, the same characterised limitation of the staggered scheme that hex-nonlocal-card carries, and pinning it would cement it.",
+   "expect": {
+    "rc": 201,
+    "packed": 576,
+    "gradell": 0.3,
+    "gradrefused": 0
+   }
   }
  ],
  "selftests_required": [
