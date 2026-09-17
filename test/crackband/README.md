@@ -152,34 +152,32 @@ CCX_EXE=/path/to/ccx_2.23_pardiso test/crackband/run_energy_equiv.sh /tmp/eq
 
 A `G_f` card and the equivalent `u_f` card must describe the same material,
 since `G_f = sigma_0 u_f / 2` for the linear law.  The script runs both at
-two strain levels a factor of ten apart and decides; it does not print a
-number for a reader to interpret.
+two strain levels a factor of ten apart, **bounds both**, and decides.  It
+does not print a number for a reader to interpret, and it does not name a
+cause.
 
-Two different things can break that equivalence, and one criterion sees
-only one of them:
+Measured on `37d0d53`: 0.0822 % at working strain against a 0.5 % ceiling,
+0.0082 % at one tenth of it against 0.05 %.  Remove the peak rule in
+`damcbufset` and both go over - 2.9774 % and 0.1707 % - and the script
+exits 1.
 
-* the **conversion** of `G_f` into `u_f`.  A constant factor spoils it, and
-  a constant factor does not care about the strain, so the disagreement is
-  about the same at both levels.  The **ratio** catches that.
-* the **moment `sigma_0` is sampled**.  The cache is refreshed on every
-  increment until initiation commits, and taking the latest value looks
-  like taking the value at initiation but is not: by then the neighbouring
-  points of the same band are softening and unloading this one, so the
-  sample is on the way down.  That error scales with strain the same way
-  an exact conversion's residual does, so the ratio stays comfortable
-  while the answer is wrong - measured, ratio 17.44 against a threshold of
-  5 at the same time as the headline disagreement was 2.98 %.  A
-  **ceiling** on the working-strain figure is what catches that.
+**The ratio is printed and does not decide, and that is the part worth
+reading.**  It used to decide.  The argument was that an exact conversion
+leaves only a residual that shrinks with the strain, so a big ratio meant
+the conversion was sound.  That argument named a cause - a finite-strain
+stress-measure effect - and the cause was wrong: the residual was
+`sigma_0` sampled after the point had begun to unload, which scales with
+strain in exactly the same way.  The ratio sat at 17.44 against a
+threshold of 5 for as long as the defect existed.
 
-Both are checked.  Measured on `37d0d53`: 0.0822 % at working strain
-against a 0.5 % ceiling, and 0.0082 % at one tenth of it, at the noise
-floor.  Reverting the peak rule puts the first back to 2.9774 % and the
-script exits 1 while still printing `ratio 17.44 (need >= 5.0)` on the
-line below - the old criterion passing and the new one failing, on the
-same run.
+Two things follow, and both cost something to learn here:
 
-That is the general shape of it, and it is worth stating plainly because
-it cost a wrong diagnosis here: **a check is blind to whatever its
-criterion is not a function of.** The ratio was a function of how the
-disagreement scales, so an error that scaled the same way was invisible to
-it however large it grew.
+* **a check is blind to whatever its criterion is not a function of.**
+  The ratio was a function of how the disagreement scales, so an error
+  that scaled the same way stayed invisible however large it grew.
+* **a retracted diagnosis leaves working code behind.**  When the cause
+  was retracted, the ratio branch kept its power to exit green *and kept
+  asserting the retracted cause while doing so* - so the one path
+  reachable when something had gone wrong would have explained it away.
+  Agent 1 found that in review; the fix was to take the verdict off it
+  entirely rather than to reword it.

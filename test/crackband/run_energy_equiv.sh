@@ -6,15 +6,19 @@
 #
 # For the linear law, G_f = sigma_0*u_f/2 with sigma_0 the flow stress at
 # initiation, so the deck writes the G_f equivalent to its own u_f and the two
-# runs must agree.  The comparison is made at TWO strain levels, because the
-# residual is expected to be a finite-strain effect: the conversion uses the
-# stress in sti, and the work is done by the Cauchy stress.  Ten times smaller
-# strain must shrink the disagreement, and that is the discriminating test -
-# a fixed offset would not move.
+# runs must agree.  The comparison is made at TWO strain levels a factor of
+# ten apart, and BOTH are bounded; the criterion sets the exit code rather
+# than being a closing sentence for a reader to interpret.
 #
-# That criterion is CHECKED and sets the exit code.  It used to be a closing
-# sentence telling the reader what a good result looks like, which left the
-# script unable to fail however wrong the conversion became.
+# RETRACTED, and left here because the retraction is the useful part: this
+# header used to say the remaining disagreement "is expected to be a
+# finite-strain effect - the conversion uses the stress in sti, and the work
+# is done by the Cauchy stress", and that ten times smaller strain shrinking
+# it was "the discriminating test".  It was not discriminating.  The residual
+# was sigma_0 sampled after the point had begun to unload, which scales with
+# strain in exactly the same way, so the test could not tell the two apart -
+# and the push-forward to Cauchy that the old explanation implies was built
+# and measured and makes the answer WORSE.  See src/calcdamage.f, damcbufset.
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 OUT=${1:?usage: run_energy_equiv.sh <dir>}
@@ -67,42 +71,53 @@ d1 = float(open(f"{out}/strain1.diff").read())
 d01 = float(open(f"{out}/strain01.diff").read())
 print("  difference at normal strain   : %7.4f %%" % d1)
 print("  difference at one tenth of it : %7.4f %%" % d01)
-# Two independent things can go wrong, and one check cannot see both.
+# WHAT DECIDES, AND WHY IT IS NOT THE RATIO ANY MORE.
 #
-#   the CONVERSION of G_f into u_f, which a constant factor spoils.  That
-#   error does not care about the strain, so it shows the SAME
-#   disagreement at both levels: the ratio catches it.
+# This script used to judge by the RATIO between the two levels: an exact
+# conversion was said to leave only a residual that shrinks with strain,
+# so a large ratio meant "fine".  That reasoning named a cause - a
+# finite-strain stress-measure effect - which has since been retracted.
+# The residual was not that at all; it was sigma_0 sampled after the point
+# had begun to unload.
 #
-#   the MOMENT sigma_0 is sampled, which is a different failure entirely.
-#   Taking the last value before initiation instead of the peak cost 8 per
-#   cent in sigma_0 and took the headline disagreement to 2.98 per cent -
-#   and the ratio test PASSED throughout, because that error scales with
-#   strain just as the conversion error does not.  A ceiling on the
-#   working-strain figure is what sees it.
+# Agent 1's review then found what the retraction had left behind: the
+# ratio branch still EXITED GREEN, and did so while asserting the
+# retracted cause.  It was the only branch reachable once the disagreement
+# rose above the floor, so precisely when something had gone wrong the
+# script would have explained it away.
 #
-# The ceiling is set from measurement with headroom, not from taste:
-# 0.0822 per cent measured on 37d0d53, ceiling 0.5, which is six times the
-# measurement and six times below the 2.98 that a regression of the
-# freezing rule puts back.
-FLOOR, NEED, CEIL = 0.05, 5.0, 0.5
-bad = False
-if d1 > CEIL:
-    print("  VERDICT FAIL : %.4f %% at working strain exceeds the %.2f %% "
-          "ceiling." % (d1, CEIL))
+# So the ratio no longer decides.  It could not anyway: both failures this
+# deck can show blow a ceiling long before the ratio notices, measured -
+# a conversion wrong by a constant factor gives 12.60 % at working strain,
+# and the freezing defect gave 2.98 %.  The ratio is still PRINTED,
+# because how the disagreement scales is genuinely informative about what
+# kind of residual is left, but information is not a verdict.
+#
+# Both levels are now bounded directly, each from measurement on 37d0d53
+# with headroom: 0.0822 % against 0.5, and 0.0082 % against 0.05.
+CEIL1, CEIL01 = 0.5, 0.05
+bad = []
+if d1 > CEIL1:
+    bad.append("  %.4f %% at working strain exceeds the %.2f %% ceiling"
+               % (d1, CEIL1))
+if d01 > CEIL01:
+    bad.append("  %.4f %% at one tenth strain exceeds the %.2f %% ceiling"
+               % (d01, CEIL01))
+if d01 > 0:
+    print("  ratio                         : %7.2f  (reported, does not"
+          " decide)" % (d1 / d01))
+if bad:
+    print("  VERDICT FAIL :")
+    for line in bad:
+        print("  " + line)
     print("                 The two cards do not describe the same material.")
-    print("                 A sigma_0 sampled after the point has begun to")
-    print("                 unload does exactly this, and the ratio below")
-    print("                 will NOT show it - that is why this line exists.")
-    bad = True
-if d01 <= FLOOR:
-    if not bad:
-        print("  VERDICT ok   : %.4f %% at one tenth strain is at the noise"
-              % d01)
-        print("                 floor (<= %.2f %%) and %.4f %% at working"
-              % (FLOOR, d1))
-        print("                 strain is under the ceiling, so the")
-        print("                 conversion is exact as far as this deck sees")
-    sys.exit(1 if bad else 0)
+    print("                 No cause is named here on purpose: above these")
+    print("                 bounds we do not have one, and the last time a")
+    print("                 cause was named from the way the residual")
+    print("                 scaled, it was the wrong cause.")
+    sys.exit(1)
+print("  VERDICT ok   : both levels are within bounds set by measurement")
+sys.exit(0)
 ratio = d1 / d01 if d01 > 0 else float("inf")
 print("  ratio                         : %7.2f  (need >= %.1f)"
       % (ratio, NEED))
