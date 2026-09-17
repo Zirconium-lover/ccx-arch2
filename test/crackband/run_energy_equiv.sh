@@ -57,12 +57,16 @@ run_level strain01 2000000 0.001 0.10
 
 # The criterion used to be a sentence telling the reader what to look for,
 # which meant this script could not fail however wrong the conversion got.
-# It is the RATIO that discriminates, not either value: a conversion wrong
-# by a constant factor disagrees by about the same amount at both strain
-# levels and so shows a ratio near 1, while an exact conversion leaves only
-# the finite-strain residual, which shrinks with the strain.  Pinning the
-# absolute difference instead would cement that residual, which is a
-# documented limitation and not something to freeze.
+#
+# RETRACTED, third instance of the same thing, found by sweeping the CODE
+# for a withdrawn claim rather than only the discussion of it.  This block
+# used to argue that the ratio discriminates and that "pinning the absolute
+# difference would cement that residual, which is a documented limitation
+# and not something to freeze".  Both halves were wrong, and both followed
+# from the same retracted diagnosis: the residual was not a limitation, it
+# was a defect worth 36x, and pinning the absolute difference is exactly
+# what catches it.  An argument for NOT checking something is the most
+# expensive kind to leave standing after its premise goes.
 echo
 python3 - "$OUT" <<'PY'
 import sys
