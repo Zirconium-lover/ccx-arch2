@@ -252,10 +252,36 @@ print()
 # the softening law must be w and not the element's own size.  G_f is taken
 # from the deck header, and w and h are measured, so the column has no free
 # parameter to absorb a disagreement.
+# WITH THE SUBSTITUTION ON, THE LAW'S WIDTH IS 2*ell, SO TEST AGAINST THAT.
+# G_f*w/h is the prediction for charlen = h, which is what the softening law
+# uses with the switch OFF.  With it ON the law uses 2*ell, so the prediction
+# is G_f*w/(2*ell), and the two must not be confused - comparing an ON run
+# against the OFF prediction measures nothing but the switch.
+#
+# The column that matters is w/(2*ell).  The substitution asserts that the
+# band is 2*ell wide, and the accounting can only be right while the band
+# really is at least that wide.  Measured at h=0.25, off by -4 and +2 per cent
+# at w/2ell of 1.46 and 1.07, then +42 and +96 per cent at 0.88 and 0.77: the
+# error is monotone in w/(2*ell) and crosses zero where the band stops being
+# as wide as the length the law charges.  So the substitution's validity
+# condition is a statement about the SPECIMEN, not about the mesh, and it is
+# not the iok criterion, which is satisfied on all four of those arms.
 g=rows[0][3]
+if g and os.environ.get("NLW")=="1":
+    print("  W_post against G_f*w/(2*ell), the width the law now uses:")
+    for e,wd,c,_,ok in rows:
+        if not ok or e<=0: continue
+        wpost=work(c,0.30)-work(c,usp)
+        pred=g*wd/(2.0*e)
+        print("    ell=%-6s w/2ell=%5.3f  predicted %9.4f  measured %9.4f"
+              "  off %+6.1f %%%s" % (e,wd/(2.0*e),pred,wpost,
+                                     100.0*(wpost-pred)/pred,
+                                     "" if wd >= 2.0*e else
+                                     "   <- band NARROWER than 2*ell"))
+    print("    An arm marked above is outside the substitution's domain: the")
+    print("    law charges a width the specimen does not sustain.")
 if g:
-    print("  W_post against G_f*w/h, PARAMETER FREE (G_f=%.4f from the deck):"
-          % g)
+    print("  W_post against G_f*w/h, the width the law uses with NLWIDTH=0:")
     for e,wd,c,_,ok in rows:
         if not ok: continue
         wpost=work(c,0.30)-work(c,usp)

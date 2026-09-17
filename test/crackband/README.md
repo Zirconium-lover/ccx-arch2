@@ -363,10 +363,36 @@ end to end: **3.34 -> 1.35**.  The residual is therefore the same on both
 meshes, 1.35 and 1.38, which says it is not a discretisation artefact - a
 mesh-dependent leftover would not land twice on the same number.
 
-**It is not finished, and the honest number is about 1.36 and not 1.0.**  The
-residual is non-monotone (5.69, 4.42, 6.12) across three arms, which is the
-size of an unexplained effect rather than of a converged one, and this
-directory has no business naming a cause for it yet.  `run_nlwidth_gate.sh`
+**The residual is not diffuse - it is one condition, and it is a condition on
+the specimen.**  With the switch on, the law's width is `2*ell`, so the
+prediction to test is `G_f w/(2 ell)` and not `G_f w/h`.  At `h`=0.25, with
+`ell`=0.375 excluded for not converging:
+
+| `ell` | `w` | `w/(2 ell)` | predicted | measured | off |
+|---|---|---|---|---|---|
+| 0.25 | 0.7280 | 1.456 | 5.940 | 5.710 | -4 % |
+| 0.5 | 1.0725 | 1.072 | 4.376 | 4.442 | +2 % |
+| 0.75 | 1.3193 | 0.880 | 3.588 | 5.093 | +42 % |
+| 1.0 | 1.5352 | 0.768 | 3.132 | 6.135 | +96 % |
+
+The error is **monotone in `w/(2 ell)`** and crosses zero exactly where the band
+stops being as wide as the length the law charges.  Within the domain where the
+band really is `2*ell` wide the substitution is right to 4 %; outside it the law
+asserts a width the specimen does not sustain, and the accounting fails by the
+amount of the overshoot.
+
+So the substitution's validity condition is **not** `iok` - the mesh resolves
+`ell` on all four of those arms - but `w >= 2 ell`, a statement about the
+specimen.  On this bar the effective width inferred from the measured energy
+saturates near 1.0, which is the cross-section, and the cross-section is what
+sets the floor too; that reading is inside the coefficient's own 20 % scatter,
+so it is named and not established.
+
+What remains genuinely open is smaller than it was: `W_post` still varies with
+`ell` inside the valid domain, because `w/(2 ell)` is 1.46 and 1.07 rather than
+1 - the law is satisfied and the band the averaging forms simply is not exactly
+`2*ell`.  And `ell`=0.375 failed to converge at a step time of 0.13 between two
+values that both converge, which is not explained.  `run_nlwidth_gate.sh`
 therefore judges by comparison - the same sweep with the switch off and on,
 and the dependence must come down - because a fixed ceiling would have to be
 picked above whatever today's value happens to be, and picking a threshold to
