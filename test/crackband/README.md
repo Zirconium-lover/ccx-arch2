@@ -1,6 +1,6 @@
 # Crack-band width: what is here and how to check it
 
-Ten files, no obvious entry point, so this is the map.  Every number below
+Eleven files, no obvious entry point, so this is the map.  Every number below
 is stamped with the commit it was measured on and the command that
 reproduces it, because a number written into prose drifts silently when
 somebody else's change moves it.  That failure has already happened once
@@ -66,6 +66,7 @@ switch is set.
 | `run_nlwidth_scaling.sh` | holds the mesh and moves `ell`, which separates what the refinement sweep cannot: whether the width follows the internal length, and whether the dissipation follows with it |
 | `bandwidth.py` | the band width as `sum(D*V)/A`, with no threshold - it replaced a count over `D>0.5` that gave three verdicts for the three thresholds `de1stats` writes |
 | `run_nlwidth_gate.sh` | runs that sweep with `CCX_DAMAGE_NLWIDTH` off and on and requires the `ell` dependence to come down; a relative criterion, so there is no ceiling to pick |
+| `run_xsection_floor.sh` | varies the bar's cross-section to find what stops the local band collapsing - it is the specimen, not the code |
 
 ## Why the sweep refines the cross-section
 
@@ -172,7 +173,8 @@ nonlocal band collapses too.  The verdict was a property of the number 0.5.
 With the threshold-free measure the local band does **not** collapse: it falls
 and nearly stops, and a sharper notch on finer meshes (span 1.0, `h` = 0.5 /
 0.25 / 0.125) leaves it at 0.634 / 0.545 / 0.642 - so the floor is not the
-notch either, and what holds it there is not known.  What survives is the
+notch either.  What holds it there is **the specimen's cross-section**, and
+`run_xsection_floor.sh` measures that rather than arguing it (see below).  What survives is the
 ratio, which needs no absolute scale and rises monotonically at both
 viscosities (1.34 -> 1.72 -> 2.13 at `1.e-3`, 1.39 -> 1.83 -> 2.08 at
 `3.e-3`).  The dissipation disagrees by more than a factor of two either way,
@@ -223,6 +225,47 @@ one element wide, which is exactly the case the crack band was derived for
 and exactly the case an internal length abolishes.  Jirasek and Bauer 2012
 section 5 state the requirement directly: the width entering the softening
 law must be the width of the band that actually forms.
+
+## What stops the local band collapsing
+
+```
+CCX_EXE=/path/to/ccx_2.23_pardiso test/crackband/run_xsection_floor.sh /tmp/xs
+```
+
+`--h` is the bar's transverse dimension, and it is one variable here: the
+projected width of every Kuhn tetrahedron is the slice thickness along the
+axis, so `charlen` does not move when the cross-section does, and the notch is
+a fixed FRACTION of the section, so the relative stress profile along the bar
+is identical too.
+
+| `hcross` | `w` at `h`=0.5 | `/hcross` | `w` at `h`=0.25 | `/hcross` |
+|---|---|---|---|---|
+| 1.0 | 0.6186 | 0.619 | 0.5918 | 0.592 |
+| 0.5 | 0.5672 | 1.134 | 0.3239 | 0.648 |
+| 0.25 | 0.6315 | 2.526 | 0.2906 | 1.162 |
+
+**Two floors, and they cross over.**  A band cannot be shorter than the element
+carrying it, so at `h`=0.5 that floor hides everything else and `w` barely
+moves with the cross-section - 0.619, 0.567, 0.632 across a factor of four.  At
+`h`=0.25 the cross-section is free to act and halving it *halves* `w`: 0.5918
+-> 0.3239, a factor of 0.547 for a factor of 0.5.  Quarter it and the element
+floor takes over again, 0.2906 being 1.16 elements.
+
+That decides between the two candidates rather than fitting either: no
+dependence on the cross-section would have predicted 0.592 against 1.18, and
+proportionality predicts 0.592 against 0.648.  The floor is the **specimen**.
+
+The mechanism is named and **not** established: a cross-sectional perturbation
+evens out along the axis over a distance of order the transverse dimension, so
+the band cannot be shorter than that however fine the mesh.  Saint-Venant
+predicts that this is insensitive to Poisson's ratio, which these decks set to
+zero and `--nu` would vary; that test has not been run.
+
+The consequence for everything above is the one worth carrying: on this
+specimen the crack band is **never** one element wide, at any mesh, on any arm.
+The premise the crack-band scaling is derived from does not hold here, which is
+why the dissipation tracks the layer count in the local model too and not only
+in combination with an internal length.
 
 ## The substitution, and what it did
 
@@ -282,7 +325,12 @@ the `ell` dependence.  Raising the viscosity does not fix the gradient arms
 either: at `3.e-3` a *different* arm fails, which is worth knowing before
 anyone treats viscosity as the way to make that backend comparable.
 
-**It is not finished, and the honest number is 1.38 and not 1.0.**  The
+Measured again on a second mesh, `h` = 0.5, through `run_nlwidth_gate.sh`
+end to end: **3.34 -> 1.35**.  The residual is therefore the same on both
+meshes, 1.35 and 1.38, which says it is not a discretisation artefact - a
+mesh-dependent leftover would not land twice on the same number.
+
+**It is not finished, and the honest number is about 1.36 and not 1.0.**  The
 residual is non-monotone (5.69, 4.42, 6.12) across three arms, which is the
 size of an unexplained effect rather than of a converged one, and this
 directory has no business naming a cause for it yet.  `run_nlwidth_gate.sh`
