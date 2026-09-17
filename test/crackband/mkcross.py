@@ -172,7 +172,15 @@ def build(a):
     add("** incompressible, so a yielding slice contracts laterally while")
     add("** elastic neighbours do not.  The slices differ ONLY in that the")
     add("** weak one may damage, which is what localises failure.")
-    for name, dam in (("BULK", False), ("WEAK", True)):
+    # --alldamage gives EVERY slice the damage law, with the weak slice merely
+    # initiating a little earlier.  A nonlocal study needs this: with only one
+    # slice able to damage, the average over a neighbourhood mixes damaging and
+    # non-damaging material, and as the slice thins it becomes a smaller
+    # fraction of that neighbourhood - so the driving variable is diluted in a
+    # MESH-DEPENDENT way and the answer drifts for a reason that has nothing to
+    # do with the code.  With the law everywhere, the internal length is free to
+    # select the band width itself, which is what it is for.
+    for name, dam in (("BULK", a.alldamage), ("WEAK", True)):
         add("*MATERIAL, NAME=%s" % name)
         add("*ELASTIC")
         add("%g, %g" % (a.e, a.nu))
@@ -192,7 +200,9 @@ def build(a):
             else:
                 add("*DAMAGE INITIATION, CRITERION=RICETRACEY,"
                     " EVOLUTION=DISPLACEMENT")
-                add("%g, 1.0, %g, 0." % (a.eps0, a.uf))
+                add("%g, 1.0, %g, 0."
+                % (a.eps0 if name == "WEAK" else a.eps0 / a.trigger,
+                   a.uf))
     add("*SOLID SECTION, ELSET=EBULK, MATERIAL=BULK")
     add("*SOLID SECTION, ELSET=EWEAK, MATERIAL=WEAK")
     add("*BOUNDARY")
@@ -216,6 +226,12 @@ def main():
     q.add_argument("--evolution", choices=("DISPLACEMENT", "ENERGY"),
                    default="DISPLACEMENT")
     q.add_argument("--eltype", choices=("C3D4", "C3D8"), default="C3D4")
+    q.add_argument("--alldamage", action="store_true",
+                   help="give every slice the damage law; the weak slice only "
+                        "initiates earlier.  Required for a nonlocal study.")
+    q.add_argument("--trigger", type=float, default=0.95,
+                   help="bulk initiation strain is eps0/trigger, so the weak "
+                        "slice initiates first")
     q.add_argument("--gf", type=float, default=-1.0,
                    help="fracture energy for EVOLUTION=ENERGY; "
                         "default derives the equivalent of --uf")
