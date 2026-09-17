@@ -91,10 +91,13 @@
 !     module is most often used on.
 !
       integer :: imodenl=0,gbuilt=0,nknl=0,fbuilt=0,nkpack=0
+      integer :: ndnmax=0
+      real*8 :: relmax=0.d0
       real*8, allocatable :: vele(:),ebar(:),
      &     gdiag(:),grhs(:),gp(:),gap(:),gz(:),gr(:),
      &     gmass(:,:),gkpk(:)
       integer, allocatable :: elnod(:,:),gnc(:),gkst(:)
+      real*8, allocatable :: gmsum(:),ebar0(:)
 !
 !     PER-ELEMENT internal length.  ell2e(i) is what the two assembly
 !     loops read; everything else in the backend is unchanged.  ellmf
@@ -951,6 +954,35 @@
       if(allocated(iprobee)) then
         if(iprobee(iel).ne.0) return
       endif
+!
+!     AN ELEMENT THE BACKEND LEFT OUT HAS NO REGULARISED VALUE, AND ZERO
+!     IS NOT ONE.  dpsave is zero for an element the backend refused - a
+!     family it cannot integrate, a non-positive Jacobian, or, in the
+!     integral backend, one with no volume.  Handing that zero back with
+!     iok=1 tells the caller "the regularised increment is zero", which is
+!     a statement about the material, not about the backend: the element
+!     would stop accumulating damage entirely.
+!
+!     Reporting iok=0 instead makes the caller fall back to its own local
+!     value, which is what an unregularised element should use and what
+!     the warning printed at build time already says happens.
+!
+!     HONEST SCOPE: this changes no answer on any deck in the gate.  The
+!     elements either backend refuses on these decks are UC6 cohesive
+!     facets, which never ask for this value.  It is a defect by
+!     construction, found by reading the consumer after fixing the
+!     producer, not by a run - and the gate confirms only that it costs
+!     nothing, not that it was costing something.
+!
+      if(imodenl.eq.1) then
+        if(allocated(gnc)) then
+          if(gnc(iel).le.0) return
+        endif
+      else
+        if(allocated(evol)) then
+          if(evol(iel).le.0.d0) return
+        endif
+      endif
       val=dpsave(iel)
       iok=1
       return
@@ -1481,9 +1513,10 @@
      &     xstateini(nstate_,mi(1),*),dam(mi(1),*)
 !
       integer i,j,a,b,indexe,it,maxit,nd,im,nc,nod(8),iokel,iokg
-      integer ionnl,nskip,nptot,ip,nipel,ib
+      integer ionnl,nskip,nptot,ip,nipel,ib,ndneg
       real*8 ell2,s,rz,rzold,pap,alpha,beta,rnorm,rnorm0,tol,fm,
-     &     dloc,gloc,ml(8),kel(8,8),cx,cy,cz,volel,wsum,elli,ellrep
+     &     dloc,gloc,ml(8),kel(8,8),cx,cy,cz,volel,wsum,elli,ellrep,
+     &     dnwrst,dgmx,dgden
 !
       call damnlactive(ionnl)
       if(ionnl.eq.0) return
@@ -1576,8 +1609,9 @@
           enddo
         enddo
         if(allocated(ebar)) deallocate(ebar,gdiag,grhs,gp,gap,gz,gr)
+        if(allocated(gmsum)) deallocate(gmsum,ebar0)
         allocate(ebar(nknl),gdiag(nknl),grhs(nknl),gp(nknl),
-     &       gap(nknl),gz(nknl),gr(nknl))
+     &       gap(nknl),gz(nknl),gr(nknl),gmsum(nknl),ebar0(nknl))
         do i=1,nknl
           ebar(i)=0.d0
         enddo
@@ -1684,6 +1718,9 @@
         gdiag(i)=0.d0
         grhs(i)=0.d0
       enddo
+      do i=1,nknl
+        gmsum(i)=0.d0
+      enddo
       do i=1,ne0
         if(ipkon(i).lt.0) cycle
         nc=gnc(i)
@@ -1694,7 +1731,27 @@
           gdiag(nd)=gdiag(nd)+gmass(a,i)
      &         +ell2e(i)*gkpk(ib+a+a*(a-1)/2)
           grhs(nd)=grhs(nd)+gmass(a,i)*dploc(i)
+          gmsum(nd)=gmsum(nd)+gmass(a,i)
         enddo
+      enddo
+!
+!     THE ZERO-LENGTH PROJECTION.  ebar0 is what this backend returns when
+!     ell=0: the system is then M ebar = M e with M diagonal, so the answer
+!     is available without a solve - it is the mass-weighted mean of the
+!     elements meeting at the node.
+!
+!     It is NOT the identity, and that is the whole point.  dploc lives on
+!     elements; ebar lives on nodes; the round trip element -> node ->
+!     element averages twice and smooths over a distance set by the MESH,
+!     not by ell.  Measured on this deck: at ell=0.01, thirty times smaller
+!     than an element, max|dpsave-dploc|/max|dploc| was 0.55 to 0.83, and
+!     the band width scaled with h (ratio 2.02 across a halving, against
+!     1.11 along the band).  So the backend carried an internal length
+!     nobody gave it.
+!
+      do i=1,nknl
+        ebar0(i)=0.d0
+        if(gmsum(i).gt.0.d0) ebar0(i)=grhs(i)/gmsum(i)
       enddo
 !
 !     a node with no live support carries no equation; keep the row
@@ -1769,13 +1826,45 @@
 !
 !     ---------------- back to the element -----------------------------
 !
-!     The element value is the MASS-WEIGHTED mean of its nodal values,
-!     which is int ebar dV / V.  On a linear tetrahedron every mass is
-!     V/4 and this is the plain quarter-sum the code used to take, so
-!     that family is unchanged to the last bit; on any other family a
-!     plain mean would weight a node of a graded element as much as one
-!     carrying eight times the volume.
+!     Back to the element, as the DIFFERENCE of two projections.
 !
+!         dpsave = dploc + Q( ebar - ebar0 )
+!
+!     Q is the mass-weighted mean of the element's nodal values, which is
+!     int ebar dV / V; on a linear tetrahedron every mass is V/4 and it is
+!     the plain quarter-sum the backend used to take.
+!
+!     WHY THE DIFFERENCE AND NOT ebar ITSELF.  Q(ebar) alone contains the
+!     element -> node -> element round trip, which smooths over a distance
+!     set by h and NOT by ell: at ell=0 it is exactly [1 2 1]/4 on a
+!     uniform chain, a parasitic length of 0.707 h.  Subtracting Q(ebar0),
+!     the same round trip applied to the same field at ell=0, removes that
+!     term identically.  At ell=0 the correction vanishes and dpsave =
+!     dploc EXACTLY, which is what the model requires and what this
+!     backend did not do.
+!
+!     THIS IS A CONSTRUCTION, NOT THE SCHEME OF Peerlings et al. 1996.
+!     Subtracting the zero-length projection changes the operator at EVERY
+!     ell, not only at zero: what is solved is still their PDE, but what
+!     reaches the damage law is the ell-dependent PART of its discrete
+!     solution.  The justification is that the removed part is an artefact
+!     of the discretisation rather than physics - it has no ell in it at
+!     all - but it should be read as a deliberate choice made here, not as
+!     an implementation of that paper.
+!
+!     One property worth naming because it is not obvious: both operators
+!     preserve the total, sum Q(.) m = sum dploc m, so their difference
+!     sums to zero and sum dpsave = sum dploc EXACTLY at any ell.  For a
+!     quantity that enters an energy balance that is worth having.
+!
+!     POSITIVITY IS NOT ASSUMED.  The correction is a difference of two
+!     averaging operators and is therefore sign-changing, so dpsave can go
+!     negative beside a peak even though dploc never does.  It is clipped
+!     below at zero - but a clip HIDES, so the clipping is COUNTED and
+!     reported rather than done quietly.
+!
+      ndneg=0
+      dnwrst=0.d0
       do i=1,ne0
         dpsave(i)=0.d0
         if(ipkon(i).lt.0) cycle
@@ -1784,13 +1873,55 @@
         s=0.d0
         wsum=0.d0
         do a=1,nc
-          s=s+gmass(a,i)*ebar(elnod(a,i))
+          nd=elnod(a,i)
+          s=s+gmass(a,i)*(ebar(nd)-ebar0(nd))
           wsum=wsum+gmass(a,i)
         enddo
         if(wsum.le.0.d0) cycle
-        dpsave(i)=s/wsum
-        if(dpsave(i).lt.0.d0) dpsave(i)=0.d0
+        dpsave(i)=dploc(i)+s/wsum
+        if(dpsave(i).lt.0.d0) then
+          ndneg=ndneg+1
+          dnwrst=dmin1(dnwrst,dpsave(i))
+          dpsave(i)=0.d0
+        endif
       enddo
+!
+!     HOW FAR THE REGULARISED FIELD IS FROM THE LOCAL ONE.  This is the
+!     number that makes the backend's own health visible: at an ell well
+!     below the element size it must be SMALL, because there is nothing
+!     for the regularisation to do.  Before the zero-length projection was
+!     subtracted it was 0.55 to 0.83 at ell=0.01 on the reference deck -
+!     the field handed to the damage law differed from the local one by
+!     most of its own magnitude while the run looked healthy.  It is now
+!     about 1e-3 there, which is the size of ell^2/h^2 and therefore the
+!     regularisation itself rather than an artefact.
+!
+!     Printed only when the running maximum GROWS, so a long run says it
+!     a handful of times instead of once per call.  A diagnostic that
+!     prints every time stops being read, and we have spent a day on
+!     things that were printed and not read.
+!
+      dgmx=0.d0
+      dgden=0.d0
+      do i=1,ne0
+        if(gnc(i).le.0) cycle
+        dgmx=dmax1(dgmx,dabs(dpsave(i)-dploc(i)))
+        dgden=dmax1(dgden,dabs(dploc(i)))
+      enddo
+      if(dgden.gt.0.d0) then
+        if(dgmx/dgden.gt.relmax*1.05d0+1.d-12) then
+          relmax=dgmx/dgden
+          write(*,*) '[DAMAGE NONLOCAL] gradient: |ebar-e|/|e| =',
+     &         relmax,' at ell=',ellsave
+        endif
+      endif
+      if(ndneg.gt.0) then
+        if(ndneg.gt.ndnmax) then
+          ndnmax=ndneg
+          write(*,*) '[DAMAGE NONLOCAL] gradient: ',ndneg,
+     &         ' element(s) clipped at zero, worst ',dnwrst
+        endif
+      endif
 !
       return
       end

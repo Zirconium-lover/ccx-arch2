@@ -13,7 +13,7 @@ made blind.  These cases cover the load-path judgement, the crack-face kink,
 bulk damage with deletion and cutbacks, and the analytical mixed-mode branch,
 and they run on one core in the time it takes to read a diff.
 """
-import argparse,concurrent.futures as cf,io,contextlib,json,os,pathlib,re,shutil,subprocess,sys,time
+import argparse,concurrent.futures as cf,io,contextlib,json,os,pathlib,re,shutil,subprocess,sys,tempfile,time
 
 HERE=pathlib.Path(__file__).resolve().parent
 ROOT=HERE.parent.parent
@@ -345,12 +345,22 @@ def main():
     pre=sh('python3 %s/tools/mkswitches.py --check'%ROOT,base_env([]))
     print("preflight  switch registry: %s"%pre.stdout.strip().replace('\n','; '))
     preflight_bad = (1 if pre.returncode!=0 else 0)+preflight_bad_pre
+    # WHICH check failed, not just how many.  The summary used to print
+    # "the switch registry is stale" whatever had gone wrong, so a failing
+    # self test reported a cause that was not there - the same shape of
+    # defect this gate exists to catch.  Found by walking the red path of
+    # the energy-equivalence check through the gate.
+    preflight_names=[]
+    if pre.returncode!=0: preflight_names.append('switch registry')
+    if preflight_bad_pre: preflight_names.append('runner exports')
     # A comparison that has not been shown able to fail is not a comparison,
     # and it is about to decide whether cases pass.
     cd=sh('python3 %s/tools/ccxdiff.py --selftest'%ROOT,base_env([]))
     print("preflight  comparison layer: %s"%
           (cd.stdout.strip().splitlines() or ['no output'])[-1])
-    if cd.returncode!=0: preflight_bad+=1
+    if cd.returncode!=0:
+        preflight_bad+=1
+        preflight_names.append('comparison layer')
 
     # Both geometry self tests run here, and they run with NO argument.
     #
@@ -385,7 +395,54 @@ def main():
         # store - the failure would print and the gate would still exit 0.
         # It did exactly that until the red path was walked through the
         # preflight rather than through the script alone.
-        if g.returncode!=0: preflight_bad+=1
+        if g.returncode!=0:
+            preflight_bad+=1
+            preflight_names.append(name+' self test')
+
+    # The ENERGY/DISPLACEMENT equivalence, which the other agent asked to have
+    # in the gate: their script can go red and nothing ran it.  It needs the
+    # BINARY, unlike the three above which link against the archive, and it
+    # takes an output directory - not a source directory, which is the
+    # positional the crack-band width test takes.  Passing the wrong one exits
+    # 2 with "build the tree first", which reads as skipped rather than failed;
+    # that happened to me while verifying it, so it is spelled out here.
+    #
+    # Four solver runs, measured at 2 seconds total on this deck, so it costs
+    # about what one preflight check should.
+    eedir=tempfile.mkdtemp(prefix='energy_equiv_')
+    ee=sh('bash %s/test/crackband/run_energy_equiv.sh %s'%(ROOT,eedir),
+          dict(base_env([]),CCX_EXE=exe))
+    eel=[x for x in (ee.stdout or '').strip().splitlines() if 'VERDICT' in x]
+    print("preflight  energy equivalence: %s"
+          %(eel[-1].strip() if eel else
+            ((ee.stdout or '').strip().splitlines() or ['no output'])[-1].strip()))
+    if ee.returncode!=0:
+        preflight_bad+=1
+        preflight_names.append('energy equivalence')
+    else: shutil.rmtree(eedir,ignore_errors=True)
+
+    # Does a nonlocal backend reduce to the LOCAL model as ell goes to zero?
+    # The most basic thing either backend must do, and the gate could not ask
+    # it: ell=0 in the PDE is ebar=e, and an average over a radius holding
+    # only the element is the element.  The gradient backend failed it for as
+    # long as it existed - it smoothed element->node->element over a distance
+    # set by the MESH, so it carried an internal length nobody gave it - and
+    # nothing caught that, because a run which regularises by the wrong
+    # amount still looks like a run.
+    #
+    # Three solver runs at 48 seconds, the most expensive check here.  Worth
+    # it: the pre-fix binary fails it with 47 elements the local run never
+    # breaks, and passes every other check in this gate.
+    e0=sh('bash %s/test/nonlocal/run_ell0_test.sh %s'
+          %(ROOT,tempfile.mkdtemp(prefix='ell0_')),
+          dict(base_env([]),CCX_EXE=exe))
+    e0l=[x for x in (e0.stdout or '').strip().splitlines() if 'VERDICT' in x]
+    print("preflight  ell->0 reduction: %s"
+          %(e0l[-1].strip() if e0l else
+            ((e0.stdout or '').strip().splitlines() or ['no output'])[-1].strip()))
+    if e0.returncode!=0:
+        preflight_bad+=1
+        preflight_names.append('ell->0 reduction')
 
     # The path-follower diagnostic judges a mechanism nobody could judge
     # before; a diagnostic that has itself gone wrong is worse than none,
@@ -393,7 +450,9 @@ def main():
     pf=sh('python3 %s/tools/pathfollow.py --selftest'%ROOT,base_env([]))
     print("preflight  path-follower diagnostic: %s"%
           (pf.stdout.strip().splitlines()[-1] if pf.stdout.strip() else "no output"))
-    if pf.returncode!=0: preflight_bad+=1
+    if pf.returncode!=0:
+        preflight_bad+=1
+        preflight_names.append('path-follower diagnostic')
     spec=json.load(open(HERE/'cases.json'))
     cases=[c for c in spec['cases'] if not a.k or a.k in c['name']]
     outroot=pathlib.Path(a.o or (HERE/'_runs'/time.strftime('%Y%m%d-%H%M%S'))).resolve()
@@ -480,7 +539,8 @@ def main():
         else:
             print("   ok")
     if preflight_bad:
-        print("\npreflight FAILED: the switch registry is stale")
+        print("\npreflight FAILED: %s"%(", ".join(preflight_names)
+              or "cause not recorded - this itself is a defect"))
     print("\nswitches put in force by these cases: %d"%len(cov))
     print("\n%d of %d case(s) failed%s"%(nbad,len(cases),
           ", plus the preflight" if preflight_bad else ""))
