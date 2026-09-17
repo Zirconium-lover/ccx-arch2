@@ -1325,7 +1325,27 @@
      &               (sti(1,jj,i)-cbsh)**2+(sti(2,jj,i)-cbsh)**2+
      &               (sti(3,jj,i)-cbsh)**2+2.d0*(sti(4,jj,i)**2+
      &               sti(5,jj,i)**2+sti(6,jj,i)**2)))
-                if(cbsvm.gt.1.d-10) then
+!
+!               imode=1 ONLY.  The predictor pass is documented as not
+!               modifying dam or ipkon, and the cache belongs in that set
+!               for the same reason: nonlingeo's event controller can cut
+!               the increment AFTER the predictor has run (it sets
+!               icutb=1 together with damage_event_cut=1), and the load
+!               level the predictor saw is then never committed.
+!
+!               This did not matter while the cache took the LATEST value,
+!               because the redone increment simply overwrote it.  It
+!               matters now that the cache keeps the PEAK: a cut increment
+!               sits at a higher load than the redo, so its stress is
+!               higher, so its u_f is smaller, and the smaller value would
+!               be latched permanently by a pass that was thrown away.
+!
+!               Found by asking what the peak rule does to the file's own
+!               transactional claim - "a Newton retry or a rollback cannot
+!               change it" - rather than by a test, and no deck here shows
+!               it: the equivalence numbers are unchanged to four decimals.
+!
+                if((cbsvm.gt.1.d-10).and.(imode.eq.1)) then
                   call damcbufset(i,jj,2.d0*ufail/cbsvm)
                 endif
               endif
