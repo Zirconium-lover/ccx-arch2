@@ -485,10 +485,12 @@
       implicit none
       character*8 lakon(*)
       integer ipkon(*),kon(*),ne0,mi(*),nstate_,ielmat(mi(3),*)
+      integer ionnl
       real*8 co(3,*),xstate(nstate_,mi(1),*),
      &     xstateini(nstate_,mi(1),*),dam(mi(1),*)
 !
-      if(ellsave.le.0.d0) return
+      call damnlactive(ionnl)
+      if(ionnl.eq.0) return
       call damnlellinit()
       if(iinner.eq.0) return
 !
@@ -598,6 +600,30 @@
       return
       end
 !
+!     Is ANY internal length configured - from the environment or from a
+!     material card?
+!
+!     THIS EXISTS BECAUSE THE TWO SOURCES HAD DIFFERENT REACH.  ellsave
+!     is written only by damnonlocalset, which nonlingeo.c calls only
+!     when CCX_DAMAGE_NONLOCAL is set, so every guard phrased as
+!     "ellsave > 0" meant "the environment spoke" and not "a length
+!     exists".  A deck that put NONLOCAL= on its material card therefore
+!     never entered the nonlocal block at all: the regularisation was
+!     silently absent, and the run looked like a healthy local one.
+!     Found by Agent 2 in review of W6.  Every guard now asks this
+!     instead, so the card reaches as far as the environment does.
+!
+      subroutine damnlactive(ion)
+      use damnlmod
+      implicit none
+      integer ion
+      ion=0
+      call damnlellinit()
+      if(ellsave.gt.0.d0) ion=1
+      if(ncard.gt.0) ion=1
+      return
+      end
+!
       subroutine damnlellmax(ellmax)
       use damnlmod
       implicit none
@@ -616,9 +642,19 @@
       use damnlmod
       implicit none
       integer iel,im
-      real*8 ell
+      real*8 ell,emx
       ell=ellsave
       if(ncard.le.0) return
+!
+!     A card-only run has ellsave=0, and handing that back as the default
+!     would make the kernel width zero for any material that named no
+!     length of its own.  The largest configured length is the honest
+!     default there: generous rather than degenerate.
+!
+      if(ell.le.0.d0) then
+        call damnlellmax(emx)
+        ell=emx
+      endif
       if(matbuilt.eq.0) return
       if(.not.allocated(elmat)) return
       if((iel.lt.1).or.(iel.gt.size(elmat))) return
@@ -690,10 +726,12 @@
       use damnlmod
       implicit none
       integer iel,iok
+      integer ionnl
       real*8 val
       iok=0
       val=0.d0
-      if(ellsave.le.0.d0) return
+      call damnlactive(ionnl)
+      if(ionnl.eq.0) return
 !
 !     PROBE MODE.  While resultsmech is measuring dD/d(eps) the
 !     regularised value must not be handed out: it is a stored field and
@@ -775,10 +813,12 @@
       use damnlmod
       implicit none
       integer iel,iok
+      integer ionnl
       real*8 val
       iok=0
       val=1.d0
-      if(ellsave.le.0.d0) return
+      call damnlactive(ionnl)
+      if(ionnl.eq.0) return
 !
 !     The factor and the probe are one mechanism: reporting a factor that
 !     the caller cannot pair with an open probe would scale a derivative
@@ -819,15 +859,16 @@
 !
       integer ipkon(*),kon(*),ne0,mi(*),nstate_,
      &     i,j,k,m,indexe,node,nn,ip,jp,kp,ib,jb,kb,
-     &     ncell,ix,iy,iz,icell,jcell,ifree,nipel,iokel,ip1
+     &     ncell,ix,iy,iz,icell,jcell,ifree,nipel,iokel,ip1,ionnl
       real*8 co(3,*),xstate(nstate_,mi(1),*),
      &     xstateini(nstate_,mi(1),*),ell,
      &     xc,yc,zc,d2,w,swv,sv,det6,rmax,volel,elli,
      &     xmin,xmax,ymin,ymax,zmin,zmax,csize
 !
-      ell=ellsave
-      if(ell.le.0.d0) return
+      call damnlactive(ionnl)
+      if(ionnl.eq.0) return
       call damnlellinit()
+      ell=ellsave
       call damnlellsay()
 !
 !     W6.  The search radius must cover the LARGEST length any material
@@ -931,7 +972,14 @@
           do i=1,ne0
             nn=0
             call damnlellel(i,elli)
+!
+!           With a length that comes only from a card, ellsave is zero,
+!           so the fallback has to be the largest configured length and
+!           not ellsave - otherwise this divides by zero in the weight
+!           below for any element whose own material named none.
+!
             if(elli.le.0.d0) elli=ell
+            if(elli.le.0.d0) elli=0.5d0*rmax
             if(evol(i).gt.0.d0) then
               ix=min(ip-1,max(0,int((cen(1,i)-xmin)/csize)))
               iy=min(jp-1,max(0,int((cen(2,i)-ymin)/csize)))
@@ -1073,10 +1121,12 @@
 !
       character*8 lakon(*)
       integer ipkon(*),kon(*),ne0,mi(*),nstate_,i,indexf,nipf,iokf,ipf
+      integer ionnl
       real*8 co(3,*),xstate(nstate_,mi(1),*),
      &     xstateini(nstate_,mi(1),*),xcf,ycf,zcf,volf
 !
-      if(ellsave.le.0.d0) return
+      call damnlactive(ionnl)
+      if(ionnl.eq.0) return
 !
       if(allocated(dpsave).and.(nesave.ne.ne0)) then
         deallocate(dpsave)
@@ -1212,10 +1262,12 @@
      &     xstateini(nstate_,mi(1),*),dam(mi(1),*)
 !
       integer i,j,a,n1,n2,n3,n4,indexe,it,maxit,nd,im
+      integer ionnl
       real*8 ell2,det,dv,x1(3),e1(3),e2(3),e3(3),ji(3,3),
      &     s,rz,rzold,pap,alpha,beta,rnorm,rnorm0,tol,fm,dloc,gloc
 !
-      if(ellsave.le.0.d0) return
+      call damnlactive(ionnl)
+      if(ionnl.eq.0) return
       call damnlellinit()
       call damnlmatmap(ipkon,lakon,ielmat,ne0,mi)
       ell2=ellsave*ellsave
