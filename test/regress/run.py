@@ -25,10 +25,20 @@ def sh(cmd,env,cwd=None,timeout=3600):
                           stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
 
 def base_env(extra):
+    """NAME= with an empty value UNSETS the name; it does not set it empty.
+
+    Same rule run_s3rad.sh already applies to its positional overrides, and
+    the only rule that can work: ccxopt rejects an empty value for a typed
+    switch, so setting CCX_DAMAGE_TANGENT to "" is an error rather than a
+    way of turning it off. check_switches() reads NAME= the same way, so a
+    runner that set it empty produced a case that could not pass - which is
+    how this was found."""
     e=dict(os.environ)
     e.setdefault('OMP_NUM_THREADS','1'); e.setdefault('MKL_NUM_THREADS','1')
     for kv in extra:
-        k,_,v=kv.partition('='); e[k]=v
+        k,_,v=kv.partition('=')
+        if v=='': e.pop(k,None)
+        else: e[k]=v
     return e
 
 def last_sta(p):
@@ -125,6 +135,26 @@ def run_close(case,rundir,exe):
     r=sh('%s -i close > run.log 2>&1'%exe,env,cwd=rundir)
     return r.returncode,rundir/'run.log',rundir/'close.sta',None
 
+def run_hex(case,rundir,exe):
+    """The hexahedral deck, run directly rather than through run_fast.sh.
+
+    It cannot go through run_fast.sh: that script picks its deck from
+    mkfast.py by FAST_VARIANT, which selects plain or wrapped, not a
+    generator. So a hexahedral case needs its own two lines.
+
+    Its env goes through as a real environment here, not as positional
+    overrides, because nothing is exported behind its back - which is the
+    whole difference from run_fast. A case that wants the damage tangent off
+    still says so explicitly, so the [SWITCHES] banner and check_switches()
+    agree on what ran."""
+    rundir.mkdir(parents=True,exist_ok=True)
+    r=sh('python3 %s/test/hex/mkhex.py -o %s --mode %s --nonlocal-ell %g'
+         %(ROOT,rundir/'hex.inp',case.get('mode','uniaxial'),
+           case.get('nonlocal_ell',0.0)),base_env([]))
+    if r.returncode!=0: return r.returncode,rundir/'run.log',None,None
+    r=sh('%s -i hex > run.log 2>&1'%exe,base_env(case['env']),cwd=rundir)
+    return r.returncode,rundir/'run.log',rundir/'hex.sta',None
+
 def run_mixed(case,rundir,exe):
     rundir.mkdir(parents=True,exist_ok=True)
     shutil.copy(ROOT/'test/pathfollow/mixed.inp',rundir/'mixed.inp')
@@ -137,6 +167,7 @@ def one(case,outroot,exe,required,lines):
     if rundir.exists(): shutil.rmtree(rundir)
     t0=time.time()
     if   case['kind']=='fast':  rc,log,sta,dam=run_fast(case,rundir,exe)
+    elif case['kind']=='hex':   rc,log,sta,dam=run_hex(case,rundir,exe)
     elif case['kind']=='close': rc,log,sta,dam=run_close(case,rundir,exe)
     else:                       rc,log,sta,dam=run_mixed(case,rundir,exe)
     got={'rc':rc}
@@ -173,6 +204,15 @@ def one(case,outroot,exe,required,lines):
             got['opcheck_wrong']=sum(int(r[2]) for r in rows)
             got['opcheck_cols']=len(rows)
         if errs: got['opcheck_maxerr']=max(errs)
+    if 'neighbours' in exp:
+        # What a hexahedral case is for: proving the nonlocal model ENGAGES
+        # on a family that is not a linear tetrahedron. The count is
+        # geometric - how many elements fall inside 2*ell - so it is exact
+        # and does not drift with the solution.
+        try: txt=open(log,errors='replace').read()
+        except OSError: txt=''
+        m=re.search(r'mean neighbours=\s*([0-9.E+-]+)',txt)
+        if m: got['neighbours']=float(m.group(1))
     if 'check_mixed' in exp:
         r=sh('python3 %s/test/pathfollow/check_mixed.py %s'%(ROOT,rundir),base_env([]))
         got['check_mixed']='PASSED' if 'PASSED' in r.stdout else 'FAILED'
@@ -183,6 +223,8 @@ def one(case,outroot,exe,required,lines):
         have=got.get(k)
         if k in ('worst_ratio','tangent_ratio'):
             ok = have is not None and abs(have-want)<=1e-2*abs(want)
+        elif k=='neighbours':
+            ok = have is not None and abs(have-want)<=1e-9*max(1.,abs(want))
         elif k in ('law_error','opcheck_wrong','opcheck_maxerr'):
             ok = have is not None and have<=want
         else:
