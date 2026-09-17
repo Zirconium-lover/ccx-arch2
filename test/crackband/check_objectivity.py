@@ -171,6 +171,34 @@ def main():
               % (label, ell, w, w / base, lbase / ell))
     print("    SPREAD of W across the sweep : %6.2f %% of W0"
           % (100.0 * (max(ws) - min(ws)) / base))
+
+    # SPLIT THE WORK AT A COMMON DISPLACEMENT.  The total hides which half
+    # disagrees, and the two halves are not the same claim: everything up to
+    # the peak is elastic and hardening plastic work in a uniform field,
+    # which any mesh that represents that field must get right, while
+    # everything after it is the fracture process the model is on trial for.
+    # A total spread of 68 % made of 1 % before the peak and 145 % after it
+    # is a statement about the softening law; the same total made of 60 %
+    # before the peak would be a statement about the deck, and the sweep
+    # would have to be thrown away rather than interpreted.
+    #
+    # The split is at ONE displacement for every run, the earliest peak in
+    # the sweep, and not at each run's own peak.  Each run samples its peak
+    # at whatever increment the controller happened to accept, so splitting
+    # at each own peak moved W_pre by 18 % between two runs whose curves
+    # agree to 1 % - an artefact of the output interval reported as a
+    # difference between meshes.
+    usp = min(max(c, key=lambda p: p[1])[0] for _, _, c in runs)
+    pres = [work(c, usp) for _, _, c in runs]
+    posts = [w - q for w, q in zip(ws, pres)]
+    print("  the same work split at u=%.6f, the EARLIEST peak of the sweep"
+          % usp)
+    for (label, _, _), q, r in zip(runs, pres, posts):
+        print("    %-10s W_pre=%10.5f  W_post=%10.5f" % (label, q, r))
+    print("    spread before peak : %6.2f %% - the uniform field, must be ~0"
+          % (100.0 * (max(pres) - min(pres)) / pres[0]))
+    print("    spread AFTER  peak : %6.2f %% - the fracture process"
+          % (100.0 * (max(posts) - min(posts)) / posts[0]))
     lawfit(runs, ws)
 
     pre = post = 0.0

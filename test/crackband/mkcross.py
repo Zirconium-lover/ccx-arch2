@@ -110,11 +110,28 @@ def build(a):
                 # the deck incapable of showing whether the internal length
                 # controls the width.  A narrowed segment lets the band
                 # choose.
+                #
+                # The reduction is a LINEAR TENT of fixed half-width and
+                # not a step, and the reason is a measurement one.  A step
+                # is imposed by scaling the nodes that fall inside the
+                # segment, so its discrete shape is whatever the mesh
+                # happens to sample: over the middle 0.3 of a bar of 6,
+                # nslice=6 and 12 both catch the single node at the centre
+                # and produce a taper 2.0 and 1.0 long, while nslice=24
+                # catches three and produces a flat bottom with a corner.
+                # The imperfection then SHARPENS as the mesh is refined,
+                # and a sweep meant to vary only the element size varies
+                # the specimen too - the band narrowing with refinement
+                # would be partly geometry and there would be no way to
+                # tell how much.  A tent whose kinks sit at x = Lc and
+                # Lc +- half is interpolated EXACTLY by every mesh that
+                # has nodes there, so all three see one specimen.
                 sc = 1.0
                 if a.notch > 0.0:
                     half = 0.5 * a.notchlen * ltot_hint(a)
-                    if abs(x - 0.5 * ltot_hint(a)) <= half:
-                        sc = 1.0 - a.notch
+                    d = abs(x - 0.5 * ltot_hint(a))
+                    if d < half:
+                        sc = 1.0 - a.notch * (1.0 - d / half)
                 coord[n] = (x, j * cell * sc, k * cell * sc)
 
     bulk, weak, eid = [], [], 0
@@ -155,9 +172,15 @@ def build(a):
            "%d (INERT: --trigger=1, so its material equals the bulk)"
            % a.iweak))
     if a.notch > 0.0:
-        add("**   notch: cross-section reduced by %g over the middle %g of"
-            % (a.notch, a.notchlen))
-        add("**   the bar, material uniform - Peerlings 1996 section 5.")
+        add("**   notch: cross-section reduced by up to %g as a LINEAR TENT"
+            % a.notch)
+        add("**     spanning the middle %g of the bar, material uniform"
+            % a.notchlen)
+        add("**     - Peerlings et al. 1996 section 5.  The tent is kinked at")
+        add("**     x = %g, %g and %g; a mesh with nodes there sees this"
+            % (0.5 * (1.0 - a.notchlen) * ltot_hint(a), 0.5 * ltot_hint(a),
+               0.5 * (1.0 + a.notchlen) * ltot_hint(a)))
+        add("**     specimen exactly, and one without does not.")
     if a.ltot > 0.0:
         add("**   LENGTH FIXED at %g, so --nslice refines ALONG the bar."
             % a.ltot)
@@ -283,8 +306,13 @@ def main():
                         "a weak slice it does not pin the band to one slice, "
                         "so the band width is the model's and not the deck's.")
     q.add_argument("--notchlen", type=float, default=0.1,
-                   help="length of the narrowed segment as a fraction of the "
-                        "bar; only meaningful with --notch")
+                   help="FULL span of the narrowing as a fraction of the bar. "
+                        "The reduction is a linear tent over that span, deepest "
+                        "at the centre, so pick a span whose ends and centre "
+                        "are nodes on every mesh of the sweep (1/3 of a bar of "
+                        "6 is exact for nslice 6, 12 and 24) and all of them "
+                        "then see the same specimen; only meaningful with "
+                        "--notch")
     q.add_argument("--gf", type=float, default=-1.0,
                    help="fracture energy for EVOLUTION=ENERGY; "
                         "default derives the equivalent of --uf")
