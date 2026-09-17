@@ -45,7 +45,14 @@ run(){ # tag  extra-env...
   # local run never breaks, which is what carries the verdict.  Verified on
   # the pre-fix binary rather than assumed - a cheaper deck that stopped
   # discriminating would be worse than no test.
+  # --from-deck explicitly, as run_fast.sh and tools/opcheck.py both do.
+  # mkfast.py defaults it to a path relative to the CURRENT DIRECTORY, so
+  # without this the check passes from the repo root and dies from
+  # test/regress - which is where run.py is normally started, and where the
+  # gate then reports "deck generation failed", a message that reads like a
+  # broken environment rather than a test that never ran.
   python3 "$ROOT/test/fast/mkfast.py" -o "$d/m.inp" --nx 8 --ny 5 --nz 5 \
+      --from-deck "$ROOT/test/s3rad/m12_s3rad_gc24_w.inp" \
       >/dev/null 2>&1 || return 2
   ( cd "$d" && env "$@" "$EXE" -i m > run.log 2>&1 )
   return 0
