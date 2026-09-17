@@ -370,16 +370,27 @@ prediction to test is `G_f w/(2 ell)` and not `G_f w/h`.  At `h`=0.25, with
 
 | `ell` | `w` | `w/(2 ell)` | predicted | measured | off |
 |---|---|---|---|---|---|
-| 0.25 | 0.7280 | 1.456 | 5.940 | 5.710 | -4 % |
-| 0.5 | 1.0725 | 1.072 | 4.376 | 4.442 | +2 % |
+| ~~0.25~~ | ~~0.7280~~ | ~~1.456~~ | ~~5.940~~ | ~~5.710~~ | ~~-4 %~~ WITHDRAWN |
+| 0.5 | 1.0725 | 1.072 | 4.376 | 4.442 | +1 % |
 | 0.75 | 1.3193 | 0.880 | 3.588 | 5.093 | +42 % |
-| 1.0 | 1.5352 | 0.768 | 3.132 | 6.135 | +96 % |
+| 1.0 | 1.5352 | 0.768 | 3.132 | 6.135 | +95 % |
 
-The error is **monotone in `w/(2 ell)`** and crosses zero exactly where the band
-stops being as wide as the length the law charges.  Within the domain where the
-band really is `2*ell` wide the substitution is right to 4 %; outside it the law
-asserts a width the specimen does not sustain, and the accounting fails by the
-amount of the overshoot.
+**The first row is withdrawn**, and by the check in this directory rather than
+by anything external: `ell`=0.25 stops at a step time of 0.147 with two elements
+deleted, so it never ruptured.  It was published as the strongest point of the
+table an hour before the stage check was rewritten to read the step time
+instead of the attempt counter - the corrected check then caught a number that
+the broken one had passed.  Its exclusion leaves **one** arm inside the domain,
+not two.
+
+The error is **monotone in `w/(2 ell)`** across the three arms that do reach
+rupture, and crosses zero where the band stops being as wide as the length the
+law charges.  At the one valid arm with `w >= 2 ell` the substitution is right
+to 1 %; outside the domain the law asserts a width the specimen does not
+sustain, and the accounting fails by the overshoot.  One point inside a domain
+is a consistency, not a verification, and the honest way to strengthen it is an
+arm at `w/(2 ell)` well above 1 that also ruptures - which on this specimen
+means a smaller `ell`, and `ell`=0.375 already fails to converge.
 
 So the substitution's validity condition is **not** `iok` - the mesh resolves
 `ell` on all four of those arms - but `w >= 2 ell`, a statement about the

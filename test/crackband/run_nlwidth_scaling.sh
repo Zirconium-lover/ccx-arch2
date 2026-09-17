@@ -260,12 +260,17 @@ print()
 #
 # The column that matters is w/(2*ell).  The substitution asserts that the
 # band is 2*ell wide, and the accounting can only be right while the band
-# really is at least that wide.  Measured at h=0.25, off by -4 and +2 per cent
-# at w/2ell of 1.46 and 1.07, then +42 and +96 per cent at 0.88 and 0.77: the
-# error is monotone in w/(2*ell) and crosses zero where the band stops being
-# as wide as the length the law charges.  So the substitution's validity
-# condition is a statement about the SPECIMEN, not about the mesh, and it is
-# not the iok criterion, which is satisfied on all four of those arms.
+# really is at least that wide.  Measured at h=0.25 on the three arms that
+# reach rupture: off by +1 per cent at w/2ell = 1.07, then +42 and +95 at 0.88
+# and 0.77.  The error is monotone in w/(2*ell) and crosses zero where the band
+# stops being as wide as the length the law charges.  So the validity condition
+# is a statement about the SPECIMEN, not about the mesh, and it is not the iok
+# criterion, which those arms all satisfy.
+#
+# A fourth arm, ell=0.25 at w/2ell=1.46, was published as agreeing to -4 per
+# cent before the stage check below was written correctly.  It stops at a step
+# time of 0.147 with two elements deleted, so it is excluded and that agreement
+# is withdrawn - which leaves ONE arm inside the domain, not two.
 g=rows[0][3]
 if g and os.environ.get("NLW")=="1":
     print("  W_post against G_f*w/(2*ell), the width the law now uses:")
@@ -280,7 +285,7 @@ if g and os.environ.get("NLW")=="1":
                                      "   <- band NARROWER than 2*ell"))
     print("    An arm marked above is outside the substitution's domain: the")
     print("    law charges a width the specimen does not sustain.")
-if g:
+if g and os.environ.get("NLW") != "1":
     print("  W_post against G_f*w/h, the width the law uses with NLWIDTH=0:")
     for e,wd,c,_,ok in rows:
         if not ok: continue
@@ -316,7 +321,14 @@ if len(nl)>=2:
         print("    ell %g -> %g : ell x%.2f   width x%.2f   W_post x%.2f"
               % (e0,e,e/e0,wd/wd0,p/p0))
     print("    width tracking ell means the averaging sets the width.")
-    print("    W_post tracking ell too means each element layer inside the")
-    print("    band still charges its own G_f, so the fracture energy of")
-    print("    the model depends on ell/h - the lengths are not reconciled.")
+    if os.environ.get("NLW") == "1":
+        print("    With the substitution ON, W_post tracking ell no longer")
+        print("    means the per-layer charge: read the w/(2*ell) block")
+        print("    above, where the law's own width is the reference.  What")
+        print("    is left of the dependence is that the band the averaging")
+        print("    forms is not exactly 2*ell, which the law cannot fix.")
+    else:
+        print("    W_post tracking ell too means each element layer inside")
+        print("    the band still charges its own G_f, so the fracture")
+        print("    energy depends on ell/h - the lengths are not reconciled.")
 PY
