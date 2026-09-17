@@ -62,14 +62,33 @@ for ell in $ELLS; do
       "$d/t.inp"
   ( cd "$d" && env CCX_DAMAGE_CHARLEN=1 CCX_DAMAGE_VISCOSITY="$VISC" \
         CCX_DAMAGE_NLWIDTH="$NLW" "$EXE" t > run.log 2>&1 )
-  printf "  ell=%-5s rc=%-4s theta=%s\n" "$ell" "$?" \
+  rc=$?
+  printf "  ell=%-5s rc=%-4s theta=%s\n" "$ell" "$rc" \
          "$(awk '{t=$3}END{print t}' "$d/t.sta" 2>/dev/null)"
+  # AN ARM THAT DID NOT CONVERGE IS NOT A DATA POINT.  The rc was printed
+  # and then thrown away, so a stopped arm supplied a width and a W_post
+  # to the tables below exactly like a finished one.  On the integral
+  # backend every arm converges and this never showed; on the gradient
+  # backend ell=0.5 stops at 6U, and its numbers went into the scaling
+  # law as if they were measurements - which is how a sweep reports a
+  # trend it did not observe.  Marked here so the analysis can refuse it.
+  [ "$rc" = 0 ] || : > "$d/UNCONVERGED"
 done
 echo
 echo "  nslice=$NS, h=$(python3 -c "print(6.0/$NS)"), viscosity $VISC, NLWIDTH=$NLW"
 python3 - "$OUT" "$NS" "$ELLS" "$ROOT" <<'PY'
 import sys,os,re
 out,ns,ells,root=sys.argv[1],int(sys.argv[2]),sys.argv[3].split(),sys.argv[4]
+bad=[e for e in ells if os.path.exists(os.path.join(out,"e"+e,"UNCONVERGED"))]
+if bad:
+    print("  EXCLUDED, did not converge: ell = %s"%", ".join(bad))
+    print("  (an arm that stopped has no width and no W_post to report;")
+    print("   reporting them anyway is how a sweep states a trend it")
+    print("   did not observe)")
+    ells=[e for e in ells if e not in bad]
+    if len(ells)<2:
+        print("  fewer than two arms left - nothing to compare")
+        sys.exit(0)
 sys.path.insert(0,os.path.join(root,"test","crackband"))
 h=6.0/ns
 
