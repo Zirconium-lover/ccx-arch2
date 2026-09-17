@@ -69,14 +69,41 @@ for ell in $ELLS; do
   ( cd "$d" && env CCX_DAMAGE_CHARLEN=1 CCX_DAMAGE_VISCOSITY="$VISC" \
         CCX_DAMAGE_NLWIDTH="$NLW" CCX_DAMAGE_NONLOCAL_MODE="$MODE" \
         "$EXE" t > run.log 2>&1 )
-  printf "  ell=%-5s rc=%-4s theta=%s\n" "$ell" "$?" \
+  rc=$?
+  printf "  ell=%-5s rc=%-4s theta=%s\n" "$ell" "$rc" \
          "$(awk '{t=$3}END{print t}' "$d/t.sta" 2>/dev/null)"
+  # AN ARM THAT DID NOT CONVERGE IS NOT A DATA POINT.  The rc was printed
+  # and then thrown away, so a stopped arm supplied a width and a W_post
+  # to the tables below exactly like a finished one.  On the integral
+  # backend every arm converges and this never showed; on the gradient
+  # backend ell=0.5 stops at 6U, and its numbers went into the scaling
+  # law as if they were measurements - which is how a sweep reports a
+  # trend it did not observe.  Marked here so the analysis can refuse it.
+  [ "$rc" = 0 ] || : > "$d/UNCONVERGED"
 done
 echo
 echo "  nslice=$NS, h=$(python3 -c "print(6.0/$NS)"), viscosity $VISC, NLWIDTH=$NLW, $MODE"
 python3 - "$OUT" "$NS" "$ELLS" "$ROOT" <<'PY'
 import sys,os,re
 out,ns,ells,root=sys.argv[1],int(sys.argv[2]),sys.argv[3].split(),sys.argv[4]
+# THREE INDEPENDENT SIGNS OF THE SAME THING, and they were written by two
+# people who found the same defect separately.  rc!=0 is the solver's own
+# verdict and is checked here; theta<1 and "nothing was deleted" are checked
+# by done() below.  Keeping all three is not belt-and-braces: an arm can exit
+# 0 and complete the step and still never rupture, which rc alone misses, and
+# an arm can die in a way that leaves a plausible t.sta, which the other two
+# alone miss.  The first filter drops an arm entirely; the second marks it in
+# the table and withholds only the numbers derived from it.
+bad=[e for e in ells if os.path.exists(os.path.join(out,"e"+e,"UNCONVERGED"))]
+if bad:
+    print("  EXCLUDED, did not converge (rc!=0): ell = %s"%", ".join(bad))
+    print("  (an arm that stopped has no width and no W_post to report;")
+    print("   reporting them anyway is how a sweep states a trend it")
+    print("   did not observe)")
+    ells=[e for e in ells if e not in bad]
+    if len(ells)<2:
+        print("  fewer than two arms left - nothing to compare")
+        sys.exit(0)
 sys.path.insert(0,os.path.join(root,"test","crackband"))
 h=6.0/ns
 
@@ -176,8 +203,9 @@ for e in ells:
     if not ok: bad.append((e,why))
     rows.append((float(e),width(d),c,gf(d),ok))
 if bad:
-    print("  ARMS AT A DIFFERENT STAGE, so their WIDTH is not comparable")
-    print("  and they are excluded from the ell dependence below:")
+    print("  RAN BUT AT A DIFFERENT STAGE - rc was 0 and the arm still did")
+    print("  not reach rupture, so its WIDTH is not comparable and it is")
+    print("  excluded from the ell dependence below:")
     for e,why in bad:
         print("    ell=%-6s %s" % (e,why))
     print("  (their work is still integrated on the common window, which is")
