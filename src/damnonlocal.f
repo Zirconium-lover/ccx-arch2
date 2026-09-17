@@ -629,6 +629,18 @@
       implicit none
       real*8 ellmax
       integer i
+!
+!     Initialise before reading.  ellover and the card table are set
+!     by damnlellinit, and this routine used to read them without
+!     calling it - so a caller that reached here first would see
+!     ellover=0 and take a card value where the environment was
+!     meant to override.  Not reachable today with a wrong ANSWER,
+!     because the one early caller uses this only as a yes/no gate,
+!     but it is the exact shape of the cbmode defect: a value read
+!     by a path that did not set it.  Found by searching my own
+!     files for that shape rather than by a run.
+!
+      call damnlellinit()
       ellmax=ellsave
       if(ncard.le.0) return
       if(ellover.eq.1) return
@@ -643,6 +655,18 @@
       implicit none
       integer iel,im
       real*8 ell,emx
+!
+!     Initialise before reading.  ellover and the card table are set
+!     by damnlellinit, and this routine used to read them without
+!     calling it - so a caller that reached here first would see
+!     ellover=0 and take a card value where the environment was
+!     meant to override.  Not reachable today with a wrong ANSWER,
+!     because the one early caller uses this only as a yes/no gate,
+!     but it is the exact shape of the cbmode defect: a value read
+!     by a path that did not set it.  Found by searching my own
+!     files for that shape rather than by a run.
+!
+      call damnlellinit()
       ell=ellsave
       if(ncard.le.0) return
 !
@@ -692,6 +716,18 @@
       implicit none
       integer imat,iok
       real*8 ell
+!
+!     Initialise before reading.  ellover and the card table are set
+!     by damnlellinit, and this routine used to read them without
+!     calling it - so a caller that reached here first would see
+!     ellover=0 and take a card value where the environment was
+!     meant to override.  Not reachable today with a wrong ANSWER,
+!     because the one early caller uses this only as a yes/no gate,
+!     but it is the exact shape of the cbmode defect: a value read
+!     by a path that did not set it.  Found by searching my own
+!     files for that shape rather than by a run.
+!
+      call damnlellinit()
       iok=0
       ell=0.d0
       if(ncard.le.0) return
