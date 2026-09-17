@@ -1,6 +1,6 @@
 # Crack-band width: what is here and how to check it
 
-Eleven files, no obvious entry point, so this is the map.  Every number below
+Twelve files, no obvious entry point, so this is the map.  Every number below
 is stamped with the commit it was measured on and the command that
 reproduces it, because a number written into prose drifts silently when
 somebody else's change moves it.  That failure has already happened once
@@ -67,6 +67,7 @@ switch is set.
 | `bandwidth.py` | the band width as `sum(D*V)/A`, with no threshold - it replaced a count over `D>0.5` that gave three verdicts for the three thresholds `de1stats` writes |
 | `run_nlwidth_gate.sh` | runs that sweep with `CCX_DAMAGE_NLWIDTH` off and on and requires the `ell` dependence to come down; a relative criterion, so there is no ceiling to pick |
 | `run_xsection_floor.sh` | varies the bar's cross-section to find what stops the local band collapsing - it is the specimen, not the code |
+| `check_readme_state.sh` | checks the claims this README makes about the **tree** - file count, table completeness, whether the gate runs the unit test, whether each measurement's commit exists - because four such claims went stale in one day and every one was caught by luck |
 
 ## Why the sweep refines the cross-section
 
