@@ -305,7 +305,34 @@ void results(double *co,ITG *nk,ITG *kon,ITG *ipkon,char *lakon,ITG *ne,
       }
     }
     SFREE(fn1);SFREE(ithread);SFREE(neapar);SFREE(nebpar);
-	
+
+    /* [DAMAGE NONLOCAL] refresh the regularised driving variable, once per
+       call, HERE and not in nonlingeo.c.
+
+       The averaged variable is a two-phase global reduction: collect the
+       local driving variable over every element, then average over
+       neighbourhoods.  The second phase cannot run inside resultsmech,
+       which the loop just above splits across threads by element range -
+       the neighbours of an element belong to other threads' ranges by
+       construction, so the average would read values those threads are
+       still writing.  This point is after the join, so every local value
+       is the one this call produced and nothing is being written.
+
+       Why not the Newton loop of nonlingeo.c, which is where it logically
+       belongs: nonlingeo.c makes TWENTY-EIGHT results() calls - line
+       search, trust region, path following, active set and topology each
+       have their own - and a refresh attached to one of them leaves every
+       other path reading a field from the previous iteration, silently.
+       One site that cannot be missed beats the right site chosen
+       twenty-eight times.  The cost of putting it in generic code is the
+       guard below, and damnlrefresh returns on its first line unless
+       CCX_DAMAGE_NONLOCAL_INNER=1 and an internal length is set, so every
+       other analysis type pays one call and one comparison.  Measured:
+       fast-plain is byte for byte unchanged with the switch unset. */
+
+    FORTRAN(damnlrefresh,(ipkon,kon,lakon,co,ne0,mi,xstate,
+			  xstateini,nstate_,ielmat,dam));
+
     /* determine the internal force */
 
     qa[0]=qa1[0];
