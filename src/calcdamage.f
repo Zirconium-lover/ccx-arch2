@@ -263,6 +263,35 @@
       end
 !
       subroutine damcbufset(iel,iint,val)
+!
+!     Keep the SMALLEST effective u_f the point has offered, which is the
+!     LARGEST equivalent stress it has carried, because u_f = 2 G_f / s0
+!     and G_f is a material constant.
+!
+!     WHY NOT THE LATEST.  This cache is refreshed on every increment for
+!     which initiation has not yet committed, and taking the latest looks
+!     like "the value at initiation" but is not: by the last increment
+!     before the threshold is crossed, the neighbouring points of the same
+!     band have often initiated already and are softening, and they unload
+!     this one.  The stress sampled there is on the way DOWN.
+!
+!     MEASURED on the equivalence deck, element 19, point 1, whose card
+!     says sigma_0 = 400.1:
+!
+!       dambase=0.931604   vM=400.0982   u_f=0.0200001
+!       dambase=0.981067   vM=367.4603   u_f=0.0217765   <- was frozen
+!
+!     One increment before the crossing the point carries exactly the
+!     flow stress the card describes, to four decimals.  The increment
+!     that used to win carries 8 per cent less, and that error goes
+!     straight into u_f and from there into the dissipated energy.
+!
+!     The peak is the right rule and not merely the better one: for a
+!     hardening J2 material under monotonic loading the largest
+!     equivalent stress before initiation IS the flow stress at
+!     initiation, which is the sigma_0 that G_f = sigma_0 u_f / 2 is
+!     written in terms of (Bazant and Oh 1983 for the relation itself).
+!
       use damcbmod
       implicit none
       integer iel,iint
@@ -271,6 +300,9 @@
       if((iel.lt.1).or.(iel.gt.cbune)) return
       if((iint.lt.1).or.(iint.gt.cbunip)) return
       if(val.le.0.d0) return
+      if(cbuf(iint,iel).gt.0.d0) then
+        if(val.ge.cbuf(iint,iel)) return
+      endif
       cbuf(iint,iel)=val
       return
       end
