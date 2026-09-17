@@ -1,0 +1,170 @@
+#!/usr/bin/env python3
+"""Band width as damage-weighted volume, with no threshold anywhere.
+
+    bandwidth.py RUNDIR [--area A]
+
+WHY NOT A COUNT OVER A THRESHOLD.  The obvious measure is "how many
+integration points have D above something", and it was the measure used
+here first.  It does not survive its own sensitivity test.  On one sweep,
+the same runs give three different verdicts:
+
+    threshold   local                    NONLOCAL=0.5
+    D > 0.1     1.000 0.667 0.917        1.667 1.333 1.667
+    D > 0.5     1.000 0.667 0.417        1.000 0.833 1.083
+    D > 0.9     1.000 0.250 0.083        1.000 0.500 0.333
+
+At 0.1 the local band holds too; at 0.9 the nonlocal band collapses too.
+Only the middle row says the two behave differently.  A verdict that
+depends on a number nobody derived is not a measurement of the model, and
+the three rows are not even measuring one quantity: D > 0.1 includes
+material that has barely begun to damage, so it tracks the pre-localisation
+spread the notch imposes, while elements past D > 0.9 are deleted within a
+few increments, so that count tracks the deletion rate and is a snapshot of
+the crack tip rather than a width.
+
+WHAT THIS MEASURES INSTEAD.  Crack-band theory makes its claim about the
+volume over which the fracture energy is dissipated, so that is what is
+measured:
+
+    w = ( sum_e  D_e * V_e )  /  A
+
+with V_e the element's REFERENCE volume, A the reference cross-section
+where the band forms, and the sum over every element - including the ones
+deleted on the way, which dissipated their full G_f and are counted at
+D = 1.  No threshold enters, and nothing is maximised over history: a
+deleted element stays counted, so the measure only grows and there is no
+"largest simultaneous" to choose.
+
+The inputs are files the solver already writes.  The VTK snapshot carries
+per-cell DE1_D with an ELEMENT_ID array, so a cell needs no reconstruction
+to be identified; the .damage history lists what was deleted and when; the
+deck supplies the reference coordinates.  Deformed coordinates are in the
+VTK too and are deliberately NOT used - a band measured in the deformed
+configuration grows with the stretch inside it, and arms that rupture at
+different displacements would then be compared at different stretches.
+"""
+import os, re, sys
+
+
+def deck_geometry(path):
+    """Reference coordinates and C3D4 connectivity, from the deck itself."""
+    co, el, mode = {}, {}, None
+    for line in open(path):
+        t = line.strip()
+        if t.startswith('**') or not t:
+            continue
+        if t.startswith('*'):
+            u = t.upper()
+            if u.startswith('*NODE'):
+                mode = 'n'
+            elif u.startswith('*ELEMENT'):
+                mode = 'e' if 'C3D4' in u else None
+            else:
+                mode = None
+            continue
+        f = [v.strip() for v in t.split(',') if v.strip() != '']
+        if mode == 'n' and len(f) >= 4:
+            co[int(f[0])] = (float(f[1]), float(f[2]), float(f[3]))
+        elif mode == 'e' and len(f) >= 5:
+            el[int(f[0])] = [int(v) for v in f[1:5]]
+    return co, el
+
+
+def vol(co, nodes):
+    p, q, r, s = (co[n] for n in nodes)
+    a = [q[i] - p[i] for i in range(3)]
+    b = [r[i] - p[i] for i in range(3)]
+    c = [s[i] - p[i] for i in range(3)]
+    det = (a[0] * (b[1] * c[2] - b[2] * c[1])
+           - a[1] * (b[0] * c[2] - b[2] * c[0])
+           + a[2] * (b[0] * c[1] - b[1] * c[0]))
+    return abs(det) / 6.0
+
+
+def vtk_damage(path):
+    """{element id: D} from the snapshot, by its own ELEMENT_ID array."""
+    lines = open(path).read().split('\n')
+    n, dam, eid = None, [], []
+    i = 0
+    while i < len(lines):
+        s = lines[i]
+        if s.startswith('CELL_DATA'):
+            n = int(s.split()[1])
+        elif s.startswith('SCALARS DE1_D') and n:
+            dam = [float(x) for x in lines[i + 2:i + 2 + n]]
+            i += 1 + n
+        elif s.startswith('SCALARS ELEMENT_ID') and n:
+            eid = [int(x) for x in lines[i + 2:i + 2 + n]]
+            i += 1 + n
+        i += 1
+    if not eid or len(eid) != len(dam):
+        raise SystemExit("%s: no usable ELEMENT_ID/DE1_D pair" % path)
+    return dict(zip(eid, dam))
+
+
+def deleted(path):
+    out = set()
+    if not os.path.exists(path):
+        return out
+    for line in open(path):
+        if line.startswith('#'):
+            continue
+        f = line.split()
+        if f:
+            out.add(int(f[0]))
+    return out
+
+
+def notch_area(deckpath):
+    """The reference cross-section where the band forms.
+
+    Read from the deck's own header rather than assumed: the tent notch
+    makes the area a function of x, and the band forms at its minimum.
+    """
+    red, a = 0.0, 1.0
+    for line in open(deckpath):
+        if not line.startswith('**'):
+            break
+        m = re.search(r"specimen: *[\d.eE+-]+ *x *([\d.eE+-]+) *x *([\d.eE+-]+)",
+                      line)
+        if m:
+            a = float(m.group(1)) * float(m.group(2))
+        m = re.search(r"reduced by up to ([\d.eE+-]+)", line)
+        if m:
+            red = float(m.group(1))
+    return a * (1.0 - red) ** 2
+
+
+def width(rundir, area=None):
+    deck = os.path.join(rundir, 't.inp')
+    co, el = deck_geometry(deck)
+    dam = vtk_damage(os.path.join(rundir, 't.de1.vtk'))
+    gone = deleted(os.path.join(rundir, 't.damage'))
+    if area is None:
+        area = notch_area(deck)
+    tot = 0.0
+    for e, nodes in el.items():
+        d = 1.0 if e in gone else dam.get(e, 0.0)
+        tot += d * vol(co, nodes)
+    missing = [e for e in el if e not in gone and e not in dam]
+    return tot / area, area, len(el), len(gone), len(missing)
+
+
+def main():
+    args = [a for a in sys.argv[1:] if not a.startswith('--')]
+    area = None
+    for a in sys.argv[1:]:
+        if a.startswith('--area'):
+            area = float(a.split('=', 1)[1])
+    if not args:
+        raise SystemExit(__doc__)
+    for d in args:
+        w, a, ne, ng, nm = width(d, area)
+        print("%-40s w=%.4f  (A=%.4f, %d elements, %d deleted%s)"
+              % (d, w, a, ne, ng,
+                 ", %d UNACCOUNTED" % nm if nm else ""))
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

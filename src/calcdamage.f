@@ -111,6 +111,7 @@
 !     cbfroz(ip,element) is the frozen width, 0 meaning "not set yet".
 !
       integer :: cbmode=-1,cbne=0,cbnip=0,cbwarn=0,cbmeanw=0
+      integer :: cbnlw=-1,cbnlwarn=0
       real*8, allocatable :: cbfroz(:,:)
 !
 !     W2 ENERGY evolution.  cbevol(imat) is the evolution kind read from
@@ -479,6 +480,90 @@
       if((iint.lt.1).or.(iint.gt.cbnip)) return
       if(val.le.0.d0) return
       cbfroz(iint,iel)=val
+      return
+      end
+!
+      subroutine damcbnlwread()
+!
+!     CB-NL: read CCX_DAMAGE_NLWIDTH once.  OFF BY DEFAULT, so every deck
+!     that ran before this switch existed keeps its answer to the bit.
+!
+      use damcbmod
+      implicit none
+      character*132 carg
+!
+      if(cbnlw.ge.0) return
+      cbnlw=0
+      call getenv('CCX_DAMAGE_NLWIDTH',carg)
+      if(carg(1:1).eq.'1') cbnlw=1
+      return
+      end
+!
+      subroutine damcbnlwidth(iel,charlen)
+!
+!     WHEN THE DAMAGE DRIVER IS A NONLOCAL AVERAGE, THE WIDTH IN THE
+!     SOFTENING LAW MUST BE THE WIDTH OF THE BAND THAT FORMS.
+!
+!     D advances as charlen*dEps_p/u_f, so an element reaches D=1 once the
+!     plastic displacement ACROSS it reaches u_f, and it therefore
+!     dissipates G_f = sigma_0 u_f / 2 per unit area whatever its size.
+!     That is the property Bazant and Oh 1983 build the crack band for,
+!     and it is exact for one reason only: the band is assumed to be ONE
+!     element wide.  Charge it to every element of a band that is n layers
+!     wide and the model dissipates n*G_f for one crack.
+!
+!     An internal length abolishes that assumption on purpose - it exists
+!     to fix the band's width in the material rather than in the mesh - so
+!     the two regularisations cannot both keep their own length.  Measured
+!     on this tree (test/crackband/run_nlwidth_scaling.sh, forum
+!     2026-09-17): at h=0.25 the band width follows 2*ell to within +8/-12
+!     per cent, and W_post follows it, growing by 2.66 between ell=0.25 and
+!     ell=1.0 while the pre-peak work agrees to 0.03 per cent.  The
+!     dissipation is proportional to the number of ELEMENT LAYERS, which is
+!     ell/h, and so is a material constant only when the band is one
+!     element wide.
+!
+!     Jirasek and Bauer 2012, section 5, state the requirement directly:
+!     the width entering the softening law must be the width of the band
+!     that actually forms.
+!
+!     TWO GUARDS, both of which make this a no-op rather than a guess:
+!
+!       iok=0 from damnlelleff - the mesh does not resolve the averaging
+!       length, so the band the averaging would form is not represented
+!       and 2*ell is not the width of anything.  The criterion lives in
+!       damnonlocal.f and is NOT repeated here: repeating it would let the
+!       two copies disagree.
+!
+!       2*ell below the element's own width - a band cannot be narrower
+!       than the one element that carries it, so the element size remains
+!       the floor.  dmax1 rather than a replacement for that reason.
+!
+      use damcbmod
+      implicit none
+      integer iel,iokv
+      real*8 charlen,ellv,wnl
+!
+      call damcbnlwread()
+      if(cbnlw.ne.1) return
+      if(charlen.le.0.d0) return
+      call damnlelleff(iel,ellv,iokv)
+      if(iokv.ne.1) return
+      if(ellv.le.0.d0) return
+      wnl=2.d0*ellv
+      charlen=dmax1(charlen,wnl)
+      if(cbnlwarn.eq.0) then
+        cbnlwarn=1
+        write(*,*)
+        write(*,*) '*INFO in calcdamage: CCX_DAMAGE_NLWIDTH=1, the'
+        write(*,*) '      crack-band width in the softening law is'
+        write(*,*) '      the band width the nonlocal averaging'
+        write(*,*) '      forms, 2*ell, where the mesh resolves it,'
+        write(*,*) '      and the element width elsewhere.  Without'
+        write(*,*) '      this the fracture energy of the combined'
+        write(*,*) '      model scales with ell/h.'
+        write(*,*)
+      endif
       return
       end
 !
@@ -1343,6 +1428,11 @@
               if(cbiok.eq.1) charlen=cbwid
             endif
 !
+!           CB-NL: a nonlocal driver needs the band's width, not the
+!           element's.  Inert unless CCX_DAMAGE_NLWIDTH=1.
+!
+            call damcbnlwidth(i,charlen)
+!
 !           W2: ENERGY evolution.  The card slot that DISPLACEMENT reads as
 !           u_f is G_f here, and the law needs u_f, so it is derived:
 !
@@ -1933,6 +2023,11 @@
       charlen=det6v**(1.d0/3.d0)
 !
   100 continue
+!
+!     CB-NL: the same substitution as in calcdamagebase, applied at the
+!     one point both paths have a width.  Inert unless the switch is set.
+!
+      call damcbnlwidth(iel,charlen)
 !
 !     Triaxiality from the effective stress (scalar degradation would
 !     leave it invariant, but using the effective stress is unambiguous).

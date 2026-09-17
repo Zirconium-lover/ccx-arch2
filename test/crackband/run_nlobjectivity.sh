@@ -44,6 +44,15 @@ export OMP_NUM_THREADS=${OMP_NUM_THREADS:-1} MKL_NUM_THREADS=${MKL_NUM_THREADS:-
 mkdir -p "$OUT"
 ELL=${ELL:-0.5}
 VISC=${VISC:-1.e-3}
+# NSLICES and NOTCHLEN travel together: the tent's kinks sit at the middle
+# +- NOTCHLEN/2 of the bar, and every mesh in NSLICES must have nodes there
+# or the decks stop describing one solid.  The preflight enforces it, so a
+# pair that does not line up fails before any solver runs rather than
+# producing a sweep that varies two things.  1/3 lines up with 6 12 24;
+# 1/6 needs 12 24 48, which is the sweep for a SHARPER notch - the one that
+# says whether a floor in the measured width is the model's or the notch's.
+NSLICES=${NSLICES:-"6 12 24"}
+NOTCHLEN=${NOTCHLEN:-0.33333333333333333}
 
 # PREFLIGHT: one specimen on all three meshes.  Refining a mesh must not move
 # the solid it discretises, and the only reason to state that as a check is
@@ -53,10 +62,10 @@ VISC=${VISC:-1.e-3}
 # a narrow notch can put its nodes in the right places and still be a taper of
 # a different length on each mesh.  With --notchlen 0.1 this fails by 5.8e-2
 # of the cross-section - which is what the first version of this sweep ran.
-python3 - "$ROOT" "$OUT" <<'PY' || exit 3
+python3 - "$ROOT" "$OUT" "$NOTCHLEN" "$NSLICES" <<'PY' || exit 3
 import subprocess,sys,os
-root,out=sys.argv[1],sys.argv[2]
-nlen="0.33333333333333333"
+root,out,nlen=sys.argv[1],sys.argv[2],sys.argv[3]
+meshes=[int(v) for v in sys.argv[4].split()]
 def prof(ns):
     d=os.path.join(out,"pre%d"%ns); os.makedirs(d,exist_ok=True)
     subprocess.check_call(["python3",os.path.join(root,"test/crackband/mkcross.py"),
@@ -83,8 +92,8 @@ def interp(r,x):
             x0,x1=xs[i-1],xs[i]
             return r[x0]+(r[x1]-r[x0])*(x-x0)/(x1-x0)
     return r[xs[-1]]
-base=prof(6); bad=0; worst=0.0
-for ns in (12,24):
+base=prof(meshes[0]); bad=0; worst=0.0
+for ns in meshes[1:]:
     fine=prof(ns)
     for x,y in sorted(fine.items()):
         d=abs(interp(base,x)-y)
@@ -99,15 +108,15 @@ if bad:
           " mesh moved the specimen, so the sweep would vary two things."
           % (bad,worst))
     sys.exit(1)
-print("  preflight: one specimen on all three meshes (worst surface"
-      " disagreement %.1e)" % worst)
+print("  preflight: one specimen on all %d meshes (worst surface"
+      " disagreement %.1e)" % (len(meshes),worst))
 PY
-for ns in 6 12 24; do
+for ns in $NSLICES; do
   for arm in local nl; do
     d="$OUT/${ns}_${arm}"; rm -rf "$d"; mkdir -p "$d"
     python3 "$ROOT/test/crackband/mkcross.py" --nslice "$ns" --ltot 6.0 \
         --ncross 1 --alldamage --trigger 1.0 --notch 0.10 \
-        --notchlen 0.33333333333333333 --uend 0.30 \
+        --notchlen "$NOTCHLEN" --uend 0.30 \
         -o "$d/t.inp" >/dev/null || exit 2
     [ "$arm" = nl ] && sed -i "s/EVOLUTION=DISPLACEMENT\$/EVOLUTION=DISPLACEMENT, NONLOCAL=$ELL/g" "$d/t.inp"
     ( cd "$d" && env CCX_DAMAGE_CHARLEN=1 CCX_DAMAGE_VISCOSITY="$VISC" "$EXE" t > run.log 2>&1 )
@@ -116,28 +125,35 @@ for ns in 6 12 24; do
   done
 done
 echo
-echo "  band width, elements with D>0.5, in LENGTH - the quantity the"
-echo "  internal length is supposed to hold fixed:"
-python3 - "$OUT" <<'PY'
-import sys
-out=sys.argv[1]
+echo "  band width as sum(D*V)/A, threshold free - see bandwidth.py for why"
+echo "  a count over a threshold was dropped: it gave three verdicts for"
+echo "  three thresholds on these same runs."
+python3 - "$ROOT" "$OUT" "$NSLICES" <<'PY'
+import sys,os
+root,out,meshes=sys.argv[1],sys.argv[2],[int(v) for v in sys.argv[3].split()]
+sys.path.insert(0,os.path.join(root,"test","crackband"))
+from bandwidth import width
+print("    mesh      " + "  ".join("h=%-6.3f" % (6.0/ns) for ns in meshes))
+rows={}
 for arm in ("local","nl"):
     row=[]
-    for ns in (6,12,24):
-        best=0
-        try:
-            for i,l in enumerate(open("%s/%d_%s/t.de1stats"%(out,ns,arm))):
-                if i<2 or l.startswith('#'): continue
-                f=l.split()
-                if len(f)>8: best=max(best,int(f[7]))
-        except Exception: pass
-        row.append(best/6.0*(6.0/ns))
-    print("    %-6s %s" % (arm, "  ".join("%.3f"%v for v in row)))
+    for ns in meshes:
+        try: row.append(width(os.path.join(out,"%d_%s"%(ns,arm)))[0])
+        except Exception: row.append(float('nan'))
+    rows[arm]=row
+    print("    %-9s %s" % (arm,"  ".join("%8.4f"%v for v in row)))
+if all(v==v and v>0 for v in rows["local"]):
+    print("    ratio     %s"
+          % "  ".join("%8.2f"%(a/b) for a,b in zip(rows["nl"],rows["local"])))
+    print("    The ratio is the part that needs no absolute scale: a nonlocal")
+    print("    width held while the local one shrinks makes it grow, and it")
+    print("    does not care what floor either measure has.")
 PY
 echo
 for arm in local nl; do
   echo "  === $arm, dissipated work ==="
-  python3 "$ROOT/test/crackband/check_objectivity.py" 0.30 \
-     n6:1.0:"$OUT/6_$arm/t.dat" n12:1.0:"$OUT/12_$arm/t.dat" \
-     n24:1.0:"$OUT/24_$arm/t.dat" 2>/dev/null | sed -n '1,6p'
+  args=""
+  for ns in $NSLICES; do args="$args n$ns:1.0:$OUT/${ns}_$arm/t.dat"; done
+  python3 "$ROOT/test/crackband/check_objectivity.py" 0.30 $args 2>/dev/null \
+      | sed -n '1,12p'
 done

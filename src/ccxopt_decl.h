@@ -240,6 +240,24 @@ static const ccxopt_decl ccxopt_decl_table[]={
  "difference.  Hydrostatic tension has no determined band normal and is "
  "refused, falling back to the volume estimate",NULL},
 
+{"CCX_DAMAGE_NLWIDTH",CCXOPT_ENUM,"0 (off)",CCXOPT_UNBOUNDED,"0|1",
+ "whether the crack-band width L in D+=L*dEps_p/u_f becomes the width of "
+ "the band a NONLOCAL length forms, 2*ell, instead of the element's own "
+ "size.  Off reproduces every earlier answer to the bit.  Why it exists: "
+ "with L the element size an element dissipates G_f per unit area whatever "
+ "its size - exact when the band is ONE element wide, which is the case the "
+ "crack band is derived for and the case an internal length abolishes on "
+ "purpose.  Charge G_f to each of the n layers of a band n wide and the "
+ "model dissipates n*G_f for one crack.  MEASURED (test/crackband/"
+ "run_nlwidth_scaling.sh): at h=0.25 the band width follows 2*ell to "
+ "+8/-12 per cent and the post-peak work follows it, growing 2.66 times "
+ "between ell=0.25 and ell=1.0 while the pre-peak work agrees to 0.03 per "
+ "cent - so the dissipation tracks the number of element layers, ell/h, "
+ "and is not a material constant.  Applied only where the mesh resolves "
+ "the averaging length, by the same criterion damnonlocal.f guards with, "
+ "and never below the element's own width since a band cannot be narrower "
+ "than the element carrying it",NULL},
+
 {"CCX_DAMAGE_VISCOSITY",CCXOPT_REAL,"0 (off)",CCXOPT_UNBOUNDED,NULL,
  "viscous regularisation eta for the damage evolution; negative values are "
  "clamped to zero",NULL},
