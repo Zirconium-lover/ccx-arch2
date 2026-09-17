@@ -1,6 +1,6 @@
 # Crack-band width: what is here and how to check it
 
-Six files, no obvious entry point, so this is the map.  Every number below
+Eight files, no obvious entry point, so this is the map.  Every number below
 is stamped with the commit it was measured on and the command that
 reproduces it, because a number written into prose drifts silently when
 somebody else's change moves it.  That failure has already happened once
@@ -62,6 +62,8 @@ switch is set.
 | `cbwidth_test.f` | eight hand-computable geometries put through `damcbwidth` directly |
 | `run_cbwidth_test.sh` | builds and runs that unit test against `ccx_2.23.a` |
 | `run_energy_equiv.sh` | checks that `EVOLUTION=ENERGY` and `EVOLUTION=DISPLACEMENT` agree when `u_f = 2 G_f / sigma_0` |
+| `run_nlobjectivity.sh` | the other sweep - refines **along** the axis at fixed `ell`, so the band must choose its own width, which is the sweep an internal length has to be objective against |
+| `run_nlwidth_scaling.sh` | holds the mesh and moves `ell`, which separates what the refinement sweep cannot: whether the width follows the internal length, and whether the dissipation follows with it |
 
 ## Why the sweep refines the cross-section
 
@@ -112,6 +114,106 @@ fifty-four, and crack-band scaling makes no claim about that.
 The C3D8 arm has no legacy counterpart to compare against, because the
 legacy path refuses the family outright.  There the projection is not a
 more objective option - it is the only one.
+
+## Does the internal length give mesh objectivity
+
+Two sweeps, and the division between them is the point.  `run_objectivity.sh`
+refines the cross-section, which holds the band one slice thick and so asks
+an internal length nothing at all.  `run_nlobjectivity.sh` fixes the
+specimen at length 6 and refines **along** the axis, so the band sizes
+itself and the width is the model's rather than the deck's.
+
+```
+CCX_EXE=/path/to/ccx_2.23_pardiso test/crackband/run_nlobjectivity.sh /tmp/nl
+CCX_EXE=/path/to/ccx_2.23_pardiso test/crackband/run_nlwidth_scaling.sh /tmp/sc
+```
+
+Three conditions have to hold before either is worth reading, and all three
+are checked rather than assumed.
+
+* **One specimen on every mesh.**  The narrowing is imposed on nodes, so a
+  step notch is sampled differently by each mesh and sharpens as the mesh is
+  refined.  The preflight interpolates the coarse deck's surface and compares
+  it against every node of the finer ones; it fails the old configuration by
+  `5.8e-2` of the cross-section and passes the tent by zero.
+* **The same stage of failure on every arm.**  Not approximately: every arm
+  runs to complete severance, `Dmax = 1`, elements deleted, `F = 0` well
+  before the end of the step.  That is a stage nothing can be halfway into.
+* **The stabiliser is not the answer.**  Viscosity is needed - with it off,
+  four of six arms stop before rupture - so it is applied equally to every
+  arm and its own effect is measured rather than assumed away.  Tripling it
+  to `3.e-3` moves each arm's total work by 1.0 to 6.1 % and *reduces* both
+  spreads, by 0.9 and 2.5 points: the disagreement below is not the
+  stabiliser.  The width measure is less indifferent to it - the coarsest
+  nonlocal arm moves from 1.000 to 1.333 - so that arm is quoted but not
+  leaned on, and the verdict is the same at both viscosities.
+
+Measured on `4d06196`, `ell = 0.5`, viscosity `1.e-3`:
+
+| quantity | local | `NONLOCAL=0.5` |
+|---|---|---|
+| band width, `h` = 1.0 / 0.5 / 0.25 | 1.000 -> 0.667 -> 0.417 | 1.000 -> 0.833 -> 1.083 |
+| the same in element layers | 1.00 -> 1.33 -> 1.67 | 1.00 -> 1.67 -> 4.33 |
+| peak force | 373.8 / 368.2 / 372.1 | 374.9 / 370.6 / 373.3 |
+| work before the peak | spread 1.07 % | spread 1.03 % |
+| work after the peak | spread 145 % | spread 124 % |
+
+**The width is held and the energy is not, and those are two different
+verdicts about the same run.**  The local band is one to two elements wide on
+every mesh - a width proportional to `h`, which is the pathology - while the
+nonlocal band spans 1 to 4.3 elements at a length that stays near `2*ell`.
+So the averaging does set the width.  The dissipation meanwhile disagrees by
+more than a factor of two, and the regularisation improves it by 20 points
+out of 145, which is nothing.
+
+The refinement sweep cannot say why, because every candidate cause moves
+with `h`.  `run_nlwidth_scaling.sh` holds `h` = 0.25 and moves `ell`:
+
+| `ell` | width | width / `2*ell` | layers | `W_pre` | `W_post` |
+|---|---|---|---|---|---|
+| 0 (local) | 0.4167 | - | 1.67 | 6.3839 | 8.8725 |
+| 0.25 | 0.7500 | 1.500 | 3.00 | 6.3851 | 11.2615 |
+| 0.5 | 1.0833 | 1.083 | 4.33 | 6.3859 | 16.5533 |
+| 1.0 | 1.7500 | 0.875 | 7.00 | 6.3860 | 29.9855 |
+
+`W_pre` is identical to 0.03 %, so nothing outside the fracture process
+moves.  The width follows `ell` and the dissipated work follows the width.
+
+That is predictable with nothing fitted.  An element whose `charlen` is its
+own size `h` reaches `D = 1` when `h*eps_p = u_f`, so it dissipates
+`G_f = sigma_0 u_f / 2` per unit area - once, whatever its size, which is the
+property Bazant and Oh 1983 build the crack band for.  A band `w` wide holds
+`w/h` such layers, so
+
+```
+    W_post  ~  G_f * w / charlen        charlen = h  ->  G_f * w/h
+                                        charlen = w  ->  G_f, always
+```
+
+Against `G_f = 4.08` read from the deck's own header: `-8.0 %`, `-6.4 %`,
+`+5.0 %` on the three nonlocal arms, and `+30.5 %` on the local one, where
+the band is 1.67 elements and a count of points over a threshold is at its
+coarsest.
+
+**So the gradient backend is not failing objectivity - it is doing its job,
+and the softening law is not.**  `calcdamage.f:1973` replaces the local
+plastic-strain increment with the nonlocal average; `calcdamage.f:1983` still
+multiplies it by `charlen`, the element's own width.  The averaging was given
+a length and the softening law was not, so the fracture energy of the
+combination is `G_f * w/charlen` - a material constant only when the band is
+one element wide, which is exactly the case the crack band was derived for
+and exactly the case an internal length abolishes.  Jirasek and Bauer 2012
+section 5 state the requirement directly: the width entering the softening
+law must be the width of the band that actually forms.
+
+The substitution that removes it is one line in the width cache, and it is
+not taken here: it changes the answer of every existing nonlocal run, the
+length has to arrive from the nonlocal side, and which length it should be -
+`2*ell`, the measured width, or `u_f` scaled by `h/w` instead - is a
+modelling decision and not a local one.  The numbers above are what such a
+change has to be judged against, and `run_nlwidth_scaling.sh` is the shape
+of the gate: after the fix `W_post` must stop depending on `ell`, which it
+currently does by a factor of 2.66.
 
 ## The unit test
 
