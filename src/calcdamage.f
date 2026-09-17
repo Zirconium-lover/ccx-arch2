@@ -292,6 +292,31 @@
 !     initiation, which is the sigma_0 that G_f = sigma_0 u_f / 2 is
 !     written in terms of (Bazant and Oh 1983 for the relation itself).
 !
+!     LIMITATION, stated rather than hidden.  That identity needs the
+!     loading to be monotonic and proportional.  What sigma_0 has to be
+!     is the flow stress at the moment the initiation criterion is met,
+!     and the peak equals it only because a hardening material at yield
+!     carries its largest equivalent stress then.  Under NON-proportional
+!     loading the largest value the point ever carried can come from a
+!     different stress state - which matters here, because RICETRACEY is
+!     triaxiality dependent and a point can meet its criterion in a state
+!     it did not peak in.
+!
+!     The refinement, if a case ever needs it, is to take the equivalent
+!     stress at the last increment in which the point actually FLOWED,
+!     dpeq = xstate(1,jj,i)-xstateini(1,jj,i) > 0, rather than the largest
+!     it ever carried.  That is what "the flow stress at initiation"
+!     literally means, it coincides with the peak under monotonic
+!     proportional loading, and it is strictly better outside it.
+!
+!     Not done, and the reason is not that it is hard: dpeq is not yet
+!     computed where this cache is written (it is formed around line 1518,
+!     well below), so taking it would mean reordering the routine.  That
+!     is a change with no measurement behind it - no deck here loads
+!     non-proportionally, so both rules would give the same numbers and
+!     the reorder could not be shown to be an improvement or shown to be
+!     safe.  It is written down instead, with the expression to use.
+!
       use damcbmod
       implicit none
       integer iel,iint
@@ -1275,6 +1300,27 @@
 !           Newton iterations of an increment and across rollback
 !           retries of it, which is what keeps the law transactional.
 !
+!           THE SAME FREEZING STRUCTURE COST 8 PER CENT IN sigma_0, AND
+!           IT COSTS 0.007 PER CENT HERE.  Measured, not assumed, because
+!           the two caches freeze the same way and the question had to be
+!           asked of both.  The u_f cache took the LAST value before the
+!           threshold, and by then the neighbouring points of the band
+!           have initiated and are unloading this one, so it sampled a
+!           stress on the way down - see damcbufset.  Element 19 of the
+!           equivalence deck, the last two refreshes:
+!
+!             dambase=0.931604   L=1.0000000
+!             dambase=0.981067   L=0.9999312
+!
+!           The same unloading moves the width by seven thousandths of a
+!           per cent.  The asymmetry is not luck: sigma_0 is a MAGNITUDE
+!           and drops the moment the point leaves the yield surface,
+!           while L depends on the principal DIRECTION, which is set by
+!           how the element is held by its neighbours and barely turns.
+!
+!           So this cache needs no peak rule, and that is now a
+!           measurement rather than a plausible argument.
+!
             if(cbmodev.eq.1) then
               cbset=0
               if(dambase(jj,i).lt.xlimit) then
@@ -1325,7 +1371,27 @@
      &               (sti(1,jj,i)-cbsh)**2+(sti(2,jj,i)-cbsh)**2+
      &               (sti(3,jj,i)-cbsh)**2+2.d0*(sti(4,jj,i)**2+
      &               sti(5,jj,i)**2+sti(6,jj,i)**2)))
-                if(cbsvm.gt.1.d-10) then
+!
+!               imode=1 ONLY.  The predictor pass is documented as not
+!               modifying dam or ipkon, and the cache belongs in that set
+!               for the same reason: nonlingeo's event controller can cut
+!               the increment AFTER the predictor has run (it sets
+!               icutb=1 together with damage_event_cut=1), and the load
+!               level the predictor saw is then never committed.
+!
+!               This did not matter while the cache took the LATEST value,
+!               because the redone increment simply overwrote it.  It
+!               matters now that the cache keeps the PEAK: a cut increment
+!               sits at a higher load than the redo, so its stress is
+!               higher, so its u_f is smaller, and the smaller value would
+!               be latched permanently by a pass that was thrown away.
+!
+!               Found by asking what the peak rule does to the file's own
+!               transactional claim - "a Newton retry or a rollback cannot
+!               change it" - rather than by a test, and no deck here shows
+!               it: the equivalence numbers are unchanged to four decimals.
+!
+                if((cbsvm.gt.1.d-10).and.(imode.eq.1)) then
                   call damcbufset(i,jj,2.d0*ufail/cbsvm)
                 endif
               endif
