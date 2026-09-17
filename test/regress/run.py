@@ -320,6 +320,39 @@ def main():
           (cd.stdout.strip().splitlines() or ['no output'])[-1])
     if cd.returncode!=0: preflight_bad+=1
 
+    # Both geometry self tests run here, and they run with NO argument.
+    #
+    # They check the geometry the physics is built on - the crack-band width
+    # CB1 divides by, and the element volume the nonlocal average weighs by -
+    # and until now both ran only by hand, which means they ran when someone
+    # remembered. A check that runs when someone remembers is a check that
+    # has already stopped running.
+    #
+    # No argument on purpose: the two runners take DIFFERENT positionals -
+    # run_elgeom_test.sh takes an output directory, run_cbwidth_test.sh takes
+    # a source directory - and passing the wrong one makes the second exit 2
+    # with "build the tree first", which looks like a skipped test rather
+    # than a failed one. That happened while verifying them. Called bare,
+    # both default correctly.
+    #
+    # Neither is taken on trust: each was shown to go red with a broken
+    # expectation and a nonzero exit, by the agent who did NOT write it.
+    # That mattered - one of the two was proposed for this preflight while
+    # it still could not fail at all, and its author retracted the claim.
+    for name,script in (('crack-band width',
+                         'test/crackband/run_cbwidth_test.sh'),
+                        ('element geometry',
+                         'test/nonlocal/run_elgeom_test.sh')):
+        g=sh('bash %s/%s'%(ROOT,script),base_env([]))
+        last=(g.stdout.strip().splitlines() or ['no output'])[-1]
+        print("preflight  %s self test: %s"%(name,last.strip()))
+        # preflight_bad, NOT preflight_bad_pre: the latter is folded into
+        # the total further up, so incrementing it here would be a dead
+        # store - the failure would print and the gate would still exit 0.
+        # It did exactly that until the red path was walked through the
+        # preflight rather than through the script alone.
+        if g.returncode!=0: preflight_bad+=1
+
     # The path-follower diagnostic judges a mechanism nobody could judge
     # before; a diagnostic that has itself gone wrong is worse than none,
     # so its own self test runs here with the others.
