@@ -209,11 +209,32 @@ Against `G_f = 4.08` read from the deck's own header, the ratio
 which is the statement that matters: **the dissipation is proportional to the
 number of element layers in the band, not to the band's width.**
 
-The constant itself is NOT established.  The same fit on `h` = 0.5 gives a
-slope of `1.39 G_f` against `0.83 G_f` here, so the proportionality transfers
-between meshes and the coefficient does not.  An earlier version of this
-section claimed the prediction held to `-8.0 / -6.4 / +5.0 %` with nothing
-fitted; that accuracy belonged to the `D>0.5` threshold and is withdrawn.
+An earlier version of this section claimed the prediction held to `-8.0 /
+-6.4 / +5.0 %` with nothing fitted; that accuracy belonged to the `D>0.5`
+threshold and is withdrawn.
+
+**The coefficient is 1, and the way to see that is to stop fitting.**  Fitting
+`W_post = A + k G_f (w/h)` across the `ell` arms gave slopes of `0.83 G_f` at
+`h`=0.25 and `1.39 G_f` at `h`=0.5, and that discrepancy was reported here as
+the coefficient failing to transfer between meshes.  It is a two-parameter fit
+to three or four scattered points: the free intercept absorbs whatever the
+slope does not, so neither number measures `k`.
+
+Measure `k` directly instead, one arm at a time, on the **local** arm - where
+the substitution is inert and no internal length enters, so it is a statement
+about the crack-band law alone - across the three meshes of the sharp-notch
+sweep:
+
+| `h` | `w` | `w/h` | `W_post` | `k = W_post/(G_f w/h)` |
+|---|---|---|---|---|
+| 0.500 | 0.6337 | 1.27 | 4.158 | 0.804 |
+| 0.250 | 0.5454 | 2.18 | 10.699 | 1.202 |
+| 0.125 | 0.6417 | 5.13 | 21.983 | 1.049 |
+
+Mean 1.02, scatter 39 % of the mean, **no trend** across a factor of four in
+element size.  So the crack-band law charges one `G_f` per element layer and
+the layer count is `w/h`, with the coefficient 1 to within the scatter.  The
+0.83-against-1.39 reading is superseded by this rather than explained by it.
 
 **So the gradient backend is not failing objectivity - it is doing its job,
 and the softening law is not.**  `calcdamage.f:1973` replaces the local
