@@ -404,6 +404,20 @@
     "deletions": 90
    },
    "same_deletion_set_as": "fast-plain"
+  },
+  {
+   "name": "hex-nonlocal-card",
+   "what": "the nonlocal model proved to ENGAGE on a family that is not a linear tetrahedron, asked for on the MATERIAL CARD rather than through the environment. Both halves of that were broken until this session: the regularisation skipped every element that was not C3D4, so a hexahedral deck ran unregularised while CB1 was already letting it reach the damage law; and every guard asked ellsave, which only CCX_DAMAGE_NONLOCAL writes, so a card-only deck never entered the nonlocal block at all and looked like a healthy local run. Both failures were SILENT, which is why a count is pinned rather than a verdict: 'mean neighbours' is geometric - how many elements fall inside 2*ell - so it is exact and does not drift with the solution. If either half regresses this goes to zero. What is NOT pinned is convergence: this deck does not reach the end of its step with the internal length on, and that is a characterised limitation of the staggered scheme, not a defect - pinning it would cement it. CCX_DAMAGE_TANGENT is cleared explicitly because the rank-1 term is NOT zero on multi-point elements and makes this deck fail earlier: measured, theta=0.135 with it against 0.215 without.",
+   "kind": "hex",
+   "mode": "uniaxial",
+   "nonlocal_ell": 0.3,
+   "env": [
+    "CCX_DAMAGE_CHARLEN=1",
+    "CCX_DAMAGE_TANGENT="
+   ],
+   "expect": {
+    "neighbours": 1.0
+   }
   }
  ],
  "selftests_required": [

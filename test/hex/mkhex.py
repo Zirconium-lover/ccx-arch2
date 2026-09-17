@@ -21,6 +21,14 @@ ap.add_argument("--mode", choices=("uniaxial", "hydro"), default="uniaxial")
 ap.add_argument("--nx", type=int, default=4)
 ap.add_argument("--ny", type=int, default=2)
 ap.add_argument("--nz", type=int, default=2)
+# NONLOCAL= on the material card rather than CCX_DAMAGE_NONLOCAL in the
+# environment.  The two routes went to different places until they were
+# joined: every guard asked ellsave, which only the environment writes, so
+# a card-only deck never entered the nonlocal block and ran unregularised
+# while looking healthy.  A deck that can ask for the length on the CARD is
+# what lets a test hold that seam shut.
+ap.add_argument("--nonlocal-ell", type=float, default=0.0,
+                help="put NONLOCAL=<ell> on the *DAMAGE INITIATION cards")
 a = ap.parse_args()
 
 nx, ny, nz = a.nx, a.ny, a.nz
@@ -70,13 +78,17 @@ L.append("%d" % weak)
 L.append("*Elset, Elset=STRONG, Generate")
 L.append("1, %d, 1" % e)
 
+DMG = "*Damage Initiation, Criterion=Ductile, Evolution=Displacement, Npoints=6"
+if a.nonlocal_ell > 0.0:
+    DMG += ", NONLOCAL=%g" % a.nonlocal_ell
+
 L += [
     "*Material, Name=STEEL",
     "*Elastic",
     "210000., 0.3",
     "*Plastic",
     "300., 0.", "330., 0.010", "360., 0.050", "380., 0.150",
-    "*Damage Initiation, Criterion=Ductile, Evolution=Displacement, Npoints=6",
+    DMG,
     "1.0, 0.0150, 0.00, 0.3000, 0.33, 0.1200, 0.50, 0.0700",
     "0.67, 0.0425, 1.00, 0.0250, 1.50, 0.0150",
     "*Material, Name=WEAKMAT",
@@ -84,7 +96,7 @@ L += [
     "210000., 0.3",
     "*Plastic",
     "240., 0.", "260., 0.010", "280., 0.050", "300., 0.150",
-    "*Damage Initiation, Criterion=Ductile, Evolution=Displacement, Npoints=6",
+    DMG,
     "1.0, 0.0150, 0.00, 0.1500, 0.33, 0.0600, 0.50, 0.0350",
     "0.67, 0.0210, 1.00, 0.0120, 1.50, 0.0070",
     "*Solid Section, Elset=STRONG, Material=STEEL",
