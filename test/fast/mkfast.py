@@ -16,7 +16,7 @@ deletion starts.
 
     ./mkfast.py -o fast.inp [--nx 8 --ny 5 --nz 5]
 """
-import argparse,sys
+import argparse,os,sys
 
 def build(nx,ny,nz,lx,ly,lz,seed,incl=None,bandback=0):
     """Bar of tetrahedra with a PARTIAL cohesive plane at mid-span.
@@ -205,7 +205,24 @@ if __name__=='__main__':
     ap.add_argument('--ny',type=int,default=5); ap.add_argument('--nz',type=int,default=5)
     ap.add_argument('--lx',type=float,default=4.0); ap.add_argument('--ly',type=float,default=2.0)
     ap.add_argument('--lz',type=float,default=2.0)
-    ap.add_argument('--from-deck',default='test/s3rad/m12_s3rad_gc24_w.inp')
+    # ANCHORED TO THIS FILE, NOT TO THE CURRENT DIRECTORY.  The default used
+    # to be the bare relative path, so the generator only worked when it was
+    # invoked from the repository root.  run.py is invoked from
+    # test/regress, and a checker that asked for a deck from there got
+    # "deck generation failed" - exit 2, which reads as a broken environment
+    # rather than as a check that did not run.  It hit the ell->0 reduction
+    # check, i.e. the one built to catch silent failures.
+    #
+    # The two older callers, run_fast.sh and tools/opcheck.py, each pass
+    # --from-deck with an absolute path of their own, so the convention
+    # existed and two of three followed it.  A convention that every caller
+    # must remember is a trap with a waiting list; anchoring the default
+    # removes the trap instead of adding a third rememberer.
+    ap.add_argument('--from-deck',
+                    default=os.path.join(
+                        os.path.dirname(os.path.dirname(
+                            os.path.dirname(os.path.abspath(__file__)))),
+                        'test','s3rad','m12_s3rad_gc24_w.inp'))
     ap.add_argument('--seed',type=float,default=0.5,help='fraction of the mid plane that is a pre-crack')
     ap.add_argument('--band-back',type=int,default=0,dest='bandback',
                     help='extend the brittle band this many cell rows BEHIND '

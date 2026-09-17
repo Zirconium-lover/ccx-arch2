@@ -374,3 +374,30 @@ CCX\_LOG\_ALLOC has been introduced. If set to 1 (default is zero) one gets
 detailed information on all allocated, reallocated and deallocated fields
 during the executation of CalculiX. This may be particularly important during
 debugging of segmentation faults.
+
+******************************************************************************
+NON-STANDARD SWITCHES IN THIS FORK
+******************************************************************************
+
+This fork adds environment switches beyond the CCX_LOG_ALLOC above - the
+fracture and damage work reads well over a hundred of them.  They are declared
+in the sources, next to the code that reads each one, and a table of all of
+them is GENERATED from those declarations:
+
+    python3 tools/mkswitches.py
+
+writes src/ccxopt_list.h, which is compiled in and tracked, and
+docs/SWITCHES.md, which is NOT tracked - this repository is deliberately kept
+free of markdown, so a fresh clone does not contain the table.
+
+That is worth stating here rather than in the table itself.  Until this note
+existed, the only place the generator was named was inside the file it
+generates: the instructions for obtaining the documentation lived inside the
+documentation, which a fresh clone does not have.  Anyone who ran the
+regression gate was told - its preflight checks the registry and prints the
+command - but that is the path for someone running tests, not for someone
+reading.
+
+Every run also prints the switches actually in force, as [SWITCHES] lines in
+its log, so what a given run used can be read off that run rather than
+reconstructed.
