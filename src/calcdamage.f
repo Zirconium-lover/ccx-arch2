@@ -16,6 +16,667 @@
 !     along with this program; if not, write to the Free Software
 !     Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 !     
+!     ==================================================================
+!     CB1: directional crack-band width for the DE1/DM2 softening law.
+!
+!     WHY THIS EXISTS.  The DE1 evolution law spreads the fracture energy
+!     over a band whose width is the characteristic length L:
+!
+!         D = D_base + L * dEps_p / u_f
+!
+!     so L is what makes the DISSIPATION per unit crack area independent
+!     of element size.  What was here is L=(6V)^(1/3), the cube root of
+!     six tetrahedral volumes, for C3D4 and nothing else.
+!
+!     That is the volume-based estimate, and it is the one the literature
+!     rejects outright.  Jirasek and Bauer, "Numerical aspects of the
+!     crack band approach", Comput. Struct. 110-111 (2012) 60-78, section
+!     5.3.1 and the conclusions in section 7: criteria based "exclusively
+!     on the element area or volume can lead to large errors and thus
+!     cannot be recommended", the error being "comparable to a
+!     misprediction of the fracture energy by 50 % or even more".  The
+!     error is not confined to distorted meshes: a band running along the
+!     diagonals of a regular mesh is wider than an aligned one by a
+!     factor of sqrt(2) (their section 5.3.2), and a volume estimate
+!     cannot see the difference because it does not know the direction.
+!
+!     Crack band theory asks for the width measured ACROSS the band
+!     (Bazant and Oh, "Crack band theory for fracture of concrete",
+!     Mater. Struct. 16 (1983) 155-177), so the width has to depend on
+!     the band normal.  The method implemented here is the one Jirasek and
+!     Bauer recommend in section 7: project the element onto the major
+!     principal direction, taking that direction at the ELEMENT CENTRE
+!     rather than at each integration point separately, which in their
+!     notation is Pm:
+!
+!         L = max_I (x_I . n) - min_I (x_I . n)
+!
+!     over the CORNER nodes I.  Two of their findings are respected by
+!     omission: the direction is never taken per integration point,
+!     because that "may result into excessively large or even infinite
+!     estimates", and no orientation factor is applied, because "there is
+!     no need for the additional orientation factor".
+!
+!     A projection is defined for any element shape, so the C3D4
+!     restriction disappears as a by-product rather than as a separate
+!     feature: C3D8, C3D10, C3D20, C3D6 and C3D15 get a width by the same
+!     formula.  Their conclusions do warn that "higher-order elements are
+!     not suitable for crack band simulations", so the quadratic families
+!     are accepted with a warning rather than silently.
+!
+!     WHY THE DIRECTION IS FROZEN, AND ON WHAT.  n is computed from the
+!     COMMITTED stress sti at the start of a physical increment, never
+!     from the trial state inside Newton, and it stops being refreshed
+!     once initiation is committed (dambase >= xlimit).  Three reasons,
+!     all raised by Agent 1 in review and all load-bearing:
+!
+!       (a) L multiplies dEps_p in the law.  A direction that followed the
+!           trial state would make L a function of the Newton iterate.
+!       (b) L would then enter the consistent tangent through dL/dEps,
+!           a term the rank-1 correction in resultsmech does not have.
+!       (c) DE1 is transactional: every quantity in the law is rebuilt
+!           from the immutable baseline dambase so that a Newton retry or
+!           an A3 rollback cannot leave a partially updated state.  A
+!           length derived from the trial state would be the only
+!           quantity in the law that is not.
+!
+!     Deriving n from committed data alone answers all three at once: it
+!     is constant across the Newton iterations of an increment AND across
+!     rollback retries of that increment, because its inputs are.  This
+!     also matches the intent already recorded for the legacy length -
+!     "the coordinates in co are the reference mesh coordinates, so the
+!     regularization length does not change during NLGEOM iterations".
+!
+!     Freezing at initiation is the physical statement that the band
+!     orientation is fixed when the crack forms and does not then follow
+!     the field; a width that drifted during softening would not dissipate
+!     G_f, which is the whole point of the band.
+!
+!     THE MODULE IS PRIVATE TO THIS FILE, for the reason damnonlocal.f
+!     states for its own: sharing through accessor subroutines instead of
+!     a `use' across files keeps a parallel build from breaking on a
+!     module dependency.  The cache is written only from calcdamagebase,
+!     where the stress is committed, and only read from
+!     damageupdatepoint, which runs inside the stress update.
+!
+!     OFF BY DEFAULT.  CCX_DAMAGE_CHARLEN is unset or 0 reproduces
+!     (6V)^(1/3) bit for bit, so the regression gate does not move; 1
+!     selects the projection.
+!     ==================================================================
+!
+      module damcbmod
+      implicit none
+!
+!     cbmode: -1 not yet read, 0 legacy (6V)^(1/3), 1 directional Pm.
+!     cbfroz(ip,element) is the frozen width, 0 meaning "not set yet".
+!
+      integer :: cbmode=-1,cbne=0,cbnip=0,cbwarn=0,cbmeanw=0
+      real*8, allocatable :: cbfroz(:,:)
+!
+!     W2 ENERGY evolution.  cbevol(imat) is the evolution kind read from
+!     the material card: 1 = DISPLACEMENT, the historical u_f, 2 = ENERGY,
+!     where the same slot carries G_f instead.  cbuf(ip,element) is the
+!     effective u_f derived from G_f, frozen at initiation beside the width
+!     and for the same reason.
+!
+      integer, allocatable :: cbevol(:)
+      real*8, allocatable :: cbuf(:,:)
+      integer :: cbnmat=0,cbune=0,cbunip=0
+      end module damcbmod
+!
+!     ------------------------------------------------------------------
+!
+      subroutine damcbevolset(imat,kind)
+!
+!     Record the evolution kind of a material.  Called from the reader.
+!
+!     WHY NOT dmcon.  The obvious place is one more constant on the card,
+!     and that would silently switch progressive damage OFF:
+!     damage_progressive_material in nonlingeo.c tests the constant COUNT
+!     exactly - nconst==4 for Rice-Tracey, and a parity test on (nconst-3)
+!     for the tabulated locus - so an extra constant fails the test, the
+!     deck still runs, and it runs on the legacy hard-deletion path
+!     instead.  dm2failurestrain derives its point count from the same
+!     total and would break too.  Keeping the count fixed and carrying the
+!     kind here leaves every one of those readers correct.
+!
+      use damcbmod
+      implicit none
+      integer imat,kind,n,i
+      integer, allocatable :: tmp(:)
+!
+      if(imat.lt.1) return
+      if(.not.allocated(cbevol)) then
+        cbnmat=max(64,imat)
+        allocate(cbevol(cbnmat))
+        do i=1,cbnmat
+          cbevol(i)=1
+        enddo
+      elseif(imat.gt.cbnmat) then
+        n=max(2*cbnmat,imat)
+        allocate(tmp(n))
+        do i=1,n
+          tmp(i)=1
+        enddo
+        do i=1,cbnmat
+          tmp(i)=cbevol(i)
+        enddo
+        deallocate(cbevol)
+        allocate(cbevol(n))
+        do i=1,n
+          cbevol(i)=tmp(i)
+        enddo
+        deallocate(tmp)
+        cbnmat=n
+      endif
+      cbevol(imat)=kind
+      return
+      end
+!
+      subroutine damcbevolget(imat,kind)
+      use damcbmod
+      implicit none
+      integer imat,kind
+      kind=1
+      if(.not.allocated(cbevol)) return
+      if((imat.lt.1).or.(imat.gt.cbnmat)) return
+      kind=cbevol(imat)
+      return
+      end
+!
+      subroutine damcbufail(imat,itype,dmcon,ndmat_,ntmat_,iel,iint,
+     &     ufail,iok)
+!
+!     THE ONLY way the damage path should obtain u_f.
+!
+!     WHY IT EXISTS.  Under EVOLUTION=ENERGY the card slot that
+!     EVOLUTION=DISPLACEMENT reads as u_f carries G_f instead, and which of
+!     the two it is cannot be stored in dmcon: the constant count is tested
+!     exactly in nonlingeo.c, so one more constant switches progressive
+!     damage off silently.  The kind therefore lives outside dmcon, and
+!     Agent 1's objection to that is correct and worth restating - a reader
+!     that takes dmcon(4) or dmcon(3) and does not ask for the kind will
+!     take an energy for a displacement, without a word.  That is the same
+!     shape of defect as imode=2, as cbmode, and as the constant count
+!     itself: a value living somewhere other than the structure that
+!     describes it.
+!
+!     The remedy is not to encode the kind somewhere clever.  It is to stop
+!     offering the raw slot: value and meaning leave this routine together,
+!     and a caller cannot obtain one without the other.  Encoding the
+!     combination in the type code instead - itype=4 for DUCTILE+ENERGY -
+!     was the alternative, and it was declined because ENERGY is orthogonal
+!     to the criterion, so the type space would grow with the product of
+!     the options rather than their sum, and a RICETRACEY+ENERGY code would
+!     already be the next one needed.
+!
+!     iok=0 means the effective u_f is not available yet, which happens
+!     only under ENERGY before any equivalent stress has been committed for
+!     this point, and means the caller must not evolve damage.
+!
+      implicit none
+      integer imat,itype,ndmat_,ntmat_,iel,iint,iok,kind
+      real*8 dmcon(0:ndmat_,ntmat_,*),ufail,cbufv
+!
+      iok=0
+      ufail=0.d0
+!
+!     The raw slot.  Its MEANING is decided by damcbevolget, never here.
+!
+      if(itype.eq.1) then
+        ufail=dmcon(4,1,imat)
+      elseif(itype.eq.3) then
+        ufail=dmcon(3,1,imat)
+      else
+        return
+      endif
+      if(ufail.le.0.d0) return
+!
+      call damcbevolget(imat,kind)
+      if(kind.eq.2) then
+        call damcbufget(iel,iint,cbufv,iok)
+        if(iok.eq.0) return
+        ufail=cbufv
+      endif
+      iok=1
+      return
+      end
+!
+      subroutine damcbufget(iel,iint,val,iok)
+!
+!     The effective u_f frozen at initiation.  iok=0 means "not available"
+!     and the caller must not evolve damage this increment.
+!
+      use damcbmod
+      implicit none
+      integer iel,iint,iok
+      real*8 val
+      iok=0
+      val=0.d0
+      if(.not.allocated(cbuf)) return
+      if((iel.lt.1).or.(iel.gt.cbune)) return
+      if((iint.lt.1).or.(iint.gt.cbunip)) return
+      if(cbuf(iint,iel).le.0.d0) return
+      val=cbuf(iint,iel)
+      iok=1
+      return
+      end
+!
+      subroutine damcbufset(iel,iint,val)
+      use damcbmod
+      implicit none
+      integer iel,iint
+      real*8 val
+      if(.not.allocated(cbuf)) return
+      if((iel.lt.1).or.(iel.gt.cbune)) return
+      if((iint.lt.1).or.(iint.gt.cbunip)) return
+      if(val.le.0.d0) return
+      cbuf(iint,iel)=val
+      return
+      end
+!
+!     ------------------------------------------------------------------
+!
+      subroutine damcbread()
+!
+!     One-time environment read, and NOTHING else.
+!
+!     This is deliberately separate from damcbinit.  The cache has exactly
+!     one writer, calcdamagebase, and that invariant is worth keeping - but
+!     folding the environment read into the writer left the MODE unreadable
+!     on the path that consults it FIRST.  damageupdatepoint runs inside the
+!     stress update, on the first Newton iteration of the first increment,
+!     before nonlingeo has ever reached calcdamagebase; there cbmode was
+!     still -1, damcbmodeget mapped that to 0, and the guard below it
+!     rejected every non-tetrahedron no matter what the switch said.  So
+!     CCX_DAMAGE_CHARLEN=1 did not lift the C3D4 restriction at all.
+!
+!     Measured on a C3D8 deck: rc=201 "C3D4 elements only" with the switch
+!     unset AND set, on the first increment, in both the uniaxial and the
+!     hydrostatic variant.  Found in review by Agent 1 and reproduced here
+!     (forum 2026-09-17 01:20).  Reading the environment from a routine
+!     both paths call is the fix; the single-writer invariant is untouched.
+!
+      use damcbmod
+      implicit none
+      character*132 carg
+!
+      if(cbmode.ge.0) return
+      cbmode=0
+      call getenv('CCX_DAMAGE_CHARLEN',carg)
+      if(carg(1:1).ne.' ') then
+        if(carg(1:1).eq.'1') then
+          cbmode=1
+        elseif(carg(1:4).eq.'PROJ') then
+          cbmode=1
+        endif
+      endif
+      if(cbmode.eq.1) then
+        write(*,*)
+        write(*,*) '*INFO in calcdamage: CCX_DAMAGE_CHARLEN=1,'
+        write(*,*) '      the crack-band width is the element'
+        write(*,*) '      projection onto the major principal'
+        write(*,*) '      direction taken at the element centre'
+        write(*,*) '      (Jirasek and Bauer 2012, section 7),'
+        write(*,*) '      frozen at damage initiation.'
+        write(*,*)
+      endif
+      return
+      end
+!
+      subroutine damcbinit(ne0,nip)
+!
+!     Size the frozen-width cache.  Called from calcdamagebase, which
+!     remains its ONLY writer.
+!
+      use damcbmod
+      implicit none
+      integer ne0,nip,i,j
+!
+      call damcbread()
+      if(cbmode.ne.1) return
+!
+      if(allocated(cbfroz)) then
+        if((cbne.ge.ne0).and.(cbnip.ge.nip)) return
+        deallocate(cbfroz)
+      endif
+      cbne=ne0
+      cbnip=nip
+      allocate(cbfroz(cbnip,cbne))
+      do i=1,cbne
+        do j=1,cbnip
+          cbfroz(j,i)=0.d0
+        enddo
+      enddo
+      return
+      end
+!
+      subroutine damcbufinit(ne0,nip)
+!
+!     Size the frozen effective-u_f cache.  Separate from damcbinit because
+!     ENERGY evolution is independent of the crack-band switch: a deck may
+!     ask for G_f while keeping the legacy (6V)^(1/3) width.
+!
+      use damcbmod
+      implicit none
+      integer ne0,nip,i,j
+!
+      if(allocated(cbuf)) then
+        if((cbune.ge.ne0).and.(cbunip.ge.nip)) return
+        deallocate(cbuf)
+      endif
+      cbune=ne0
+      cbunip=nip
+      allocate(cbuf(cbunip,cbune))
+      do i=1,cbune
+        do j=1,cbunip
+          cbuf(j,i)=0.d0
+        enddo
+      enddo
+      return
+      end
+!
+      subroutine damcbmodeget(mode)
+!
+!     Readable from either damage entry point, including the one that runs
+!     before calcdamagebase has been called for the first time.
+!
+      use damcbmod
+      implicit none
+      integer mode
+      call damcbread()
+      mode=cbmode
+      if(mode.lt.0) mode=0
+      return
+      end
+!
+      subroutine damcbget(iel,iint,val,iok)
+!
+!     Read the frozen width.  iok=0 means "not available" and the caller
+!     must keep its own value - the same contract damnonlocalval uses.
+!
+      use damcbmod
+      implicit none
+      integer iel,iint,iok
+      real*8 val
+      iok=0
+      val=0.d0
+      if(cbmode.ne.1) return
+      if(.not.allocated(cbfroz)) return
+      if((iel.lt.1).or.(iel.gt.cbne)) return
+      if((iint.lt.1).or.(iint.gt.cbnip)) return
+      if(cbfroz(iint,iel).le.0.d0) return
+      val=cbfroz(iint,iel)
+      iok=1
+      return
+      end
+!
+      subroutine damcbset(iel,iint,val)
+      use damcbmod
+      implicit none
+      integer iel,iint
+      real*8 val
+      if(cbmode.ne.1) return
+      if(.not.allocated(cbfroz)) return
+      if((iel.lt.1).or.(iel.gt.cbne)) return
+      if((iint.lt.1).or.(iint.gt.cbnip)) return
+      if(val.le.0.d0) return
+      cbfroz(iint,iel)=val
+      return
+      end
+!
+      subroutine damcbwarnonce(lakonl)
+!
+!     Jirasek and Bauer, section 7: on quadratic elements the band can
+!     localize into a sub-element region, so the element size is no
+!     longer the band width.  The projection is still the best available
+!     estimate, but the user is told once rather than not at all.
+!
+      use damcbmod
+      implicit none
+      character*8 lakonl
+      if(cbwarn.ne.0) return
+      cbwarn=1
+      write(*,*)
+      write(*,*) '*WARNING in calcdamage: the crack-band projection'
+      write(*,*) '         is being used on a higher-order element ('
+     &     //lakonl(1:6)//').'
+      write(*,*) '         Jirasek and Bauer 2012 report that the'
+      write(*,*) '         localized band can be narrower than one'
+      write(*,*) '         such element, so the projected width'
+      write(*,*) '         overestimates it and the dissipation is'
+      write(*,*) '         then too large.  Linear elements are'
+      write(*,*) '         preferred for crack-band simulations.'
+      write(*,*)
+      return
+      end
+!
+!     ------------------------------------------------------------------
+!
+      subroutine damcbcorner(nope,ncor)
+!
+!     Number of CORNER nodes, which are the first ncor local nodes in the
+!     CalculiX ordering for every volume family.  Only corners take part
+!     in the projection: midside nodes of a straight edge add nothing to
+!     the extent, and on a curved edge they would make the width depend
+!     on the curvature rather than on the band.
+!
+      implicit none
+      integer nope,ncor
+      if((nope.eq.4).or.(nope.eq.10)) then
+        ncor=4
+      elseif((nope.eq.8).or.(nope.eq.11).or.(nope.eq.20)) then
+        ncor=8
+      elseif((nope.eq.6).or.(nope.eq.15)) then
+        ncor=6
+      else
+        ncor=0
+      endif
+      return
+      end
+!
+      subroutine damcbevec(c,lam,v,iok)
+!
+!     Unit eigenvector of the symmetric 3x3 matrix c for the eigenvalue
+!     lam.  The null space of c-lam*I is spanned by the cross product of
+!     any two independent rows; all three pairs are tried and the largest
+!     is kept, which is the numerically stable choice.
+!
+!     iok=0 signals a repeated largest eigenvalue: every pair is then
+!     degenerate, the band normal is genuinely not determined by the
+!     stress state, and the caller falls back to the volume estimate
+!     rather than inventing a direction.
+!
+      implicit none
+      integer iok,i,j,k1,k2
+      real*8 c(3,3),lam,v(3),a(3,3),w(3),wn,best,scal
+!
+      iok=0
+      v(1)=0.d0
+      v(2)=0.d0
+      v(3)=0.d0
+!
+      scal=0.d0
+      do i=1,3
+        do j=1,3
+          a(i,j)=c(i,j)
+          if(dabs(c(i,j)).gt.scal) scal=dabs(c(i,j))
+        enddo
+      enddo
+      if(dabs(lam).gt.scal) scal=dabs(lam)
+      if(scal.le.1.d-30) return
+      do i=1,3
+        a(i,i)=a(i,i)-lam
+      enddo
+!
+      best=0.d0
+      do i=1,3
+        k1=i
+        k2=i+1
+        if(k2.gt.3) k2=1
+        w(1)=a(k1,2)*a(k2,3)-a(k1,3)*a(k2,2)
+        w(2)=a(k1,3)*a(k2,1)-a(k1,1)*a(k2,3)
+        w(3)=a(k1,1)*a(k2,2)-a(k1,2)*a(k2,1)
+        wn=dsqrt(w(1)*w(1)+w(2)*w(2)+w(3)*w(3))
+        if(wn.gt.best) then
+          best=wn
+          v(1)=w(1)
+          v(2)=w(2)
+          v(3)=w(3)
+        endif
+      enddo
+!
+!     The cross product of two rows of a matrix scaled by scal is of
+!     order scal**2, so that is what the test is measured against.
+!
+      if(best.le.1.d-8*scal*scal) return
+      v(1)=v(1)/best
+      v(2)=v(2)/best
+      v(3)=v(3)/best
+      iok=1
+      return
+      end
+!
+      subroutine damcbmean(nope,xl,width,iok)
+!
+!     DIRECTION-FREE width: the mean of the element extents along the three
+!     global axes, over the corner nodes.
+!
+!     WHY THIS EXISTS.  damcbwidth refuses when the largest principal stress
+!     is repeated, because then the band normal is genuinely not determined
+!     by the stress state.  For C3D4 the caller could fall back on
+!     (6V)^(1/3), but that formula was only ever written for tetrahedra, so
+!     lifting the C3D4 restriction removed a safety net that no other family
+!     ever had: a hexahedron whose stress went near-hydrostatic would leave
+!     charlen at zero, and the two damage entry points then disagreed - one
+!     stopped the run with "invalid DE1 data", the other returned silently
+!     and left the point un-updated.  Raised in review by Agent 1 (forum
+!     2026-09-17 00:05), and the disagreement is what this removes.
+!
+!     It is not a refinement of the projection and does not pretend to be.
+!     When there is no preferred direction there is no width to project
+!     onto one, and a mean over directions is the honest substitute.  For a
+!     cube it returns the edge exactly, so the aligned case is unaffected;
+!     for a 1 x 0.2 x 1 brick it returns 0.7333, between the two extents.
+!
+!     LIMITATION, stated rather than hidden: a mean over the GLOBAL axes is
+!     not invariant to how the element is oriented in space.  There is no
+!     cheap invariant substitute - averaging over the element's own
+!     principal axes is not invariant either, because for a cube those axes
+!     are arbitrary and a rotated triple gives larger extents.  The true
+!     invariant is the mean caliper width over all directions, which is not
+!     worth its cost for a state the model cannot orient anyway.  This path
+!     is a fallback, it says so in the log, and it is never the default.
+!
+      implicit none
+      integer nope,iok,ncor,i,k
+      real*8 xl(3,20),width,pmin,pmax,tot
+!
+      iok=0
+      width=0.d0
+      call damcbcorner(nope,ncor)
+      if(ncor.eq.0) return
+!
+      tot=0.d0
+      do k=1,3
+        pmin=1.d30
+        pmax=-1.d30
+        do i=1,ncor
+          if(xl(k,i).lt.pmin) pmin=xl(k,i)
+          if(xl(k,i).gt.pmax) pmax=xl(k,i)
+        enddo
+        tot=tot+(pmax-pmin)
+      enddo
+      width=tot/3.d0
+      if(width.le.1.d-30) return
+      iok=1
+      return
+      end
+!
+      subroutine damcbmeanonce()
+      use damcbmod
+      implicit none
+      if(cbmeanw.ne.0) return
+      cbmeanw=1
+      write(*,*)
+      write(*,*) '*WARNING in calcdamage: at least one integration'
+      write(*,*) '         point reached equal largest principal'
+      write(*,*) '         stresses, where the crack-band normal is'
+      write(*,*) '         not determined by the stress state.  The'
+      write(*,*) '         direction-free mean element width is used'
+      write(*,*) '         there instead of the projection.'
+      write(*,*)
+      return
+      end
+!
+      subroutine damcbwidth(stre,xl,nope,lakonl,width,iok)
+!
+!     Projected crack-band width.  stre is the COMMITTED stress at the
+!     integration point in CalculiX order (11,22,33,12,13,23); xl holds
+!     the REFERENCE coordinates of the element nodes.
+!
+!     The band is taken normal to the major principal direction.  For an
+!     isotropic material, damaged isotropically, the principal directions
+!     of stress and of strain coincide, so this is the direction Jirasek
+!     and Bauer describe as "the major principal strain axis"; using the
+!     stress avoids reconstructing the strain here.
+!
+      implicit none
+      character*8 lakonl
+      integer nope,iok,ncor,i
+      real*8 stre(6),xl(3,20),width,c(3,3),al(3),v(3),p,pmin,pmax
+!
+      iok=0
+      width=0.d0
+!
+      call damcbcorner(nope,ncor)
+      if(ncor.eq.0) return
+!
+      c(1,1)=stre(1)
+      c(2,2)=stre(2)
+      c(3,3)=stre(3)
+      c(1,2)=stre(4)
+      c(2,1)=stre(4)
+      c(1,3)=stre(5)
+      c(3,1)=stre(5)
+      c(2,3)=stre(6)
+      c(3,2)=stre(6)
+!
+!     calceigenvalues is the stock CalculiX routine and returns the three
+!     eigenvalues in INCREASING order, so al(3) is the major one.
+!
+      call calceigenvalues(c,al)
+      call damcbevec(c,al(3),v,iok)
+      if(iok.eq.0) then
+!
+!       No determined band normal.  Fall back on the direction-free width
+!       rather than on nothing: iok=0 out of here has to mean "degenerate
+!       element", the one case that IS a data error, so that the two damage
+!       entry points can act on it the same way.
+!
+        call damcbmean(nope,xl,width,iok)
+        if(iok.eq.1) call damcbmeanonce()
+        return
+      endif
+!
+      pmin=1.d30
+      pmax=-1.d30
+      do i=1,ncor
+        p=xl(1,i)*v(1)+xl(2,i)*v(2)+xl(3,i)*v(3)
+        if(p.lt.pmin) pmin=p
+        if(p.gt.pmax) pmax=p
+      enddo
+      width=pmax-pmin
+      if(width.le.1.d-30) then
+        iok=0
+        return
+      endif
+!
+      if((nope.eq.10).or.(nope.eq.20).or.(nope.eq.15))
+     &     call damcbwarnonce(lakonl)
+      return
+      end
+!
       subroutine calcdamage(ipkon,lakon,kon,co,mi,
      &     thicke,ielmat,ielprop,prop,ne0,ndmat_,ntmat_,
      &     ndmcon,dmcon,dam,dtime,sti,ithermal,t1,xstate,
@@ -70,9 +731,16 @@
      &     xstate(nstate_,mi(1),*),xstateini(nstate_,mi(1),*),
      &     dmconloc(ndmat_),That,alphaevent,damold,ddam,damtrial,
      &     alphai,ufail,charlen,det6v,ax,ay,az,bx,by,bz,cx,cy,cz,
+     &     cbwid,cbstre(6),
      &     damagebaseval,damagecur,damageD,damagetarget,dpeqpost,
      &     de1tol,ellnl
       integer iokv
+!
+!     CB1 crack-band width.  cbmodev is the switch, cbiok the
+!     availability flag of the frozen value.
+!
+      integer cbmodev,cbiok,cbset,cbkind
+      real*8 cbsvm,cbsh,cbufv
 !
       real*8 dpnlv
 !     
@@ -104,6 +772,17 @@
 !     damage is averaged.  That is the integral nonlocal DAMAGE model,
 !     not nonlocal plasticity, and it is the whole change needed to put
 !     a length into the formulation.
+!
+!
+!     CB1: read the crack-band switch once and size the frozen-width
+!     cache.  calcdamagebase is the only writer of that cache, because it
+!     is the only one of the two damage entry points that sees a
+!     COMMITTED stress; damageupdatepoint runs inside the stress update
+!     and only reads it.
+!
+      call damcbinit(ne0,mi(1))
+      call damcbufinit(ne0,mi(1))
+      call damcbmodeget(cbmodev)
 !
       call damnonlocalget(ellnl)
       if(ellnl.gt.0.d0) then
@@ -482,17 +1161,109 @@
      &       (ndmcon(1,imat).ge.4)).or.
      &       (int(dmcon(1,1,imat)).eq.3)) then
             ide1=1
+!
+!           The RAW slot, deliberately: this is the WRITER side.  Under
+!           EVOLUTION=ENERGY it holds G_f, and the conversion to u_f a few
+!           lines below is what turns it into a length.  Every READER must
+!           go through damcbufail instead, which hands back value and
+!           meaning together - see the comment on that routine.
+!
             if(int(dmcon(1,1,imat)).eq.1) then
               ufail=dmcon(4,1,imat)
             else
               ufail=dmcon(3,1,imat)
             endif
-            if(lakonl(4:4).ne.'4') then
+!
+!           The C3D4 restriction belongs to the VOLUME estimate, which is
+!           the only thing that could not be defined for other shapes.
+!           With the projection on, any volume family has a width.
+!
+            if((lakonl(4:4).ne.'4').and.(cbmodev.ne.1)) then
               write(*,*) '*ERROR in calcdamage: DE1 displacement'
-              write(*,*) '       evolution is presently implemented'
+              write(*,*) '       evolution with the legacy (6V)^(1/3)'
+              write(*,*) '       characteristic length is implemented'
               write(*,*) '       for C3D4 elements only. Element: ',i
+              write(*,*) '       Set CCX_DAMAGE_CHARLEN=1 for the'
+              write(*,*) '       directional width, which is defined'
+              write(*,*) '       for every volume element.'
               call exit(201)
             endif
+!
+!           CB1.  Refresh the projected width from the COMMITTED stress
+!           while initiation is not yet committed, and stop refreshing
+!           once it is: that freezes n and L at the increment in which
+!           the crack forms.  Both inputs - sti and dambase - are
+!           committed quantities, so the value is identical across the
+!           Newton iterations of an increment and across rollback
+!           retries of it, which is what keeps the law transactional.
+!
+            if(cbmodev.eq.1) then
+              cbset=0
+              if(dambase(jj,i).lt.xlimit) then
+                cbset=1
+              else
+                call damcbget(i,jj,cbwid,cbiok)
+                if(cbiok.eq.0) cbset=1
+              endif
+              if(cbset.eq.1) then
+                cbstre(1)=sti(1,jj,i)
+                cbstre(2)=sti(2,jj,i)
+                cbstre(3)=sti(3,jj,i)
+                cbstre(4)=sti(4,jj,i)
+                cbstre(5)=sti(5,jj,i)
+                cbstre(6)=sti(6,jj,i)
+                call damcbwidth(cbstre,xl,nope,lakonl,cbwid,cbiok)
+                if(cbiok.eq.1) call damcbset(i,jj,cbwid)
+              endif
+              call damcbget(i,jj,cbwid,cbiok)
+              if(cbiok.eq.1) charlen=cbwid
+            endif
+!
+!           W2: ENERGY evolution.  The card slot that DISPLACEMENT reads as
+!           u_f is G_f here, and the law needs u_f, so it is derived:
+!
+!             G_f = int_0^{u_f} (1 - d/u_f) sigma_0 dd = sigma_0 u_f / 2
+!             =>  u_f = 2 G_f / sigma_0
+!
+!           exactly, for the linear-in-displacement law actually
+!           implemented.  sigma_0 is the equivalent stress AT INITIATION at
+!           THIS point, which under hardening differs from point to point -
+!           that is the whole reason G_f is the material constant and u_f is
+!           not.  One u_f card prescribes a different dissipated energy at
+!           every point of a hardening model; one G_f card prescribes the
+!           same energy and a different u_f.
+!
+!           Frozen exactly like the width, on the same committed inputs and
+!           for the same reasons: refreshed while initiation has not been
+!           committed, fixed once it has, so the last refresh is the
+!           increment in which the crack forms.  sti is committed, so the
+!           value cannot move with the Newton iterate or with a rollback.
+!
+            call damcbevolget(imat,cbkind)
+            if(cbkind.eq.2) then
+              if(dambase(jj,i).lt.xlimit) then
+                cbsh=(sti(1,jj,i)+sti(2,jj,i)+sti(3,jj,i))/3.d0
+                cbsvm=dsqrt(1.5d0*(
+     &               (sti(1,jj,i)-cbsh)**2+(sti(2,jj,i)-cbsh)**2+
+     &               (sti(3,jj,i)-cbsh)**2+2.d0*(sti(4,jj,i)**2+
+     &               sti(5,jj,i)**2+sti(6,jj,i)**2)))
+                if(cbsvm.gt.1.d-10) then
+                  call damcbufset(i,jj,2.d0*ufail/cbsvm)
+                endif
+              endif
+              call damcbufget(i,jj,cbufv,cbiok)
+              if(cbiok.eq.1) then
+                ufail=cbufv
+              else
+!
+!               No equivalent stress has been seen yet, so G_f cannot be
+!               converted.  Leave the point alone this increment rather
+!               than guess: D is still at its baseline here.
+!
+                cycle
+              endif
+            endif
+!
             if((ufail.le.0.d0).or.(charlen.le.0.d0)) then
               write(*,*) '*ERROR in calcdamage: invalid DE1 data'
               write(*,*) '       element=',i,' u_f=',ufail,
@@ -875,7 +1646,8 @@
      &     xstateini(nstate_,mi(1),*),shy,s1,s2,s3,svm,triax,
      &     dpeq,xlimit,ufail,ef,damagebaseval,damagetarget,
      &     damageD,dpeqpost,ddam,damtrial,alphai,charlen,
-     &     ax,ay,az,bx,by,bz,cx,cy,cz,det6v
+     &     ax,ay,az,bx,by,bz,cx,cy,cz,det6v,cbwid,xlp(3,20),cbufv
+      integer cbmodev,cbiok,nope4,ncor4,i4,k4,cbkind
 !
       if((iel.lt.1).or.(iel.gt.ne0)) return
       if(ipkon(iel).lt.0) return
@@ -893,20 +1665,107 @@
       if(itype.eq.1) then
         if(ndmcon(1,imat).lt.4) return
         xlimit=dmcon(3,1,imat)
-        ufail=dmcon(4,1,imat)
       elseif(itype.eq.3) then
         xlimit=dmcon(2,1,imat)
-        ufail=dmcon(3,1,imat)
       else
         return
       endif
-      if(lakon(iel)(4:4).ne.'4') then
+!
+!     u_f comes from damcbufail and from nowhere else: under
+!     EVOLUTION=ENERGY the slot holds G_f, and value and meaning have to
+!     leave one routine together or a reader will take one for the other.
+!     iok=0 means it is not available yet - only possible under ENERGY
+!     before an equivalent stress has been committed here - and then this
+!     point must not evolve.
+!
+      call damcbufail(imat,itype,dmcon,ndmat_,ntmat_,iel,iint,ufail,
+     &     cbiok)
+      if(cbiok.eq.0) return
+      call damcbmodeget(cbmodev)
+!
+!     Node count of this element, needed for the corner count.
+!
+      if(lakon(iel)(1:5).eq.'C3D8I') then
+        nope4=11
+      elseif(lakon(iel)(4:4).eq.'2') then
+        nope4=20
+      elseif(lakon(iel)(4:4).eq.'8') then
+        nope4=8
+      elseif(lakon(iel)(4:5).eq.'10') then
+        nope4=10
+      elseif(lakon(iel)(4:4).eq.'4') then
+        nope4=4
+      elseif(lakon(iel)(4:5).eq.'15') then
+        nope4=15
+      elseif(lakon(iel)(4:4).eq.'6') then
+        nope4=6
+      else
+        nope4=0
+      endif
+!
+      if((lakon(iel)(4:4).ne.'4').and.(cbmodev.ne.1)) then
         write(*,*) '*ERROR in damageupdatepoint: DE1 displacement'
-        write(*,*) '       evolution is presently implemented for'
+        write(*,*) '       evolution with the legacy (6V)^(1/3)'
+        write(*,*) '       characteristic length is implemented for'
         write(*,*) '       C3D4 elements only. Element: ',iel
         call exit(201)
       endif
       if(ufail.le.0.d0) return
+!     CB1: the projected width, when it is armed, comes from the cache
+!     that calcdamagebase filled from the COMMITTED stress.  This routine
+!     runs inside the stress update, where the only stress available is
+!     the trial one, so it never computes the direction itself - that is
+!     what keeps the width out of the tangent and out of the Newton path.
+!
+!     A point that initiates before calcdamagebase has ever seen it has
+!     no cached value yet; it uses the volume estimate for that one
+!     increment and the projection from the next one on.  The difference
+!     is confined to the increment in which D leaves zero.
+!
+      charlen=0.d0
+      if(cbmodev.eq.1) then
+        call damcbget(iel,iint,cbwid,cbiok)
+        if(cbiok.eq.1) then
+          charlen=cbwid
+          goto 100
+        endif
+!
+!       Not cached yet.  This happens on the increment in which a point
+!       initiates, because calcdamagebase - the only writer - runs after
+!       the increment converges, while this routine runs inside it.
+!
+!       The width used here is the DIRECTION-FREE one, from geometry alone.
+!       Using the projection would mean taking a direction from stre, which
+!       is the TRIAL stress: that would make the width a function of the
+!       Newton iterate and undo exactly what freezing it on committed data
+!       was for.  The geometric width depends on nothing that a Newton
+!       retry or a rollback can change, so the law stays transactional, and
+!       it is defined for every volume family - which is what lets the
+!       C3D4 restriction be lifted here as well as in calcdamagebase.
+!       Previously this path returned silently for a non-tetrahedron while
+!       calcdamagebase stopped the run on the same condition; the two now
+!       agree.
+!
+        call damcbcorner(nope4,ncor4)
+        if(ncor4.gt.0) then
+          indexe=ipkon(iel)
+          do i4=1,ncor4
+            do k4=1,3
+              xlp(k4,i4)=co(k4,kon(indexe+i4))
+            enddo
+          enddo
+          call damcbmean(nope4,xlp,cbwid,cbiok)
+          if(cbiok.eq.1) then
+            charlen=cbwid
+            goto 100
+          endif
+        endif
+        if(lakon(iel)(4:4).ne.'4') then
+          write(*,*) '*ERROR in calcdamage: no crack-band width could'
+          write(*,*) '       be formed for element ',iel
+          call exit(201)
+        endif
+      endif
 !
 !     Reference characteristic length L=(6 V0)^(1/3).
 !
@@ -928,6 +1787,8 @@
      &     +az*(bx*cy-by*cx))
       if(det6v.le.1.d-30) return
       charlen=det6v**(1.d0/3.d0)
+!
+  100 continue
 !
 !     Triaxiality from the effective stress (scalar degradation would
 !     leave it invariant, but using the effective stress is unambiguous).

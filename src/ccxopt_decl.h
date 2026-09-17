@@ -224,6 +224,22 @@ static const ccxopt_decl ccxopt_decl_table[]={
  "is narrow and the default sits four decades below it "
  "",NULL},
 
+{"CCX_DAMAGE_CHARLEN",CCXOPT_ENUM,"0 - (6V)^(1/3), the legacy width",
+ CCXOPT_UNBOUNDED,"0|1|PROJ",
+ "how the crack-band width L in the DE1/DM2 law D+=L*dEps_p/u_f is "
+ "estimated.  0 is the legacy cube root of six tetrahedral volumes, C3D4 "
+ "only.  1 (or PROJ) projects the element onto the major principal "
+ "direction of the COMMITTED stress, taken once per element and frozen at "
+ "initiation, which is the method Jirasek and Bauer 2012 section 7 "
+ "recommends and is defined for every volume family - so it also lifts the "
+ "C3D4 restriction.  MEASURED against hand-computable geometry: a unit cube "
+ "pulled at 45 degrees gives 1.41421 where the volume estimate still gives "
+ "1.0, and a 1x0.2x1 brick gives 1.0 along x and 0.2 along y against 0.5848 "
+ "for V^(1/3) either way.  On the corner tetrahedron of a cube the two "
+ "agree exactly, which is why C3D4 on a regular mesh never exposed the "
+ "difference.  Hydrostatic tension has no determined band normal and is "
+ "refused, falling back to the volume estimate",NULL},
+
 {"CCX_DAMAGE_VISCOSITY",CCXOPT_REAL,"0 (off)",CCXOPT_UNBOUNDED,NULL,
  "viscous regularisation eta for the damage evolution; negative values are "
  "clamped to zero",NULL},
