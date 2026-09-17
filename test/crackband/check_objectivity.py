@@ -67,9 +67,32 @@ def interp(c, u):
     return c[-1][1]
 
 
-def work(c):
-    return sum(0.5 * (c[i][1] + c[i - 1][1]) * (c[i][0] - c[i - 1][0])
-               for i in range(1, len(c)))
+def work(c, umax=None):
+    """External work, integrated to umax rather than to wherever the run died.
+
+    WHY THE LIMIT.  Without it this returns less work for an arm that
+    stopped early simply BECAUSE it stopped early, and the caller then
+    compares runs at different stages of failure while believing it is
+    comparing the same quantity.  Every headline number in this file so
+    far came from arms that all reached the end, so the omission never
+    showed - which is exactly how a latent trap survives.
+
+    It stops being latent the moment a nonlocal arm fails to converge
+    where its local reference does, which is the normal case for the
+    experiment this tool is now being asked to support.
+    """
+    tot = 0.0
+    for i in range(1, len(c)):
+        u0, s0 = c[i - 1]
+        u1, s1 = c[i]
+        if umax is not None:
+            if u0 >= umax:
+                break
+            if u1 > umax:                     # partial trapezium to umax
+                s1 = s0 + (s1 - s0) * (umax - u0) / (u1 - u0)
+                u1 = umax
+        tot += 0.5 * (s0 + s1) * (u1 - u0)
+    return tot
 
 
 def lawfit(runs, ws):
@@ -134,9 +157,15 @@ def main():
     upk = max(max(c, key=lambda p: p[1])[0] for _, _, c in runs)
     umax = min(c[-1][0] for _, _, c in runs)
 
-    ws = [work(c) for _, _, c in runs]
+    ws = [work(c, umax) for _, _, c in runs]
     base, lbase = ws[0], runs[0][1]
-    print("  W = integral F du   (the quantity crack-band scaling is for)")
+    ends = [c[-1][0] for _, _, c in runs]
+    print("  W = integral F du to u=%.6f, the FURTHEST ALL ARMS REACHED" % umax)
+    if max(ends) - min(ends) > 1e-12:
+        print("    arms ended at %s, so the comparison is made on the"
+              % ", ".join("%.4f" % e for e in ends))
+        print("    common window; an arm that stopped early is not credited")
+        print("    with less work for having stopped.")
     for (label, ell, _), w in zip(runs, ws):
         print("    %-10s L=%.6f  W=%10.5f  W/W0=%6.3f   1/L ratio=%6.3f"
               % (label, ell, w, w / base, lbase / ell))
