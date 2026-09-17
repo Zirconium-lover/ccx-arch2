@@ -35,6 +35,29 @@ D = 1.  No threshold enters, and nothing is maximised over history: a
 deleted element stays counted, so the measure only grows and there is no
 "largest simultaneous" to choose.
 
+WHAT THE NORMALISATION ASSUMES, AND WHERE IT IS WRONG.  A is the reference
+cross-section at the notch, its minimum, because that is where the band forms
+and what the fracture energy is dissipated through.  The sum, however, runs
+over every damaged element, including the diffuse low-level damage outside the
+notch, whose own cross-section is larger than A.  Those contributions are
+therefore divided by a smaller area than their own and overstate their share
+of the width.  The error is bounded by the notch depth - here max/min = 1/0.81,
+so at most 23 per cent, and only on the part of the sum that lies outside the
+narrowed segment - and it is IDENTICAL for every run of a sweep, since the
+specimen is.  So it cancels in ratios and in any comparison across a sweep, and
+it does not cancel in an absolute width.  Read the absolute number as "the
+length of fully damaged notch-section material that would dissipate the same
+energy", which is what it is, rather than as the distance between two points.
+
+CROSS-CHECKED BY A SECOND IMPLEMENTATION.  Agent 1 wrote this formula from
+scratch without reading this file - deliberately, so that a shared mistake
+could not survive - and ran it on the same sweep.  All three nonlocal/local
+ratios agreed exactly (1.34, 1.72, 2.13) and every absolute value differed by
+exactly 0.810, which is min/max of this deck's cross-section: they had
+normalised by the gross area.  A constant factor is the signature of a
+normalisation difference rather than a measurement one, and it cancels in
+precisely the ratios the conclusion rests on.
+
 The inputs are files the solver already writes.  The VTK snapshot carries
 per-cell DE1_D with an ELEMENT_ID array, so a cell needs no reconstruction
 to be identified; the .damage history lists what was deleted and when; the

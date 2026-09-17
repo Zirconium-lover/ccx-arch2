@@ -48,6 +48,12 @@ NS=${NS:-24}
 # on the same columns are the check that the defect is gone.  W_post must
 # stop depending on ell; nothing else about the sweep changes.
 NLW=${NLW:-0}
+# MODE selects the nonlocal backend.  INTEGRAL counts its neighbours, so its
+# participation criterion is exact; GRADIENT couples through nodes and can
+# only estimate it, which is the open question this sweep can answer - where
+# does w/2ell reach one for the PDE form.  GRADIENT could not be asked before
+# 4d1c250, because a card-only length never reached its assembly.
+MODE=${MODE:-INTEGRAL}
 # ell = 0 is the local arm, the reference every ratio below is taken against.
 ELLS=${ELLS:-"0 0.25 0.5 1.0"}
 
@@ -61,12 +67,13 @@ for ell in $ELLS; do
       "s/EVOLUTION=DISPLACEMENT\$/EVOLUTION=DISPLACEMENT, NONLOCAL=$ell/g" \
       "$d/t.inp"
   ( cd "$d" && env CCX_DAMAGE_CHARLEN=1 CCX_DAMAGE_VISCOSITY="$VISC" \
-        CCX_DAMAGE_NLWIDTH="$NLW" "$EXE" t > run.log 2>&1 )
+        CCX_DAMAGE_NLWIDTH="$NLW" CCX_DAMAGE_NONLOCAL_MODE="$MODE" \
+        "$EXE" t > run.log 2>&1 )
   printf "  ell=%-5s rc=%-4s theta=%s\n" "$ell" "$?" \
          "$(awk '{t=$3}END{print t}' "$d/t.sta" 2>/dev/null)"
 done
 echo
-echo "  nslice=$NS, h=$(python3 -c "print(6.0/$NS)"), viscosity $VISC, NLWIDTH=$NLW"
+echo "  nslice=$NS, h=$(python3 -c "print(6.0/$NS)"), viscosity $VISC, NLWIDTH=$NLW, $MODE"
 python3 - "$OUT" "$NS" "$ELLS" "$ROOT" <<'PY'
 import sys,os,re
 out,ns,ells,root=sys.argv[1],int(sys.argv[2]),sys.argv[3].split(),sys.argv[4]
@@ -109,6 +116,48 @@ def work(c,umax):
         tot+=0.5*(s0+s1)*(u1-u0)
     return tot
 
+def done(d):
+    """Did this arm reach the same stage as the others - full rupture?
+
+    WHY THE WIDTH NEEDS THIS AND THE WORK DOES NOT.  work() integrates to a
+    window every arm reached, so an arm that stopped early is compared on
+    equal terms.  A width has no such window: it is read off whatever state
+    the run got to, so an arm that stopped before rupture contributes the
+    width of a half-formed band and nothing in the number says so.  That is
+    how a GRADIENT sweep first came out non-monotone in ell - 0.882, 0.741,
+    1.582 - with the middle arm at theta=6U and no element deleted.  The
+    stage, not the model.
+
+    Two independent signs of the same thing, and both must hold: the step
+    ran to completion, and something was actually deleted, i.e. the bar was
+    cut rather than merely loaded.
+    """
+    th = None
+    try:
+        for l in open(os.path.join(d, "t.sta")):
+            f = l.split()
+            if len(f) > 2:
+                th = f[2]
+    except Exception:
+        return False, "no t.sta"
+    ndel = 0
+    try:
+        for l in open(os.path.join(d, "t.damage")):
+            if not l.startswith('#'):
+                ndel += 1
+    except Exception:
+        pass
+    if th is None:
+        return False, "no step record"
+    if not th.replace('.', '', 1).isdigit():
+        return False, "theta=%s, step did not complete" % th
+    if abs(float(th) - 1.0) > 1.0e-9:
+        return False, "theta=%s, step did not complete" % th
+    if ndel == 0:
+        return False, "nothing deleted, bar never cut"
+    return True, "theta=1, %d deleted" % ndel
+
+
 def gf(d):
     """G_f as the deck itself states it, not as this script assumes it."""
     for l in open(os.path.join(d,"t.inp")):
@@ -117,25 +166,34 @@ def gf(d):
         if m: return float(m.group(1))
     return None
 
-rows=[]
+rows=[]; bad=[]
 for e in ells:
     d=os.path.join(out,"e"+e)
     try: c=curve(os.path.join(d,"t.dat"))
     except Exception: continue
     if not c: continue
-    rows.append((float(e),width(d),c,gf(d)))
+    ok,why=done(d)
+    if not ok: bad.append((e,why))
+    rows.append((float(e),width(d),c,gf(d),ok))
+if bad:
+    print("  ARMS AT A DIFFERENT STAGE, so their WIDTH is not comparable")
+    print("  and they are excluded from the ell dependence below:")
+    for e,why in bad:
+        print("    ell=%-6s %s" % (e,why))
+    print("  (their work is still integrated on the common window, which is")
+    print("   what that window is for; a width has no such window.)")
 if len(rows)<2:
     print("  not enough arms completed to compare"); sys.exit(0)
-usp=min(max(c,key=lambda p:p[1])[0] for _,_,c,_ in rows)
+usp=min(max(c,key=lambda p:p[1])[0] for _,_,c,_,_ in rows)
 print("  common split at u=%.4f, the earliest peak of the set" % usp)
 print("  ell      width    width/2ell   layers   W_pre     W_post   W_post/(loc)")
 w0=None
-for e,wd,c,_ in rows:
+for e,wd,c,_,ok in rows:
     wpre=work(c,usp); wpost=work(c,0.30)-wpre
     if w0 is None: w0=wpost
-    print("  %-7s %7.4f  %10s %8.2f %8.4f %9.4f %9.3f"
+    print("  %-7s %7.4f  %10s %8.2f %8.4f %9.4f %9.3f%s"
           % (e,wd,("%.3f"%(wd/(2*e))) if e>0 else "   -",wd/h,wpre,wpost,
-             wpost/w0))
+             wpost/w0,"" if ok else "   <- DIFFERENT STAGE"))
 print()
 
 # THE PREDICTION, WITH NOTHING FITTED.  An element of size h reaches D=1
@@ -156,7 +214,8 @@ g=rows[0][3]
 if g:
     print("  W_post against G_f*w/h, PARAMETER FREE (G_f=%.4f from the deck):"
           % g)
-    for e,wd,c,_ in rows:
+    for e,wd,c,_,ok in rows:
+        if not ok: continue
         wpost=work(c,0.30)-work(c,usp)
         pred=g*wd/h
         print("    ell=%-6s w/h=%5.2f  predicted %9.4f  measured %9.4f"
@@ -175,16 +234,16 @@ print("  no ell to scale:")
 # quantity is the ratio of the largest to the smallest W_post across the
 # NONLOCAL arms: 1.0 is a fracture energy that does not depend on ell, which
 # is what the model claims to have.
-nlp=[work(c,0.30)-work(c,usp) for e,_,c,_ in rows if e>0]
+nlp=[work(c,0.30)-work(c,usp) for e,_,c,_,ok in rows if e>0 and ok]
 if len(nlp)>=2 and min(nlp)>0:
     print("  NLWIDTH=%s ELL_DEPENDENCE=%.4f" % (os.environ.get("NLW","?"),
                                                 max(nlp)/min(nlp)))
 print()
-nl=[r for r in rows if r[0]>0]
+nl=[r for r in rows if r[0]>0 and r[4]]
 if len(nl)>=2:
-    e0,wd0,c0,_=nl[0]
+    e0,wd0,c0,_,_=nl[0]
     p0=work(c0,0.30)-work(c0,usp)
-    for e,wd,c,_ in nl[1:]:
+    for e,wd,c,_,_ in nl[1:]:
         p=work(c,0.30)-work(c,usp)
         print("    ell %g -> %g : ell x%.2f   width x%.2f   W_post x%.2f"
               % (e0,e,e/e0,wd/wd0,p/p0))

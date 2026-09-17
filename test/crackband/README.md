@@ -253,6 +253,35 @@ one `G_f` per element layer, which is the defect.  On, it is no longer
 constant, so the per-layer charge is gone, and the `ell` dependence falls
 from 2.66 to 1.38.
 
+### The gradient backend, asked the same question
+
+`MODE=GRADIENT` runs the same sweep through the PDE form, which could not be
+asked before `4d1c250` because a card-only length never reached its assembly.
+Two things came out, and the second one is about this directory's own tooling.
+
+| `ell/h` | `w / 2*ell`, integral | `w / 2*ell`, gradient |
+|---|---|---|
+| 1 | 1.65 | - |
+| 2 | 1.26 | 1.20 |
+| 4 | 1.08 | 0.83 |
+
+So the band reaches `2*ell` at an `ell/h` of roughly 2 to 4 on both backends,
+and the participation criterion that admits `ell >= 0.39 h` is more permissive
+than that.  **Two comparable arms per backend is thin**, and the gradient rows
+are consistent with the integral ones rather than an independent confirmation
+of them.
+
+The tooling point: the first gradient sweep came out non-monotone in `ell` -
+0.882, 0.741, 1.582 - and the middle arm had stopped at `theta=6U` with nothing
+deleted.  A width read off a run that never ruptured is the width of a
+half-formed band, and nothing in the number says so.  `work()` has a common
+window for exactly this, but **a width has no window**, so the script now
+checks two independent signs of the same stage - the step completed AND
+something was deleted - and marks any arm that fails them, excluding it from
+the `ell` dependence.  Raising the viscosity does not fix the gradient arms
+either: at `3.e-3` a *different* arm fails, which is worth knowing before
+anyone treats viscosity as the way to make that backend comparable.
+
 **It is not finished, and the honest number is 1.38 and not 1.0.**  The
 residual is non-monotone (5.69, 4.42, 6.12) across three arms, which is the
 size of an unexplained effect rather than of a converged one, and this
