@@ -10,6 +10,7 @@
 set -u
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 OUT=${1:-$(mktemp -d)}
+mkdir -p "$OUT"
 A="$ROOT/src/ccx_2.23.a"
 [ -f "$A" ] || { echo "build src/ first: $A is missing" >&2; exit 2; }
 MKL="-Wl,--start-group /usr/lib/x86_64-linux-gnu/libmkl_gf_lp64.a
