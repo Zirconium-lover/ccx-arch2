@@ -674,6 +674,75 @@
       return
       end
 !
+!
+!     ==================================================================
+!     THE LENGTH AN ELEMENT WAS ACTUALLY AVERAGED WITH.
+!
+!     Handed to the crack-band width so the damage law can use 2*ell in
+!     place of the element size when the regularisation is real.  Agent 2
+!     measured why this is needed: the nonlocal model widens the band to
+!     about 2*ell and holds it against mesh refinement, but the law still
+!     divides by a length of order h, so the dissipation follows the WIDTH
+!     instead of staying put - W_post 8.87 -> 11.26 -> 16.55 -> 29.99 as
+!     ell goes 0 -> 0.25 -> 0.5 -> 1.0 at fixed h, while W_pre agrees to
+!     0.03 per cent.  The band obeys ell; the law does not know.
+!
+!     NOT damnlellmax, which is the largest length configured anywhere.
+!     This is the element's OWN length, including the per-material
+!     multiplier and the localizing g(D) - that is, the number standing in
+!     the operator that produced this element's averaged value.  Handing
+!     back anything else would substitute a length the element was not
+!     averaged with.
+!
+!     iok=1 only when the mesh RESOLVES that length, by the same test the
+!     shared guard uses: an element is always in its own neighbourhood, so
+!     participation below two means no neighbour joined and the band is
+!     not 2*ell but h.  Agent 2's scaling sweep found the same boundary
+!     independently - w/2ell is 1.50 / 1.08 / 0.88 at ell = 0.25 / 0.5 /
+!     1.0, and the outlier is exactly the row where 2*ell/h = 2.  The
+!     caller therefore does not have to restate the criterion, and cannot
+!     restate it differently by accident.
+!
+      subroutine damnlelleff(iel,ell,iok)
+      use damnlmod
+      implicit none
+      integer iel,iok
+      real*8 ell,part,vmean
+!
+      ell=0.d0
+      iok=0
+      if((iel.lt.1).or.(iel.gt.nesave)) return
+!
+      if(imodenl.eq.1) then
+        if(.not.allocated(ell2e)) return
+        if(.not.allocated(gnc)) return
+        if(gnc(iel).le.0) return
+        if(ell2e(iel).le.0.d0) return
+        ell=dsqrt(ell2e(iel))
+!
+!       participation, estimated as in damgradient: the 2*ell ball over
+!       this element's own volume, floored at one for the element itself
+!
+        if(.not.allocated(vele)) return
+        if(vele(iel).le.0.d0) return
+        part=4.18879020478639d0*(2.d0*ell)**3/vele(iel)
+        if(part.lt.1.d0) part=1.d0
+      else
+        if(.not.allocated(nbcount)) return
+        if(.not.allocated(evol)) return
+        if(evol(iel).le.0.d0) return
+        call damnlellel(iel,ell)
+        if(ell.le.0.d0) return
+!
+!       counted, not estimated: the integral backend keeps the list
+!
+        part=dble(nbcount(iel))
+      endif
+      if(part.lt.2.d0) return
+      iok=1
+      return
+      end
+!
       subroutine damnonlocalset(ellin)
       use damnlmod
       implicit none
