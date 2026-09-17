@@ -292,6 +292,31 @@
 !     initiation, which is the sigma_0 that G_f = sigma_0 u_f / 2 is
 !     written in terms of (Bazant and Oh 1983 for the relation itself).
 !
+!     LIMITATION, stated rather than hidden.  That identity needs the
+!     loading to be monotonic and proportional.  What sigma_0 has to be
+!     is the flow stress at the moment the initiation criterion is met,
+!     and the peak equals it only because a hardening material at yield
+!     carries its largest equivalent stress then.  Under NON-proportional
+!     loading the largest value the point ever carried can come from a
+!     different stress state - which matters here, because RICETRACEY is
+!     triaxiality dependent and a point can meet its criterion in a state
+!     it did not peak in.
+!
+!     The refinement, if a case ever needs it, is to take the equivalent
+!     stress at the last increment in which the point actually FLOWED,
+!     dpeq = xstate(1,jj,i)-xstateini(1,jj,i) > 0, rather than the largest
+!     it ever carried.  That is what "the flow stress at initiation"
+!     literally means, it coincides with the peak under monotonic
+!     proportional loading, and it is strictly better outside it.
+!
+!     Not done, and the reason is not that it is hard: dpeq is not yet
+!     computed where this cache is written (it is formed around line 1518,
+!     well below), so taking it would mean reordering the routine.  That
+!     is a change with no measurement behind it - no deck here loads
+!     non-proportionally, so both rules would give the same numbers and
+!     the reorder could not be shown to be an improvement or shown to be
+!     safe.  It is written down instead, with the expression to use.
+!
       use damcbmod
       implicit none
       integer iel,iint
