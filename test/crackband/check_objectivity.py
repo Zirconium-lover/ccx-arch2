@@ -10,13 +10,23 @@ not run in.  A correct model must give the same answer on all of them, so
 no analytical reference is needed and no normalisation either: the
 force-displacement curves are directly comparable.
 
-Two numbers are reported.
+Three numbers are reported.
 
   W = integral F du, the external work.  This is the one the crack-band
   approach makes a claim about - it exists precisely to keep the dissipated
   energy independent of element size - so the spread of W across the sweep
   is the headline result.  Each run's W is also shown against 1/L, because
   if the characteristic length is the cause then W must scale as 1/L.
+
+  The fit of W = A + B/L across the sweep, which turns that "if" into a
+  test.  A spread caused by the characteristic length lies ON this law; a
+  spread that does not lie on it has some other cause, however big it is.
+  Reporting the spread alone invites the spread to be blamed on the width
+  by default, which is wrong in the one sweep this file exists for: refine
+  a cross-section and the band stays one slice thick, so under a width
+  that is measured across the band, L does not move at all and the law
+  predicts no spread whatever.  The fit says so in that case instead of
+  being computed.
 
   The pointwise spread of F(u), split at the peak.  The pre-peak spread
   should be ~0 on any mesh that represents the uniform field exactly; it is
@@ -62,6 +72,54 @@ def work(c):
                for i in range(1, len(c)))
 
 
+def lawfit(runs, ws):
+    """Fit W = A + B/L, the crack-band scaling, across the sweep.
+
+    Crack-band theory fixes the dissipation per unit volume at G_f/L, so
+    the part of the external work the band dissipates must vary as 1/L
+    while the rest of the response does not (Bazant and Oh 1983).  That
+    makes the fit a test of ATTRIBUTION and not just of size: a spread
+    that is the characteristic length lies on this law, and a spread that
+    does not lie on it is something else, however large it is.
+
+    A sweep whose L never changes cannot be fitted and does not need to
+    be.  There the law predicts no spread at all, so whatever spread is
+    measured is by construction not the width - which is the whole point
+    of refining a cross-section, where the band stays one slice thick.
+    """
+    x = [1.0 / ell for _, ell, _ in runs]
+    print("  W = A + B/L, the crack-band scaling (Bazant and Oh 1983)")
+    if max(x) - min(x) <= 1.0e-12 * max(1.0, max(x)):
+        print("    L is the same on every mesh (1/L = %.4f), so this law"
+              % max(x))
+        print("    predicts a spread of exactly ZERO.  Whatever spread is")
+        print("    reported above is therefore NOT the band width.")
+        return
+    n = len(x)
+    sx, sy = sum(x), sum(ws)
+    sxx = sum(v * v for v in x)
+    sxy = sum(a * b for a, b in zip(x, ws))
+    den = n * sxx - sx * sx
+    if abs(den) <= 1.0e-30:
+        print("    the sweep does not span enough of 1/L to fit")
+        return
+    b = (n * sxy - sx * sy) / den
+    a = (sy - b * sx) / n
+    worst = 0.0
+    for (label, ell, _), w in zip(runs, ws):
+        f = a + b / ell
+        r = abs(w - f) / w * 100.0
+        worst = max(worst, r)
+        print("    %-10s 1/L=%6.3f  W=%10.5f  fit=%10.5f  off by %5.2f %%"
+              % (label, 1.0 / ell, w, f, r))
+    print("    A=%10.4f  the mesh independent part" % a)
+    print("    B=%10.4f  the part dissipated in the band" % b)
+    if n < 3:
+        print("    two points fit a two-parameter law exactly, so the")
+        print("    departure below is not evidence; sweep at least three.")
+    print("    WORST departure from the 1/L law : %6.2f %%" % worst)
+
+
 def main():
     uend = float(sys.argv[1])
     runs = []
@@ -84,6 +142,7 @@ def main():
               % (label, ell, w, w / base, lbase / ell))
     print("    SPREAD of W across the sweep : %6.2f %% of W0"
           % (100.0 * (max(ws) - min(ws)) / base))
+    lawfit(runs, ws)
 
     pre = post = 0.0
     for i in range(1, 801):

@@ -427,10 +427,20 @@
 !
       subroutine damcbwarnonce(lakonl)
 !
-!     Jirasek and Bauer, section 7: on quadratic elements the band can
-!     localize into a sub-element region, so the element size is no
-!     longer the band width.  The projection is still the best available
-!     estimate, but the user is told once rather than not at all.
+!     Jirasek and Bauer 2012, sections 6.5 and 7: on quadratic elements
+!     the band localizes into one layer of GAUSS POINTS rather than one
+!     layer of elements, so the element is no longer the band.  The
+!     projection then returns a width that is too LARGE, which releases
+!     less than G_f and makes the response too brittle - their Fig. 31a
+!     shows the whole-element curves falling furthest below the
+!     reference, and the halved-width curves sitting closest to it.
+!
+!     Their section 7 does not regard this as a correctable detail: it
+!     concludes that higher-order elements are not suitable for crack
+!     band simulations at all, because the corrected factors work only
+!     when the band happens to align with the mesh lines.  We warn once
+!     rather than refuse, because refusing would lock out C3D10, which
+!     is what most tetrahedral meshers produce.
 !
       use damcbmod
       implicit none
@@ -441,12 +451,20 @@
       write(*,*) '*WARNING in calcdamage: the crack-band projection'
       write(*,*) '         is being used on a higher-order element ('
      &     //lakonl(1:6)//').'
-      write(*,*) '         Jirasek and Bauer 2012 report that the'
-      write(*,*) '         localized band can be narrower than one'
-      write(*,*) '         such element, so the projected width'
-      write(*,*) '         overestimates it and the dissipation is'
-      write(*,*) '         then too large.  Linear elements are'
-      write(*,*) '         preferred for crack-band simulations.'
+      write(*,*) '         Jirasek and Bauer 2012, section 6.5: on'
+      write(*,*) '         quadratic elements the band localizes into'
+      write(*,*) '         one layer of GAUSS POINTS, not one layer'
+      write(*,*) '         of elements, so projecting the WHOLE'
+      write(*,*) '         element overestimates the band width.'
+      write(*,*) '         Less than G_f is then released and the'
+      write(*,*) '         response comes out too BRITTLE, not too'
+      write(*,*) '         ductile (their Fig. 31a).  In 2D they'
+      write(*,*) '         report a true width of h/2 for 2x2'
+      write(*,*) '         integration and 13h/18 for 3x3; no such'
+      write(*,*) '         factor is established for these elements,'
+      write(*,*) '         and their section 7 concludes higher-order'
+      write(*,*) '         elements are not suitable for crack-band'
+      write(*,*) '         work at all.  Prefer C3D4, C3D6 or C3D8.'
       write(*,*)
       return
       end
