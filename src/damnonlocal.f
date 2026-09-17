@@ -1601,7 +1601,7 @@
       integer ionnl,nskip,nptot,ip,nipel,ib,ndneg,nact
       real*8 ell2,s,rz,rzold,pap,alpha,beta,rnorm,rnorm0,tol,fm,
      &     dloc,gloc,ml(8),kel(8,8),cx,cy,cz,volel,wsum,elli,ellrep,
-     &     dnwrst,dgmx,dgden,vsum,part
+     &     dnwrst,dgmx,dgden,vsum,part,elli2
 !
       call damnlactive(ionnl)
       if(ionnl.eq.0) return
@@ -1805,8 +1805,26 @@
       do i=1,ne0
         ell2e(i)=ell2
         if(ipkon(i).lt.0) cycle
+!
+!       THE ELEMENT'S OWN LENGTH, AND IT MUST SURVIVE TO THE ASSIGNMENT
+!       BELOW.  This used to set ell2e here and then be overwritten two
+!       dozen lines down by ell2e(i)=ell2*fm*fm*gloc, which carries the
+!       GLOBAL ellsave - the environment's value.  So a deck whose length
+!       comes from its *DAMAGE INITIATION card ran the whole backend at
+!       ell2e=0, i.e. with no regularisation, while the banner printed
+!       the card's length because the banner asked damnlellmax and the
+!       assembly did not.
+!
+!       That is the seam I closed for the ARMING of the model and left
+!       open for its USE, in the same commit.  It hid because the gate
+!       case pins gradell from the BANNER - the number the model reports,
+!       not the number it uses - so the case was green on a backend doing
+!       nothing.  Found by reading this loop while answering a question
+!       about which length to hand the crack-band width, not by a run.
+!
         call damnlellel(i,elli)
-        if(elli.gt.0.d0) ell2e(i)=elli*elli
+        elli2=ell2
+        if(elli.gt.0.d0) elli2=elli*elli
         fm=1.d0
         if(ellmn.gt.0) then
           im=ielmat(1,i)
@@ -1819,7 +1837,7 @@
           if(dloc.gt.1.d0) dloc=1.d0
           gloc=(1.d0-nlocr)*(1.d0-dloc)**nlocn+nlocr
         endif
-        ell2e(i)=ell2*fm*fm*gloc
+        ell2e(i)=elli2*fm*fm*gloc
       enddo
 !
 !     ---------------- assemble diag(A) and the right-hand side --------
