@@ -388,6 +388,22 @@
     "opcheck_wrong": 80,
     "opcheck_maxerr": 0.0005
    }
+  },
+  {
+   "name": "fast-plain-charlen",
+   "what": "the same deck with the DIRECTIONAL crack-band width armed, CCX_DAMAGE_CHARLEN=1, instead of the legacy (6V)^(1/3).  This case exists because the switch changes a length that stands in the damage law itself, D += L*dEps_p/u_f, so it cannot be covered by a byte-identity case - the answer is expected to move - and because nothing else in the gate executes the projection at all.  What it pins is the part that must NOT move: the fracture.  MEASURED, 90 deletions and the SAME 90 ELEMENTS as fast-plain, which is what same_deletion_set_as asserts; only the trajectory shifts, 508 increments against 507.  The shift is one-sided and explainable: 68 of the 90 elements fail EARLIER and none later, by at most 6.72 per cent in load fraction, because on these tetrahedra the projection onto the major principal direction is LARGER than the cube root of six volumes, and a larger L accumulates damage faster.  The reference for the width itself is not here but in test/crackband/run_cbwidth_test.sh, which checks it against hand-computable geometry, and the reason the two lengths agree so closely on this deck at all is that on the corner tetrahedron of a cube they are exactly equal - see case 5 there.  DISCLOSURE: this case runs the projection on C3D4 only, because the deck is C3D4.  The lift of the C3D4 restriction that the same switch performs is not covered by the gate; it is reproduced by test/hex/mkhex.py, which needs a case kind of its own in run.py and is therefore still outside.",
+   "kind": "fast",
+   "variant": "plain",
+   "env": [
+    "CCX_DAMAGE_CHARLEN=1"
+   ],
+   "expect": {
+    "rc": 0,
+    "last_inc": 508,
+    "theta": "0.100000E+01",
+    "deletions": 90
+   },
+   "same_deletion_set_as": "fast-plain"
   }
  ],
  "selftests_required": [
