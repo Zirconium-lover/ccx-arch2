@@ -144,59 +144,7 @@ def work(c,umax):
         tot+=0.5*(s0+s1)*(u1-u0)
     return tot
 
-def done(d):
-    """Did this arm reach the same stage as the others - full rupture?
-
-    WHY THE WIDTH NEEDS THIS AND THE WORK DOES NOT.  work() integrates to a
-    window every arm reached, so an arm that stopped early is compared on
-    equal terms.  A width has no such window: it is read off whatever state
-    the run got to, so an arm that stopped before rupture contributes the
-    width of a half-formed band and nothing in the number says so.  That is
-    how a GRADIENT sweep first came out non-monotone in ell - 0.882, 0.741,
-    1.582 - with the middle arm stopped at six unconverged attempts and
-    nothing deleted.  The stage, not the model.
-
-    Two independent signs of the same thing, and both must hold: the step
-    ran to completion, and something was actually deleted, i.e. the bar was
-    cut rather than merely loaded.
-    """
-    #
-    # READ THE RIGHT COLUMN.  t.sta is STEP INC ATT ITRS TOT_TIME STEP_TIME
-    # INC_TIME, so the step's progress is column 6 and column 3 is the
-    # ATTEMPT counter, with a U suffix on an attempt that did not converge.
-    # This used to test column 3 against 1.0 and call it theta - which
-    # passes a finished run only because its last increment usually needs
-    # one attempt, and would have called any run whose last increment took
-    # two attempts "a different stage".  It was also printed as "theta=" by
-    # the sweep above, so "theta=6U" in the forum record means six attempts,
-    # not a step time of six.
-    att, stime = None, None
-    try:
-        for l in open(os.path.join(d, "t.sta")):
-            f = l.split()
-            if len(f) > 5 and f[0].isdigit():
-                att, stime = f[2], f[5]
-    except Exception:
-        return False, "no t.sta"
-    if stime is None:
-        return False, "no step record"
-    if 'U' in att:
-        return False, "last attempt did not converge (att=%s)" % att
-    try:
-        if abs(float(stime) - 1.0) > 1.0e-9:
-            return False, "step reached %.4f of 1.0" % float(stime)
-    except ValueError:
-        return False, "unreadable step time %r" % stime
-    ndel = 0
-    try:
-        for l in open(os.path.join(d, "t.damage")):
-            if not l.startswith('#'):
-                ndel += 1
-    except Exception:
-        pass
-    if ndel == 0:
-        return False, "step completed but nothing deleted, bar never cut"
-    return True, "step complete, %d deleted" % ndel
+from bandwidth import stage_ok as done   # one implementation, not two
 
 
 def gf(d):

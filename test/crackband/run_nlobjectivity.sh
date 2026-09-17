@@ -120,9 +120,14 @@ for ns in $NSLICES; do
         -o "$d/t.inp" >/dev/null || exit 2
     [ "$arm" = nl ] && sed -i "s/EVOLUTION=DISPLACEMENT\$/EVOLUTION=DISPLACEMENT, NONLOCAL=$ELL/g" "$d/t.inp"
     ( cd "$d" && env CCX_DAMAGE_CHARLEN=1 CCX_DAMAGE_VISCOSITY="$VISC" "$EXE" t > run.log 2>&1 )
-    printf "  nslice=%-3s %-6s rc=%-4s att=%-4s steptime=%s\n" "$ns" "$arm" "$?" \
+    rc=$?
+    printf "  nslice=%-3s %-6s rc=%-4s att=%-4s steptime=%s\n" "$ns" "$arm" "$rc" \
            "$(awk '$1 ~ /^[0-9]+$/{a=$3}END{print a}' "$d/t.sta" 2>/dev/null)" \
            "$(awk '$1 ~ /^[0-9]+$/{t=$6}END{print t}' "$d/t.sta" 2>/dev/null)"
+    # The exit status is in no output file, so record it.  This sweep used to
+    # print it and drop it, which is how a width from an arm that never
+    # ruptured reached a published ratio in the sibling sweep.
+    [ "$rc" = 0 ] || : > "$d/UNCONVERGED"
   done
 done
 echo
@@ -133,19 +138,43 @@ python3 - "$ROOT" "$OUT" "$NSLICES" <<'PY'
 import sys,os
 root,out,meshes=sys.argv[1],sys.argv[2],[int(v) for v in sys.argv[3].split()]
 sys.path.insert(0,os.path.join(root,"test","crackband"))
-from bandwidth import width
+from bandwidth import width, stage_ok
+# A WIDTH FROM AN ARM THAT DID NOT RUPTURE IS NOT A WIDTH.  This block used to
+# report one exactly like a finished arm's, which is the defect that reached a
+# published number in the sibling sweep; the check is the shared one, so the
+# two sweeps cannot start disagreeing about what a comparable arm is.
+bad=[]
+for arm in ("local","nl"):
+    for ns in meshes:
+        ok,why=stage_ok(os.path.join(out,"%d_%s"%(ns,arm)))
+        if not ok: bad.append(("%s h=%.3f"%(arm,6.0/ns),why))
+if bad:
+    print("    ARMS AT A DIFFERENT STAGE - their width is not comparable:")
+    for who,why in bad:
+        print("      %-16s %s" % (who,why))
+    print("    The ratio below is withheld for any mesh with such an arm.")
 print("    mesh      " + "  ".join("h=%-6.3f" % (6.0/ns) for ns in meshes))
 rows={}
+okm={}
 for arm in ("local","nl"):
     row=[]
     for ns in meshes:
-        try: row.append(width(os.path.join(out,"%d_%s"%(ns,arm)))[0])
+        d=os.path.join(out,"%d_%s"%(ns,arm))
+        ok,_=stage_ok(d)
+        okm[(arm,ns)]=ok
+        try: row.append(width(d)[0])
         except Exception: row.append(float('nan'))
     rows[arm]=row
-    print("    %-9s %s" % (arm,"  ".join("%8.4f"%v for v in row)))
+    print("    %-9s %s" % (arm,"  ".join(
+        ("%8.4f"%v) if okm[(arm,ns)] else ("%7.4f*"%v)
+        for v,ns in zip(row,meshes))))
+if bad: print("    * excluded: did not reach the same stage")
 if all(v==v and v>0 for v in rows["local"]):
     print("    ratio     %s"
-          % "  ".join("%8.2f"%(a/b) for a,b in zip(rows["nl"],rows["local"])))
+          % "  ".join(
+              ("%8.2f"%(a/b)) if (okm[("nl",ns)] and okm[("local",ns)])
+              else "%8s"%"--"
+              for a,b,ns in zip(rows["nl"],rows["local"],meshes)))
     print("    The ratio is the part that needs no absolute scale: a nonlocal")
     print("    width held while the local one shrinks makes it grow, and it")
     print("    does not care what floor either measure has.")

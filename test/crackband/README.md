@@ -95,7 +95,7 @@ Measured on `c9f7ab4`:
 |---|---|---|---|
 | C3D4 legacy | 1.000 -> 0.630 -> 0.481 | 73.57 % | 5.31 % |
 | C3D4 projection | 1.000 on every mesh | 5.97 % | law predicts zero |
-| C3D8 projection | 1.000 on every mesh | 0.71 % | law predicts zero |
+| C3D8 projection | 1.000 on every mesh | 0.71 % (0.72 % re-measured) | law predicts zero |
 
 Read those three rows together rather than separately.
 
@@ -117,6 +117,15 @@ fifty-four, and crack-band scaling makes no claim about that.
 The C3D8 arm has no legacy counterpart to compare against, because the
 legacy path refuses the family outright.  There the projection is not a
 more objective option - it is the only one.
+
+That row was worth re-measuring rather than trusting, and for a specific
+reason: its three arms stop at step times of 0.954, 0.994 and 0.962, and the
+`work()` they were first measured with integrated each curve to wherever it
+ended, so an arm was credited with less work for stopping earlier.  Re-measured
+with the windowed `work(c, umax)` the spread is **0.72 %** against the published
+0.71 %, and the pre-peak spread is exactly 0.00 % with 2.74 % after the peak.
+The legacy and C3D4-projection rows need no such check: all six of those arms
+run the step to completion.
 
 ## Does the internal length give mesh objectivity
 
@@ -172,8 +181,11 @@ nonlocal band collapses too.  The verdict was a property of the number 0.5.
 
 With the threshold-free measure the local band does **not** collapse: it falls
 and nearly stops, and a sharper notch on finer meshes (span 1.0, `h` = 0.5 /
-0.25 / 0.125) leaves it at 0.634 / 0.545 / 0.642 - so the floor is not the
-notch either.  What holds it there is **the specimen's cross-section**, and
+0.25 / 0.125) leaves the LOCAL arm at 0.634 / 0.545 / 0.642 - so the floor is
+not the notch either.  Only the local arm: that sweep's nonlocal arm at
+`h`=0.125 stopped on an unconverged attempt, so its width and the ratio built
+on it are not comparable and are withheld.  The refutation rests on the local
+row, which is where it always rested.  What holds it there is **the specimen's cross-section**, and
 `run_xsection_floor.sh` measures that rather than arguing it (see below).  What survives is the
 ratio, which needs no absolute scale and rises monotonically at both
 viscosities (1.34 -> 1.72 -> 2.13 at `1.e-3`, 1.39 -> 1.83 -> 2.08 at

@@ -173,6 +173,78 @@ def width(rundir, area=None):
     return tot / area, area, len(el), len(gone), len(missing)
 
 
+def stage_ok(rundir):
+    """Did this run reach the same stage as the others - full rupture?
+
+    WHY A WIDTH NEEDS THIS AND A WORK INTEGRAL DOES NOT.  An external-work
+    integral can be taken to a window every arm reached, so an arm that
+    stopped early is compared on equal terms.  A width has no such window:
+    it is read off whatever state the run got to, and an arm that stopped
+    before rupture contributes the width of a half-formed band with nothing
+    in the number to say so.  That produced a non-monotone scaling law once
+    (0.882, 0.741, 1.582 in ell, with the middle arm stopped) and, separately,
+    a published agreement of -4 per cent from an arm that had reached 15 per
+    cent of its step.
+
+    THREE SIGNS, and they were found by two people independently, which is
+    why all three are kept rather than the shortest set.  rc!=0 is the
+    solver's own verdict, recorded by the sweep as an UNCONVERGED marker
+    because the exit status is not in any output file.  A step time short of
+    1.0, and the U suffix the solver puts on an unconverged attempt, are two
+    ways a run fails while still exiting 0.  And nothing deleted means the
+    bar was loaded but never cut, which all of the others miss.
+
+    Reads t.sta as STEP INC ATT ITRS TOT_TIME STEP_TIME INC_TIME - column 6
+    is the progress and column 3 is the attempt counter.  Testing column 3
+    against 1.0 and calling it theta is what this function did first; it
+    passes a finished run only because the last increment usually converges
+    in one attempt.
+
+    This lives in the module both sweeps import, and not in either of them,
+    because the first version existed twice and the two copies had already
+    started to differ.
+
+    WHAT THIS IS NOT.  It asks whether a run reached FULL RUPTURE, which is
+    the right comparability criterion only where the comparison needs it -
+    a band width, which has no common window.  It is NOT a general validity
+    test, and applying it where the comparison is made at a common
+    displacement will reject sound runs: the energy-equivalence decks are
+    driven to a tenth of working strain and are not meant to break at all,
+    and the cross-section sweep compares force-displacement curves on the
+    window every arm reached.  Those are handled by work(c, umax) instead.
+    Read a False from this as "not comparable BY RUPTURE", nothing wider.
+    """
+    if os.path.exists(os.path.join(rundir, 'UNCONVERGED')):
+        return False, 'solver exited non-zero'
+    att = stime = None
+    try:
+        for line in open(os.path.join(rundir, 't.sta')):
+            f = line.split()
+            if len(f) > 5 and f[0].isdigit():
+                att, stime = f[2], f[5]
+    except Exception:
+        return False, 'no t.sta'
+    if stime is None:
+        return False, 'no step record'
+    if 'U' in att:
+        return False, 'last attempt did not converge (att=%s)' % att
+    try:
+        if abs(float(stime) - 1.0) > 1.0e-9:
+            return False, 'step reached %.4f of 1.0' % float(stime)
+    except ValueError:
+        return False, 'unreadable step time %r' % stime
+    ndel = 0
+    try:
+        for line in open(os.path.join(rundir, 't.damage')):
+            if not line.startswith('#'):
+                ndel += 1
+    except Exception:
+        pass
+    if ndel == 0:
+        return False, 'step completed but nothing deleted, bar never cut'
+    return True, 'step complete, %d deleted' % ndel
+
+
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
     area = None
