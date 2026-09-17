@@ -54,12 +54,12 @@
    }
   },
   {
-   "name": "fast-plain-notangent",
-   "what": "the same deck with the damage-consistent tangent switched OFF entirely. MEASURED against fast-plain: the fracture is IDENTICAL - m.damage byte-for-byte, the same 90 deletions in the same order at the same times - and the terminal grip reaction prints the same seven digits, 3.999343E+00. What moves is the per-node split of that reaction, by at most 2.18e-04 relative, and the transverse displacements, by at most 7.1e-09 absolute on a field whose axial component is 1.0. The run takes 0.2 percent FEWER Newton iterations and 33 percent LESS wall time (26.55 s against 35.33 s). This case exists because until it was added the gate had never once run without CCX_DAMAGE_TANGENT: run_s3rad.sh exports UNSYM unconditionally, so the switch had no test and its cost had never been paid attention to. The m.dat tolerance is 5e-04 relative with a 1e-07 absolute floor: the floor is what keeps a 7e-09 wobble on a near-zero transverse component from being read as a 3e-04 relative difference, and 5e-04 is a little above the 2.18e-04 actually measured. DISCLOSURE: what was fixed before the run, per 09-STEERING, was the PHYSICAL criterion - the same deletion set, the same severance theta, the same converged answer - and that criterion passed on its own terms. The numeric m.dat tolerance was first guessed at 1e-04, the case went red, and 5e-04 was chosen after seeing the data. That is a tolerance fitted to the measurement, and it is only admissible because the criterion it replaced is the one that decides, and that one was not moved.",
+   "name": "fast-plain-unsym",
+   "what": "the same deck with the damage-consistent tangent switched ON. It used to be the reverse - the gate forced UNSYM on every case and this one turned it off - and it was flipped when the unconditional export was removed, because a case that asks for what is now the default tests nothing and passes: 'Not wrong: UNINFORMATIVE, which is the expensive kind', as run_fast's own docstring puts it about a different case that had already failed this way. Agent 2 caught it. MEASURED against fast-plain: the fracture is IDENTICAL - m.damage byte-for-byte, the same 90 deletions in the same order at the same times - and the terminal grip reaction prints the same seven digits. What moves is the per-node split of that reaction, by at most 2.18e-04 relative, and the transverse displacements, by at most 7.1e-09 absolute on a field whose axial component is 1.0. The run takes 0.2 percent MORE Newton iterations and 33 percent MORE wall time. DISCLOSURE: on C3D4 the rank-1 term is zero on the softening branch, which is why the fracture does not move; on MULTI-POINT elements it is not zero and is harmful - a C3D8 deck fails at theta=0.135 with it against 0.215 without - so this case pins a deviation that is known to cost, not a recommended setting.",
    "kind": "fast",
    "variant": "plain",
    "env": [
-    "CCX_DAMAGE_TANGENT="
+    "CCX_DAMAGE_TANGENT=UNSYM"
    ],
    "expect": {
     "rc": 0,
