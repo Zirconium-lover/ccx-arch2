@@ -784,8 +784,36 @@
       call damcbufinit(ne0,mi(1))
       call damcbmodeget(cbmodev)
 !
-      call damnonlocalget(ellnl)
+!
+!     ENTRY GATE for the nonlocal model.  It must ask for the largest length
+!     ANY source asked for, not just the environment's.
+!
+!     damnonlocalget returns ellsave, and ellsave is written only by
+!     damnonlocalset, which nonlingeo.c calls with the environment value.  A
+!     deck that carries NONLOCAL= on its material card and sets no
+!     environment variable therefore left ellnl at zero and skipped this
+!     block entirely: W6's whole point - that the .inp is a complete
+!     description of the problem - was inert unless the environment ALSO
+!     spoke.  MEASURED on a C3D8 deck: card only gave zero
+!     "[DAMAGE NONLOCAL]" banners, the same deck with the environment set as
+!     well gave four.
+!
+!     damnlellmax is Agent 1's accessor for exactly this question - the
+!     maximum over ellsave and every card - so the gate asks it instead.
+!
+      call damnlellmax(ellnl)
       if(ellnl.gt.0.d0) then
+!
+!       The element-to-material map, for Agent 1's per-material internal
+!       length (forum 2026-09-17 07:20).  damnonlocal.f does not receive
+!       ielmat, and this is the main path into it - the other two callers
+!       are inside that file.  Without this call the card's length is still
+!       applied, but globally rather than per material, which is the
+!       pre-W6 behaviour and would be a silent difference rather than a
+!       visible one.  It returns immediately when no card carried
+!       NONLOCAL=.
+!
+        call damnlmatmap(ipkon,lakon,ielmat,ne0,mi)
         call damnonlocalmodeget(imodenlv)
         if(imodenlv.eq.2) then
 !
@@ -1821,7 +1849,9 @@
 !     and the tangent is local either way, so nothing is given up that
 !     was not already given up.
 !
-      call damnonlocalget(ellnlp)
+!     The same entry gate as in calcdamagebase, and for the same reason: a
+!     length that came from the card alone must arm this path too.
+      call damnlellmax(ellnlp)
       if(ellnlp.gt.0.d0) then
         call damnonlocalval(iel,dpnlp,ioknl)
         if(ioknl.eq.1) dpeq=dpnlp
