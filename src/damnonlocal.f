@@ -1235,8 +1235,22 @@
 !     stride - the maximum over every element type, 3 as soon as a UC6
 !     facet exists - while a C3D4 has exactly ONE integration point
 !     (calcdamage.f sets mint3d=1 for lakonl(4:4)=='4').  Looping to
-!     mi(1) would average in uninitialised slots.  Only C3D4 reaches
-!     here, evol being zero elsewhere, so the count is 1 by construction.
+!     mi(1) would average in uninitialised slots, so the loop below goes
+!     to nipe(i), which calcdamage's own table fills.
+!
+!     THIS COMMENT USED TO END: "Only C3D4 reaches here, evol being zero
+!     elsewhere, so the count is 1 by construction."  That was true until
+!     3368f12 lifted the C3D4 restriction from this backend, and false
+!     from that commit on - hexahedra reach here and their count is 8 or
+!     27.  It sat directly above the loop that was added BECAUSE the
+!     count is no longer 1, arguing that the loop was unnecessary.
+!
+!     Kept visible rather than deleted because of what it is: not a wrong
+!     number, which a test can catch, but an argument against checking,
+!     which nothing can - the reader who believes it stops looking.  The
+!     other agent named this class today and proposed the remedy that
+!     found it: after a retraction, sweep the TREE for the retracted
+!     claim instead of marking the discussion.
 !
       do i=1,ne0
         dploc(i)=0.d0
