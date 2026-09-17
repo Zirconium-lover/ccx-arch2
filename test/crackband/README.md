@@ -123,8 +123,14 @@ Eight geometries whose answer can be worked out by hand: a unit cube pulled
 along an axis and along a face diagonal, an elongated brick pulled along its
 long side and then across its thin one, a corner tetrahedron, and three
 degenerate cases where no band normal exists - hydrostatic loading, where
-every eigenvalue is equal and no direction is the major one.  It returns
-non-zero on disagreement, checked by changing an expected value.
+every eigenvalue is equal and no direction is the major one.  One case is
+a C3D10 whose midside node has been pushed far outside the element, which
+checks two things at once: that the width is unmoved, which it can only be
+if the midside nodes are really excluded, and that the higher-order warning
+fires.  A midside node left on its straight edge would hide that bug, since
+it lies inside the corner hull and changes no extent.
+
+Each case prints a verdict and a disagreement sets the exit code.
 
 Whether the gate runs it is worth checking rather than assuming, since it is
 a live proposal and not mine to land:
