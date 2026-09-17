@@ -70,8 +70,9 @@ for ell in $ELLS; do
         CCX_DAMAGE_NLWIDTH="$NLW" CCX_DAMAGE_NONLOCAL_MODE="$MODE" \
         "$EXE" t > run.log 2>&1 )
   rc=$?
-  printf "  ell=%-5s rc=%-4s theta=%s\n" "$ell" "$rc" \
-         "$(awk '{t=$3}END{print t}' "$d/t.sta" 2>/dev/null)"
+  printf "  ell=%-5s rc=%-4s att=%-4s steptime=%s\n" "$ell" "$rc" \
+         "$(awk '$1 ~ /^[0-9]+$/{a=$3}END{print a}' "$d/t.sta" 2>/dev/null)" \
+         "$(awk '$1 ~ /^[0-9]+$/{t=$6}END{print t}' "$d/t.sta" 2>/dev/null)"
   # AN ARM THAT DID NOT CONVERGE IS NOT A DATA POINT.  The rc was printed
   # and then thrown away, so a stopped arm supplied a width and a W_post
   # to the tables below exactly like a finished one.  On the integral
@@ -88,11 +89,11 @@ import sys,os,re
 out,ns,ells,root=sys.argv[1],int(sys.argv[2]),sys.argv[3].split(),sys.argv[4]
 # THREE INDEPENDENT SIGNS OF THE SAME THING, and they were written by two
 # people who found the same defect separately.  rc!=0 is the solver's own
-# verdict and is checked here; theta<1 and "nothing was deleted" are checked
-# by done() below.  Keeping all three is not belt-and-braces: an arm can exit
-# 0 and complete the step and still never rupture, which rc alone misses, and
-# an arm can die in a way that leaves a plausible t.sta, which the other two
-# alone miss.  The first filter drops an arm entirely; the second marks it in
+# verdict and is checked here; an incomplete step time and "nothing was
+# deleted" are checked by done() below.  Keeping all three is not
+# belt-and-braces: an arm can exit 0, complete the step and still never
+# rupture, which rc alone misses, and an arm can die in a way that leaves a
+# plausible t.sta, which the other two alone miss.  The first filter drops an arm entirely; the second marks it in
 # the table and withholds only the numbers derived from it.
 bad=[e for e in ells if os.path.exists(os.path.join(out,"e"+e,"UNCONVERGED"))]
 if bad:
@@ -152,21 +153,40 @@ def done(d):
     the run got to, so an arm that stopped before rupture contributes the
     width of a half-formed band and nothing in the number says so.  That is
     how a GRADIENT sweep first came out non-monotone in ell - 0.882, 0.741,
-    1.582 - with the middle arm at theta=6U and no element deleted.  The
-    stage, not the model.
+    1.582 - with the middle arm stopped at six unconverged attempts and
+    nothing deleted.  The stage, not the model.
 
     Two independent signs of the same thing, and both must hold: the step
     ran to completion, and something was actually deleted, i.e. the bar was
     cut rather than merely loaded.
     """
-    th = None
+    #
+    # READ THE RIGHT COLUMN.  t.sta is STEP INC ATT ITRS TOT_TIME STEP_TIME
+    # INC_TIME, so the step's progress is column 6 and column 3 is the
+    # ATTEMPT counter, with a U suffix on an attempt that did not converge.
+    # This used to test column 3 against 1.0 and call it theta - which
+    # passes a finished run only because its last increment usually needs
+    # one attempt, and would have called any run whose last increment took
+    # two attempts "a different stage".  It was also printed as "theta=" by
+    # the sweep above, so "theta=6U" in the forum record means six attempts,
+    # not a step time of six.
+    att, stime = None, None
     try:
         for l in open(os.path.join(d, "t.sta")):
             f = l.split()
-            if len(f) > 2:
-                th = f[2]
+            if len(f) > 5 and f[0].isdigit():
+                att, stime = f[2], f[5]
     except Exception:
         return False, "no t.sta"
+    if stime is None:
+        return False, "no step record"
+    if 'U' in att:
+        return False, "last attempt did not converge (att=%s)" % att
+    try:
+        if abs(float(stime) - 1.0) > 1.0e-9:
+            return False, "step reached %.4f of 1.0" % float(stime)
+    except ValueError:
+        return False, "unreadable step time %r" % stime
     ndel = 0
     try:
         for l in open(os.path.join(d, "t.damage")):
@@ -174,15 +194,9 @@ def done(d):
                 ndel += 1
     except Exception:
         pass
-    if th is None:
-        return False, "no step record"
-    if not th.replace('.', '', 1).isdigit():
-        return False, "theta=%s, step did not complete" % th
-    if abs(float(th) - 1.0) > 1.0e-9:
-        return False, "theta=%s, step did not complete" % th
     if ndel == 0:
-        return False, "nothing deleted, bar never cut"
-    return True, "theta=1, %d deleted" % ndel
+        return False, "step completed but nothing deleted, bar never cut"
+    return True, "step complete, %d deleted" % ndel
 
 
 def gf(d):

@@ -120,8 +120,9 @@ for ns in $NSLICES; do
         -o "$d/t.inp" >/dev/null || exit 2
     [ "$arm" = nl ] && sed -i "s/EVOLUTION=DISPLACEMENT\$/EVOLUTION=DISPLACEMENT, NONLOCAL=$ELL/g" "$d/t.inp"
     ( cd "$d" && env CCX_DAMAGE_CHARLEN=1 CCX_DAMAGE_VISCOSITY="$VISC" "$EXE" t > run.log 2>&1 )
-    printf "  nslice=%-3s %-6s rc=%-4s theta=%s\n" "$ns" "$arm" "$?" \
-           "$(awk '{t=$3}END{print t}' "$d/t.sta" 2>/dev/null)"
+    printf "  nslice=%-3s %-6s rc=%-4s att=%-4s steptime=%s\n" "$ns" "$arm" "$?" \
+           "$(awk '$1 ~ /^[0-9]+$/{a=$3}END{print a}' "$d/t.sta" 2>/dev/null)" \
+           "$(awk '$1 ~ /^[0-9]+$/{t=$6}END{print t}' "$d/t.sta" 2>/dev/null)"
   done
 done
 echo
