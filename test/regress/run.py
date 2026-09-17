@@ -168,7 +168,18 @@ def gradient_facts(log):
         if 'WARNING in damgradient' in ln:
             m=re.search(r'damgradient:\s*(\d+)',ln)
             if m: out['gradrefused']=int(m.group(1))
+        # How far the regularised field actually moved from the local one.
+        # The banner numbers above say what the backend was ASKED for;
+        # this says what it DID.  They came apart once already: the
+        # per-element length was read into ell2e and then overwritten by
+        # the global one further down the same loop, so a card-only deck
+        # ran at ell=0 while the banner printed the card's 0.3.  Pinning
+        # the banner alone left that green.
+        if '|ebar-e|/|e|' in ln:
+            m=re.search(r'\|e\|\s*=\s*([0-9.eE+-]+)',ln)
+            if m: out['gradrel']=max(out.get('gradrel',0.0),float(m.group(1)))
     out.setdefault('gradrefused',0)
+    out.setdefault('gradrel',0.0)
     return out
 
 def run_hex(case,rundir,exe):
@@ -249,7 +260,8 @@ def one(case,outroot,exe,required,lines):
         except OSError: txt=''
         m=re.search(r'mean neighbours=\s*([0-9.E+-]+)',txt)
         if m: got['neighbours']=float(m.group(1))
-    if any(k in exp for k in ('packed','gradell','gradrefused','gradnodes')):
+    if any(k in exp for k in ('packed','gradell','gradrefused','gradnodes',
+                              'gradrel')):
         got.update(gradient_facts(log))
     if 'check_mixed' in exp:
         r=sh('python3 %s/test/pathfollow/check_mixed.py %s'%(ROOT,rundir),base_env([]))
@@ -265,6 +277,10 @@ def one(case,outroot,exe,required,lines):
             ok = have is not None and abs(have-want)<=1e-9*max(1.,abs(want))
         elif k in ('law_error','opcheck_wrong','opcheck_maxerr'):
             ok = have is not None and have<=want
+        elif k=='gradrel':
+            # a FLOOR, not a ceiling: the question is whether the model
+            # moved the field at all, and zero is the failure.
+            ok = have is not None and have>=want
         else:
             ok = have==want
         if not ok: fails.append("%s: want %r, got %r"%(k,want,have))
