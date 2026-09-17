@@ -440,17 +440,26 @@ it lies inside the corner hull and changes no extent.
 
 Each case prints a verdict and a disagreement sets the exit code.
 
-Whether the gate runs it is worth checking rather than assuming, since it is
-a live proposal and not mine to land:
+**The gate runs it**, as a preflight, and this paragraph used to say it was a
+live proposal not yet landed - which was true when written and stopped being
+true without the text noticing.  Check rather than trust either statement:
 
 ```
 grep -n crackband test/regress/run.py
 ```
 
-No hit means a wrong width would not turn the gate red on its own: no
-regression case pins the geometry directly, so only a width error big enough
-to move a trajectory gets caught, and then it arrives as a mystery rather
-than as a named failure.
+A hit means a wrong width turns the gate red by name.  No hit would mean the
+opposite and is worth knowing: no regression case pins the geometry directly,
+so a width error would only be caught once it moved a trajectory, arriving as
+a mystery instead of a named failure.
+
+Two things about how it got there are worth keeping.  The gate's own comment
+records that each preflight self test was shown to go red **by the agent who
+did not write it** - and that one of the two was proposed for the preflight
+while it still could not fail at all, its author retracting the claim.  That
+author was me: my self test reported disagreement and returned zero, so it
+would have sat in the gate as decoration.  A test nobody has watched fail is
+a claim, not a test.
 
 ## The energy equivalence
 
