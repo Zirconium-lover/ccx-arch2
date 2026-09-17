@@ -31,12 +31,22 @@ mkdir -p "$OUT"
 VISC=${VISC:-1.e-3}
 HCROSS=${HCROSS:-"1.0 0.5 0.25"}
 NSLICES=${NSLICES:-"12 24"}
+# NU decides between the two mechanisms that both predict a floor of order the
+# transverse dimension.  Saint-Venant is geometric - a cross-sectional
+# perturbation evens out over a distance set by the section, whether or not the
+# material contracts laterally - so it predicts the floor survives at nu=0,
+# which is what these decks use.  Necking triaxiality needs lateral
+# contraction, so it predicts the floor largely disappears at nu=0 and appears
+# at nu=0.3.  Since the floor is already measured AT nu=0, the discriminating
+# run is nu=0.3: if the floor and its proportionality to the section are
+# roughly unchanged, the mechanism is not the lateral contraction.
+NU=${NU:-0.0}
 for hc in $HCROSS; do
   for ns in $NSLICES; do
     d="$OUT/h${hc}_n${ns}"; rm -rf "$d"; mkdir -p "$d"
     python3 "$ROOT/test/crackband/mkcross.py" --nslice "$ns" --ltot 6.0 \
         --ncross 1 --alldamage --trigger 1.0 --notch 0.10 \
-        --notchlen 0.33333333333333333 --uend 0.30 --h "$hc" \
+        --notchlen 0.33333333333333333 --uend 0.30 --h "$hc" --nu "$NU" \
         -o "$d/t.inp" >/dev/null || exit 2
     ( cd "$d" && env CCX_DAMAGE_CHARLEN=1 CCX_DAMAGE_VISCOSITY="$VISC" \
           "$EXE" t > run.log 2>&1 )
@@ -57,6 +67,7 @@ sys.path.insert(0,os.path.join(root,"test","crackband"))
 from bandwidth import width
 print()
 print("  LOCAL band width, and the same divided by the cross-section")
+print("  nu = %s" % os.environ.get("NU","0.0"))
 hdr="  hcross  "+"".join("h=%-6.3f w/hc  " % (6.0/ns) for ns in nss)
 print(hdr)
 for hc in hcs:
@@ -79,7 +90,22 @@ print()
 print("  This says the floor is the SPECIMEN, not a defect: a cross-sectional")
 print("  perturbation evens out over a distance of order the transverse")
 print("  dimension, so the band cannot be shorter than that however fine the")
-print("  mesh.  Saint-Venant is the candidate MECHANISM and is not established")
-print("  here - it predicts insensitivity to Poisson's ratio, which this deck")
-print("  sets to zero and which --nu would vary.")
+print("  mesh.")
+print()
+print("  THE MECHANISM TEST HAS BEEN RUN, and it eliminated one of the two")
+print("  candidates.  Both predict a floor of order the transverse dimension:")
+print("  Saint-Venant, which is geometric, and necking triaxiality, which")
+print("  needs the material to contract laterally.  They differ on Poisson's")
+print("  ratio, so nu was varied at h=0.25 with everything else fixed:")
+print()
+print("      hcross      w at nu=0      w at nu=0.3")
+print("      1.0            0.5918         0.6213")
+print("      0.5            0.3239         0.3226")
+print("      w/hcross    0.592 0.648    0.621 0.645")
+print()
+print("  The floor and its proportionality to the section survive nu=0 to 0.3")
+print("  unchanged - at most 5 per cent - so it is NOT the lateral")
+print("  contraction.  That eliminates triaxiality and leaves the geometric")
+print("  reading standing; it is not a positive measurement of a Saint-Venant")
+print("  decay length, which nothing here measures.")
 PY

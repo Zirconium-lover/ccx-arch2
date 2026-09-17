@@ -255,11 +255,23 @@ That decides between the two candidates rather than fitting either: no
 dependence on the cross-section would have predicted 0.592 against 1.18, and
 proportionality predicts 0.592 against 0.648.  The floor is the **specimen**.
 
-The mechanism is named and **not** established: a cross-sectional perturbation
-evens out along the axis over a distance of order the transverse dimension, so
-the band cannot be shorter than that however fine the mesh.  Saint-Venant
-predicts that this is insensitive to Poisson's ratio, which these decks set to
-zero and `--nu` would vary; that test has not been run.
+The mechanism had two candidates that both predict a floor of order the
+transverse dimension - Saint-Venant, which is geometric, and necking
+triaxiality, which needs the material to contract laterally - and they differ
+on Poisson's ratio.  **That test has now been run**, `NU=0.3` against the decks'
+`nu=0`, everything else fixed, at `h`=0.25:
+
+| `hcross` | `w` at `nu`=0 | `w` at `nu`=0.3 |
+|---|---|---|
+| 1.0 | 0.5918 | 0.6213 |
+| 0.5 | 0.3239 | 0.3226 |
+| `w/hcross` | 0.592 / 0.648 | 0.621 / 0.645 |
+
+The floor and its proportionality survive unchanged, within 5 %, so the floor
+is **not** the lateral contraction.  That eliminates triaxiality and leaves the
+geometric reading standing.  It is still not a positive measurement of a
+Saint-Venant decay length - nothing here measures one - but the alternative is
+gone rather than merely unfavoured.
 
 The consequence for everything above is the one worth carrying: on this
 specimen the crack band is **never** one element wide, at any mesh, on any arm.
