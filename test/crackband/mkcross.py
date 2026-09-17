@@ -99,12 +99,20 @@ def build(a):
                      nid[(i + 1, j + 1, k)], nid[(i, j + 1, k)],
                      nid[(i, j, k + 1)], nid[(i + 1, j, k + 1)],
                      nid[(i + 1, j + 1, k + 1)], nid[(i, j + 1, k + 1)]]
-                for tet in kuhn(c):
+                if a.eltype == "C3D8":
+                    # The cell IS the element.  Its extent along x is the
+                    # slice thickness, so the projected width is t here too,
+                    # while the legacy length is not even defined for this
+                    # family - which is the point of running the sweep on it.
                     eid += 1
-                    tet = list(tet)
-                    if signed_vol6(*[coord[x] for x in tet]) < 0.0:
-                        tet[1], tet[2] = tet[2], tet[1]
-                    (weak if i == a.iweak else bulk).append((eid, tet))
+                    (weak if i == a.iweak else bulk).append((eid, c))
+                else:
+                    for tet in kuhn(c):
+                        eid += 1
+                        tet = list(tet)
+                        if signed_vol6(*[coord[x] for x in tet]) < 0.0:
+                            tet[1], tet[2] = tet[2], tet[1]
+                        (weak if i == a.iweak else bulk).append((eid, tet))
 
     left = [nid[(0, j, k)] for j in range(nc + 1) for k in range(nc + 1)]
     right = [nid[(a.nslice, j, k)] for j in range(nc + 1)
@@ -117,10 +125,14 @@ def build(a):
     add("**")
     add("**   specimen: %g x %g x %g   slices=%d  weak slice=%d"
         % (p["ltot"], a.h, a.h, a.nslice, a.iweak))
-    add("**   ncross=%d -> cell %g x %g x %g, %d elements, %d nodes"
-        % (nc, a.t, cell, cell, eid, n))
+    add("**   eltype=%s  ncross=%d -> cell %g x %g x %g, %d elements,"
+        " %d nodes" % (a.eltype, nc, a.t, cell, cell, eid, n))
     add("**   true band width            = %.10g  (same on every mesh)" % a.t)
-    add("**   legacy    L=(6V)^(1/3)     = %.10g" % p["l_legacy"])
+    if a.eltype == "C3D4":
+        add("**   legacy    L=(6V)^(1/3)     = %.10g" % p["l_legacy"])
+    else:
+        add("**   legacy    L                = NOT DEFINED for %s -"
+            " CCX_DAMAGE_CHARLEN=0 refuses this deck" % a.eltype)
     add("**   projected L                = %.10g" % p["l_proj"])
     add("**   snap-back indicator r      = %.4f  (<1, displacement control)"
         % p["r"])
@@ -134,12 +146,11 @@ def build(a):
     add("*NODE, NSET=NALL")
     for i in range(1, n + 1):
         add("%d, %.10g, %.10g, %.10g" % ((i,) + coord[i]))
-    add("*ELEMENT, TYPE=C3D4, ELSET=EBULK")
-    for e, tet in bulk:
-        add("%d, %d, %d, %d, %d" % ((e,) + tuple(tet)))
-    add("*ELEMENT, TYPE=C3D4, ELSET=EWEAK")
-    for e, tet in weak:
-        add("%d, %d, %d, %d, %d" % ((e,) + tuple(tet)))
+    fmt = "%d," + ",".join(["%d"] * (8 if a.eltype == "C3D8" else 4))
+    for setname, elems in (("EBULK", bulk), ("EWEAK", weak)):
+        add("*ELEMENT, TYPE=%s, ELSET=%s" % (a.eltype, setname))
+        for e, nodes in elems:
+            add(fmt % ((e,) + tuple(nodes)))
 
     def nset(name, ids):
         add("*NSET, NSET=%s" % name)
@@ -204,6 +215,7 @@ def main():
     q.add_argument("-o", "--out", default="cross.inp")
     q.add_argument("--evolution", choices=("DISPLACEMENT", "ENERGY"),
                    default="DISPLACEMENT")
+    q.add_argument("--eltype", choices=("C3D4", "C3D8"), default="C3D4")
     q.add_argument("--gf", type=float, default=-1.0,
                    help="fracture energy for EVOLUTION=ENERGY; "
                         "default derives the equivalent of --uf")
