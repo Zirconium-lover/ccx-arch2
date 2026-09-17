@@ -1262,7 +1262,7 @@
      &     xstateini(nstate_,mi(1),*),dam(mi(1),*)
 !
       integer i,j,a,n1,n2,n3,n4,indexe,it,maxit,nd,im
-      integer ionnl
+      integer ionnl,nskip
       real*8 ell2,det,dv,x1(3),e1(3),e2(3),e3(3),ji(3,3),
      &     s,rz,rzold,pap,alpha,beta,rnorm,rnorm0,tol,fm,dloc,gloc
 !
@@ -1275,6 +1275,7 @@
 !     ---------------- geometry cache, reference configuration ---------
 !
       if((gbuilt.ne.0).and.(nesave.ne.ne0)) gbuilt=0
+      nskip=0
       if(gbuilt.eq.0) then
         if(allocated(bgrad)) deallocate(bgrad,vele,elnod)
         allocate(bgrad(3,4,ne0),vele(ne0),elnod(4,ne0))
@@ -1286,7 +1287,27 @@
           elnod(3,i)=0
           elnod(4,i)=0
           if(ipkon(i).lt.0) cycle
-          if(lakon(i)(1:4).ne.'C3D4') cycle
+!
+!         THE GRADIENT BACKEND IS STILL C3D4 ONLY, AND NOW IT SAYS SO.
+!
+!         It caches linear-tetrahedron shape-function gradients, so a
+!         hexahedron has nothing here to compute with, and generalising it
+!         means gradients per family and per integration point - a larger
+!         job than the integral form needed, and a half-done one would be
+!         worse than none.
+!
+!         What is NOT acceptable is the silent skip this used to be.  Twice
+!         this session a regularisation that quietly did nothing looked
+!         exactly like one that worked: the integral backend skipped every
+!         element that was not a tetrahedron, and every guard asked a length
+!         only the environment could set.  Both cost hours precisely because
+!         nothing was printed.  So this counts what it drops and says it
+!         once, naming the backend that does handle those elements.
+!
+          if(lakon(i)(1:4).ne.'C3D4') then
+            nskip=nskip+1
+            cycle
+          endif
           indexe=ipkon(i)
           n1=kon(indexe+1)
           n2=kon(indexe+2)
@@ -1345,6 +1366,15 @@
         nesave=ne0
         write(*,*) '[DAMAGE NONLOCAL] gradient backend, ell=',ellsave,
      &       ' nodes=',nknl
+        if(nskip.gt.0) then
+          write(*,*) '*WARNING in damgradient: ',nskip,
+     &         ' element(s) are not C3D4 and are NOT regularised'
+          write(*,*) '         by the gradient backend, which caches'
+          write(*,*) '         linear-tetrahedron shape gradients:'
+          write(*,*) '         their damage stays LOCAL.'
+          write(*,*) '         Use CCX_DAMAGE_NONLOCAL_MODE=INTEGRAL,'
+          write(*,*) '         which handles every volume family.'
+        endif
         if(ellmn.gt.0) then
           write(*,*) '[DAMAGE NONLOCAL] ell multiplier per material:',
      &         (ellmf(i),i=1,ellmn)
