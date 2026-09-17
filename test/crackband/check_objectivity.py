@@ -67,9 +67,32 @@ def interp(c, u):
     return c[-1][1]
 
 
-def work(c):
-    return sum(0.5 * (c[i][1] + c[i - 1][1]) * (c[i][0] - c[i - 1][0])
-               for i in range(1, len(c)))
+def work(c, umax=None):
+    """External work, integrated to umax rather than to wherever the run died.
+
+    WHY THE LIMIT.  Without it this returns less work for an arm that
+    stopped early simply BECAUSE it stopped early, and the caller then
+    compares runs at different stages of failure while believing it is
+    comparing the same quantity.  Every headline number in this file so
+    far came from arms that all reached the end, so the omission never
+    showed - which is exactly how a latent trap survives.
+
+    It stops being latent the moment a nonlocal arm fails to converge
+    where its local reference does, which is the normal case for the
+    experiment this tool is now being asked to support.
+    """
+    tot = 0.0
+    for i in range(1, len(c)):
+        u0, s0 = c[i - 1]
+        u1, s1 = c[i]
+        if umax is not None:
+            if u0 >= umax:
+                break
+            if u1 > umax:                     # partial trapezium to umax
+                s1 = s0 + (s1 - s0) * (umax - u0) / (u1 - u0)
+                u1 = umax
+        tot += 0.5 * (s0 + s1) * (u1 - u0)
+    return tot
 
 
 def lawfit(runs, ws):
@@ -134,14 +157,48 @@ def main():
     upk = max(max(c, key=lambda p: p[1])[0] for _, _, c in runs)
     umax = min(c[-1][0] for _, _, c in runs)
 
-    ws = [work(c) for _, _, c in runs]
+    ws = [work(c, umax) for _, _, c in runs]
     base, lbase = ws[0], runs[0][1]
-    print("  W = integral F du   (the quantity crack-band scaling is for)")
+    ends = [c[-1][0] for _, _, c in runs]
+    print("  W = integral F du to u=%.6f, the FURTHEST ALL ARMS REACHED" % umax)
+    if max(ends) - min(ends) > 1e-12:
+        print("    arms ended at %s, so the comparison is made on the"
+              % ", ".join("%.4f" % e for e in ends))
+        print("    common window; an arm that stopped early is not credited")
+        print("    with less work for having stopped.")
     for (label, ell, _), w in zip(runs, ws):
         print("    %-10s L=%.6f  W=%10.5f  W/W0=%6.3f   1/L ratio=%6.3f"
               % (label, ell, w, w / base, lbase / ell))
     print("    SPREAD of W across the sweep : %6.2f %% of W0"
           % (100.0 * (max(ws) - min(ws)) / base))
+
+    # SPLIT THE WORK AT A COMMON DISPLACEMENT.  The total hides which half
+    # disagrees, and the two halves are not the same claim: everything up to
+    # the peak is elastic and hardening plastic work in a uniform field,
+    # which any mesh that represents that field must get right, while
+    # everything after it is the fracture process the model is on trial for.
+    # A total spread of 68 % made of 1 % before the peak and 145 % after it
+    # is a statement about the softening law; the same total made of 60 %
+    # before the peak would be a statement about the deck, and the sweep
+    # would have to be thrown away rather than interpreted.
+    #
+    # The split is at ONE displacement for every run, the earliest peak in
+    # the sweep, and not at each run's own peak.  Each run samples its peak
+    # at whatever increment the controller happened to accept, so splitting
+    # at each own peak moved W_pre by 18 % between two runs whose curves
+    # agree to 1 % - an artefact of the output interval reported as a
+    # difference between meshes.
+    usp = min(max(c, key=lambda p: p[1])[0] for _, _, c in runs)
+    pres = [work(c, usp) for _, _, c in runs]
+    posts = [w - q for w, q in zip(ws, pres)]
+    print("  the same work split at u=%.6f, the EARLIEST peak of the sweep"
+          % usp)
+    for (label, _, _), q, r in zip(runs, pres, posts):
+        print("    %-10s W_pre=%10.5f  W_post=%10.5f" % (label, q, r))
+    print("    spread before peak : %6.2f %% - the uniform field, must be ~0"
+          % (100.0 * (max(pres) - min(pres)) / pres[0]))
+    print("    spread AFTER  peak : %6.2f %% - the fracture process"
+          % (100.0 * (max(posts) - min(posts)) / posts[0]))
     lawfit(runs, ws)
 
     pre = post = 0.0
