@@ -143,3 +143,43 @@ No hit means a wrong width would not turn the gate red on its own: no
 regression case pins the geometry directly, so only a width error big enough
 to move a trajectory gets caught, and then it arrives as a mystery rather
 than as a named failure.
+
+## The energy equivalence
+
+```
+CCX_EXE=/path/to/ccx_2.23_pardiso test/crackband/run_energy_equiv.sh /tmp/eq
+```
+
+A `G_f` card and the equivalent `u_f` card must describe the same material,
+since `G_f = sigma_0 u_f / 2` for the linear law.  The script runs both at
+two strain levels a factor of ten apart and decides; it does not print a
+number for a reader to interpret.
+
+Two different things can break that equivalence, and one criterion sees
+only one of them:
+
+* the **conversion** of `G_f` into `u_f`.  A constant factor spoils it, and
+  a constant factor does not care about the strain, so the disagreement is
+  about the same at both levels.  The **ratio** catches that.
+* the **moment `sigma_0` is sampled**.  The cache is refreshed on every
+  increment until initiation commits, and taking the latest value looks
+  like taking the value at initiation but is not: by then the neighbouring
+  points of the same band are softening and unloading this one, so the
+  sample is on the way down.  That error scales with strain the same way
+  an exact conversion's residual does, so the ratio stays comfortable
+  while the answer is wrong - measured, ratio 17.44 against a threshold of
+  5 at the same time as the headline disagreement was 2.98 %.  A
+  **ceiling** on the working-strain figure is what catches that.
+
+Both are checked.  Measured on `37d0d53`: 0.0822 % at working strain
+against a 0.5 % ceiling, and 0.0082 % at one tenth of it, at the noise
+floor.  Reverting the peak rule puts the first back to 2.9774 % and the
+script exits 1 while still printing `ratio 17.44 (need >= 5.0)` on the
+line below - the old criterion passing and the new one failing, on the
+same run.
+
+That is the general shape of it, and it is worth stating plainly because
+it cost a wrong diagnosis here: **a check is blind to whatever its
+criterion is not a function of.** The ratio was a function of how the
+disagreement scales, so an error that scaled the same way was invisible to
+it however large it grew.

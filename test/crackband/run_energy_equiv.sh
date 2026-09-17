@@ -67,22 +67,52 @@ d1 = float(open(f"{out}/strain1.diff").read())
 d01 = float(open(f"{out}/strain01.diff").read())
 print("  difference at normal strain   : %7.4f %%" % d1)
 print("  difference at one tenth of it : %7.4f %%" % d01)
-FLOOR, NEED = 0.05, 5.0
+# Two independent things can go wrong, and one check cannot see both.
+#
+#   the CONVERSION of G_f into u_f, which a constant factor spoils.  That
+#   error does not care about the strain, so it shows the SAME
+#   disagreement at both levels: the ratio catches it.
+#
+#   the MOMENT sigma_0 is sampled, which is a different failure entirely.
+#   Taking the last value before initiation instead of the peak cost 8 per
+#   cent in sigma_0 and took the headline disagreement to 2.98 per cent -
+#   and the ratio test PASSED throughout, because that error scales with
+#   strain just as the conversion error does not.  A ceiling on the
+#   working-strain figure is what sees it.
+#
+# The ceiling is set from measurement with headroom, not from taste:
+# 0.0822 per cent measured on 37d0d53, ceiling 0.5, which is six times the
+# measurement and six times below the 2.98 that a regression of the
+# freezing rule puts back.
+FLOOR, NEED, CEIL = 0.05, 5.0, 0.5
+bad = False
+if d1 > CEIL:
+    print("  VERDICT FAIL : %.4f %% at working strain exceeds the %.2f %% "
+          "ceiling." % (d1, CEIL))
+    print("                 The two cards do not describe the same material.")
+    print("                 A sigma_0 sampled after the point has begun to")
+    print("                 unload does exactly this, and the ratio below")
+    print("                 will NOT show it - that is why this line exists.")
+    bad = True
 if d01 <= FLOOR:
-    print("  VERDICT ok   : %.4f %% is at the noise floor (<= %.2f %%), so"
-          % (d01, FLOOR))
-    print("                 the conversion is exact as far as this deck can")
-    print("                 tell, and no ratio is needed to say so")
-    sys.exit(0)
+    if not bad:
+        print("  VERDICT ok   : %.4f %% at one tenth strain is at the noise"
+              % d01)
+        print("                 floor (<= %.2f %%) and %.4f %% at working"
+              % (FLOOR, d1))
+        print("                 strain is under the ceiling, so the")
+        print("                 conversion is exact as far as this deck sees")
+    sys.exit(1 if bad else 0)
 ratio = d1 / d01 if d01 > 0 else float("inf")
 print("  ratio                         : %7.2f  (need >= %.1f)"
       % (ratio, NEED))
-if ratio >= NEED:
-    print("  VERDICT ok   : the disagreement shrinks with the strain, so it")
-    print("                 is a finite-strain effect, not the conversion")
-    sys.exit(0)
-print("  VERDICT FAIL : the disagreement barely moved when the strain fell")
-print("                 by ten.  That is the signature of a WRONG")
-print("                 CONVERSION - a constant offset ignores the strain.")
-sys.exit(1)
+if ratio < NEED:
+    print("  VERDICT FAIL : the disagreement barely moved when the strain")
+    print("                 fell by ten.  That is the signature of a WRONG")
+    print("                 CONVERSION - a constant offset ignores strain.")
+    bad = True
+elif not bad:
+    print("  VERDICT ok   : the disagreement shrinks with the strain and")
+    print("                 stays under the ceiling")
+sys.exit(1 if bad else 0)
 PY
