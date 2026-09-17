@@ -8,7 +8,7 @@
   "both arms (runs are NOT reproducible across thread counts).",
   "required_lines: every run's log must contain these, so a report that silently stopped being emitted is caught.",
   "equal_to: the same relation as identical_sta_as but stated as a tolerance over named files rather than as byte identity, so an extraction that reorders a summation can be asserted correct instead of failing for the wrong reason. rtol=atol=0 means every printed digit must agree. tools/ccxdiff.py --selftest proves the comparison can go red.",
-  "A case's env is passed to run_fast.sh as POSITIONAL NAME=VALUE overrides, not as environment: run_s3rad.sh exports twelve CCX_* names unconditionally and would clobber it. check_switches() verifies against the run's own [SWITCHES] banner that what the case asked for is what the binary got."
+  "A case's env is passed to run_fast.sh as POSITIONAL NAME=VALUE overrides, not as environment: run_s3rad.sh exports a fixed set of CCX_* names unconditionally and would clobber it; the count is declared as EXPORTED_CCX_NAMES in run.py and the preflight checks it against the script, because it said twelve while there were thirteen and nothing noticed. check_switches() verifies against the run's own [SWITCHES] banner that what the case asked for is what the binary got."
  ],
  "cases": [
   {

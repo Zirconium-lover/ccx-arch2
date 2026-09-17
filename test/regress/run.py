@@ -24,6 +24,12 @@ def sh(cmd,env,cwd=None,timeout=3600):
     return subprocess.run(cmd,shell=True,env=env,cwd=cwd,timeout=timeout,
                           stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
 
+# How many CCX_* names run_s3rad.sh exports unconditionally. Checked
+# against the script itself in the preflight below, because this number is
+# the reason a case's env goes through positionally and a stale one would
+# quietly invalidate that reasoning.
+EXPORTED_CCX_NAMES=12
+
 def base_env(extra):
     """NAME= with an empty value UNSETS the name; it does not set it empty.
 
@@ -110,9 +116,9 @@ def selftests(log,required,lines):
 def run_fast(case,rundir,exe):
     """A case's env goes through as POSITIONAL overrides, not as environment.
 
-    run_fast.sh delegates to run_s3rad.sh, which `export`s twelve CCX_* names
+    run_fast.sh delegates to run_s3rad.sh, which `export`s EXPORTED_CCX_NAMES
     unconditionally and only then applies the NAME=VALUE arguments.  So a
-    case that set one of those twelve in the environment was silently
+    case that set one of those in the environment was silently
     overwritten, and fast-wrapped-nospc - whose whole stated purpose is to
     run WITHOUT the load-path mask - ran with CCX_DAMAGE_AUTOSPC=1.e-3, i.e.
     as a second copy of fast-wrapped.  It passed every time, and proved
@@ -282,9 +288,31 @@ def main():
     # Preflight: the switch registry is generated from the sources, so a
     # new switch that nobody regenerated would make every run.log understate
     # its own configuration.  Cheap, and it fails before any solver runs.
+    # A number written in a comment is a claim nothing checks. run.py and
+    # cases.json both said run_s3rad.sh exports "twelve" CCX_* names, and
+    # both said it while there were THIRTEEN - found by Agent 2, and made
+    # true by accident when the unconditional CCX_DAMAGE_TANGENT export was
+    # removed. That is the wrong way for a number to become correct. The
+    # count is what justifies passing a case's env POSITIONALLY rather than
+    # as environment, so it is load-bearing, and now it is checked: add an
+    # export without updating the prose and this goes red.
+    try:
+        nexp=len([l for l in open(ROOT/'test/s3rad/run_s3rad.sh',
+                                  errors='replace')
+                  if l.startswith('export CCX_')])
+    except OSError:
+        nexp=-1
+    if nexp!=EXPORTED_CCX_NAMES:
+        print("preflight  runner exports: MISMATCH - run_s3rad.sh exports %d "
+              "CCX_* names, run.py and cases.json say %d. Update both prose "
+              "sites and EXPORTED_CCX_NAMES together."%(nexp,EXPORTED_CCX_NAMES))
+        preflight_bad_pre=1
+    else:
+        print("preflight  runner exports: %d CCX_* names, as documented"%nexp)
+        preflight_bad_pre=0
     pre=sh('python3 %s/tools/mkswitches.py --check'%ROOT,base_env([]))
     print("preflight  switch registry: %s"%pre.stdout.strip().replace('\n','; '))
-    preflight_bad = 1 if pre.returncode!=0 else 0
+    preflight_bad = (1 if pre.returncode!=0 else 0)+preflight_bad_pre
     # A comparison that has not been shown able to fail is not a comparison,
     # and it is about to decide whether cases pass.
     cd=sh('python3 %s/tools/ccxdiff.py --selftest'%ROOT,base_env([]))
