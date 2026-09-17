@@ -1096,7 +1096,8 @@
 !
       integer ipkon(*),kon(*),ne0,mi(*),nstate_,
      &     i,j,k,m,indexe,node,nn,ip,jp,kp,ib,jb,kb,
-     &     ncell,ix,iy,iz,icell,jcell,ifree,nipel,iokel,ip1,ionnl
+     &     ncell,ix,iy,iz,icell,jcell,ifree,nipel,iokel,ip1,ionnl,
+     &     nact
       real*8 co(3,*),xstate(nstate_,mi(1),*),
      &     xstateini(nstate_,mi(1),*),ell,
      &     xc,yc,zc,d2,w,swv,sv,det6,rmax,volel,elli,
@@ -1258,8 +1259,31 @@
         enddo
         nbuilt=1
         nesave=ne0
+!
+!       PER REGULARISED ELEMENT, NOT PER ELEMENT IN THE MODEL.  The
+!       divisor used to be ne0, which counts every element the deck has -
+!       including the UC6 cohesive facets, which carry no volume and are
+!       in nobody's neighbourhood, their own included.  On the reference
+!       deck that is 2160 tetrahedra against 2196 elements, and the
+!       average came out 2160/2196 = 0.9836.
+!
+!       An element is always in its OWN neighbourhood, so this average
+!       cannot honestly be below 1.  It read 0.98 - which is the shape of
+!       defect this whole session has been about: a number that looks
+!       like a mild result and is actually an impossible one.  Found by
+!       the other agent reading a banner in a log of mine.
+!
+!       hex-nonlocal-card pins this at 1.0 and stays green: that deck is
+!       all hexahedra, so the two divisors agree there and the case was
+!       never able to see the difference.
+!
+        nact=0
+        do i=1,ne0
+          if(evol(i).gt.0.d0) nact=nact+1
+        enddo
         write(*,*) '[DAMAGE NONLOCAL] ell=',ell,' radius=',rmax,
-     &       ' mean neighbours=',dble(ifree)/dble(max(1,ne0))
+     &       ' mean neighbours=',dble(ifree)/dble(max(1,nact)),
+     &       ' over ',nact,' regularised of ',ne0
         call flush(6)
       endif
 !
