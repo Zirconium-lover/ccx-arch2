@@ -108,7 +108,7 @@ if bad:
 sys.path.insert(0,os.path.join(root,"test","crackband"))
 h=6.0/ns
 
-from bandwidth import width as _bw
+from bandwidth import width as _bw, Unavailable
 
 
 def width(d):
@@ -117,8 +117,16 @@ def width(d):
     The count over D>0.5 this used to print gave three different verdicts
     for the three thresholds de1stats writes, so it was retracted rather
     than tuned.
+
+    An Unavailable comes back as a nan, which the table prints as such: this
+    sweep generates C3D4 decks, so it cannot happen here, and a nan is the
+    honest answer if the generator ever changes family rather than a number
+    that looks measured.
     """
-    return _bw(d)[0]
+    try:
+        return _bw(d)[0]
+    except Unavailable:
+        return float('nan')
 
 
 def curve(path,uend=0.30):

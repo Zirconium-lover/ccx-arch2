@@ -64,7 +64,7 @@ switch is set.
 | `run_energy_equiv.sh` | checks that `EVOLUTION=ENERGY` and `EVOLUTION=DISPLACEMENT` agree when `u_f = 2 G_f / sigma_0` |
 | `run_nlobjectivity.sh` | the other sweep - refines **along** the axis at fixed `ell`, so the band must choose its own width, which is the sweep an internal length has to be objective against |
 | `run_nlwidth_scaling.sh` | holds the mesh and moves `ell`, which separates what the refinement sweep cannot: whether the width follows the internal length, and whether the dissipation follows with it |
-| `bandwidth.py` | the band width as `sum(D*V)/A`, with no threshold - it replaced a count over `D>0.5` that gave three verdicts for the three thresholds `de1stats` writes |
+| `bandwidth.py` | the band width as `sum(D*V)/A`, with no threshold - it replaced a count over `D>0.5` that gave three verdicts for the three thresholds `de1stats` writes.  **C3D4 only**, and not by its own choice: see below |
 | `run_nlwidth_gate.sh` | runs that sweep with `CCX_DAMAGE_NLWIDTH` off and on and requires the `ell` dependence to come down; a relative criterion, so there is no ceiling to pick |
 | `run_xsection_floor.sh` | varies the bar's cross-section to find what stops the local band collapsing - it is the specimen, not the code |
 | `check_nlwidth_domain.py` | after a run with `CCX_DAMAGE_NLWIDTH=1`, says whether `w >= 2*ell` actually held - the switch's validity condition, which the solver cannot check at the moment it acts |
@@ -260,6 +260,22 @@ one element wide, which is exactly the case the crack band was derived for
 and exactly the case an internal length abolishes.  Jirasek and Bauer 2012
 section 5 state the requirement directly: the width entering the softening
 law must be the width of the band that actually forms.
+
+### One limitation of the width measure, and it is not in the measure
+
+`bandwidth.py` weights the damage field the solver's VTK snapshot carries, and
+that writer emits **active C3D4 cells only** - every loop in
+`damage_de1_write_vtk` skips any other family.  So on a C3D8 deck the
+threshold-free width is **unavailable rather than wrong**, and the tool says
+exactly that, names the writer, and exits non-zero instead of returning a number
+that looks measured.
+
+The distinction is worth the words because the projection work exists partly to
+lift the C3D4 restriction from the width, and this instrument cannot yet follow
+it there.  Following means teaching that writer the hexahedral family, which is a
+solver change and not a change in this directory.  Until then the C3D8 arm of
+`run_objectivity.sh` is judged by its force-displacement curve alone, which is
+what that sweep was built on anyway.
 
 ## What stops the local band collapsing
 

@@ -69,8 +69,31 @@ different displacements would then be compared at different stretches.
 import os, re, sys
 
 
+def deck_families(path):
+    """Every element family the deck declares, for diagnosing what is missing."""
+    fam = set()
+    for line in open(path):
+        t = line.strip().upper()
+        if t.startswith('*ELEMENT'):
+            m = re.search(r"TYPE\s*=\s*([A-Z0-9]+)", t)
+            if m:
+                fam.add(m.group(1))
+    return fam
+
+
 def deck_geometry(path):
-    """Reference coordinates and C3D4 connectivity, from the deck itself."""
+    """Reference coordinates and C3D4 connectivity, from the deck itself.
+
+    C3D4 ONLY, AND THE REASON IS NOT HERE.  The damage field this measure
+    weights by comes from the solver's VTK snapshot, and that writer emits
+    active C3D4 cells and nothing else - every one of its loops skips a
+    family that is not C3D4 (src/nonlingeo.c, damage_de1_write_vtk).  So on a
+    C3D8 deck the measure is not wrong, it is UNAVAILABLE, and the difference
+    matters to whoever hits it: the projection work exists partly to lift the
+    C3D4 restriction from the width, and this instrument cannot yet follow it
+    there.  Making it follow means teaching that writer the hexahedral family,
+    which is a solver change and not a change here.
+    """
     co, el, mode = {}, {}, None
     for line in open(path):
         t = line.strip()
@@ -125,6 +148,11 @@ def vtk_damage(path):
     return dict(zip(eid, dam))
 
 
+class Unavailable(Exception):
+    """The measure cannot be taken here, as distinct from coming out wrong."""
+
+
+
 def deleted(path):
     out = set()
     if not os.path.exists(path):
@@ -161,6 +189,16 @@ def notch_area(deckpath):
 def width(rundir, area=None):
     deck = os.path.join(rundir, 't.inp')
     co, el = deck_geometry(deck)
+    if not el:
+        fam = sorted(deck_families(deck))
+        raise Unavailable(
+            "%s: no C3D4 elements (deck declares %s).  The damage field this "
+            "measure weights by comes from the solver's VTK snapshot, which "
+            "writes active C3D4 cells only - see damage_de1_write_vtk in "
+            "src/nonlingeo.c, whose every loop skips other families.  So this "
+            "is unavailable here, not wrong: lifting it needs that writer to "
+            "emit the family, which is a solver change."
+            % (rundir, ", ".join(fam) if fam else "no element types"))
     dam = vtk_damage(os.path.join(rundir, 't.de1.vtk'))
     gone = deleted(os.path.join(rundir, 't.damage'))
     if area is None:
@@ -253,12 +291,21 @@ def main():
             area = float(a.split('=', 1)[1])
     if not args:
         raise SystemExit(__doc__)
+    bad = 0
     for d in args:
-        w, a, ne, ng, nm = width(d, area)
+        # An Unavailable is a report, not a crash: the first version let it
+        # out of main() as a traceback, which is less usable than the wrong
+        # message it replaced.  Accuracy that costs legibility is not a gain.
+        try:
+            w, a, ne, ng, nm = width(d, area)
+        except Unavailable as e:
+            print("UNAVAILABLE %s" % e)
+            bad = 1
+            continue
         print("%-40s w=%.4f  (A=%.4f, %d elements, %d deleted%s)"
               % (d, w, a, ne, ng,
                  ", %d UNACCOUNTED" % nm if nm else ""))
-    return 0
+    return bad
 
 
 if __name__ == '__main__':
