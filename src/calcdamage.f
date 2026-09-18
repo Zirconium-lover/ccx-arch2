@@ -516,12 +516,21 @@
 !     to fix the band's width in the material rather than in the mesh - so
 !     the two regularisations cannot both keep their own length.  Measured
 !     on this tree (test/crackband/run_nlwidth_scaling.sh, forum
-!     2026-09-17): at h=0.25 the band width follows 2*ell to within +8/-12
-!     per cent, and W_post follows it, growing by 2.66 between ell=0.25 and
-!     ell=1.0 while the pre-peak work agrees to 0.03 per cent.  The
-!     dissipation is proportional to the number of ELEMENT LAYERS, which is
-!     ell/h, and so is a material constant only when the band is one
-!     element wide.
+!     2026-09-17): at h=0.25 the band width approaches 2*ell from ABOVE as
+!     ell/h grows - w/(2*ell) of 1.65, 1.26, 1.08 at ell = 0.25, 0.5, 1.0 -
+!     and W_post follows it, growing by 2.66 between ell=0.25 and ell=1.0
+!     while the pre-peak work agrees to 0.03 per cent.  The dissipation is
+!     proportional to the number of ELEMENT LAYERS, which is ell/h, and so
+!     is a material constant only when the band is one element wide.
+!
+!     An earlier version of this comment said the width follows 2*ell to
+!     within +8/-12 per cent.  That came from measuring the width as a count
+!     of integration points over D>0.5, which was retracted: the same runs
+!     give three different verdicts for the three thresholds de1stats
+!     writes.  The numbers above are the threshold-free measure,
+!     sum(D*V)/A.  The retraction was grepped through test/crackband and not
+!     through src/, which is how it survived here - after a retraction the
+!     tree is what needs walking, not the directory the work happened in.
 !
 !     Jirasek and Bauer 2012, section 5, state the requirement directly:
 !     the width entering the softening law must be the width of the band
