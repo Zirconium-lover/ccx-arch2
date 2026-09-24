@@ -983,6 +983,7 @@
 !       NONLOCAL=.
 !
         call damnlmatmap(ipkon,lakon,ielmat,ne0,mi)
+        call damnldtbase(dtime)
         call damnonlocalmodeget(imodenlv)
         if(imodenlv.eq.2) then
 !

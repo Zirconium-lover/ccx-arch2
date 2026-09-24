@@ -4169,6 +4169,8 @@ void FORTRAN(damnonlocalmode,(ITG *imode));
    why that is the only sound site.  Inert unless
    CCX_DAMAGE_NONLOCAL_INNER=1. */
 
+void FORTRAN(damnldtstep,(double *dt));
+
 void FORTRAN(damnlrefresh,(ITG *ipkon,ITG *kon,char *lakon,double *co,
 			   ITG *ne0,ITG *mi,double *xstate,double *xstateini,
 			   ITG *nstate_,ITG *ielmat,double *dam));

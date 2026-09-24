@@ -286,6 +286,15 @@ void results(double *co,ITG *nk,ITG *kon,ITG *ipkon,char *lakon,ITG *ne,
       printf(" Using up to %" ITGFORMAT " cpu(s) for the stress calculation.\n\n", num_cpus);
     }
 	
+    /* The size of the attempt being solved, for the nonlocal damage
+       driver: it hands the damage law the lagged RATE times this step,
+       not the lagged increment of a step that may have been cut since.
+       Set here, before the threads start, because resultsmech runs on
+       all of them and a write from each would be a race - benign with
+       equal values, but still a race. */
+
+    FORTRAN(damnldtstep,(dtime));
+
     /* create threads and wait */
 	
     NNEW(ithread,ITG,num_cpus);

@@ -92,6 +92,18 @@
 !
       integer :: imodenl=0,gbuilt=0,nknl=0,fbuilt=0,nkpack=0
       integer :: ndnmax=0
+!
+!     TIME-CONSISTENT LAG.  dpsave is an INCREMENT of plastic strain,
+!     averaged, measured over one increment of size dtref.  It is read by
+!     damageupdatepoint on every Newton iteration of the NEXT attempt,
+!     whose size is dtcur.  When the solver cuts the step, dtcur falls and
+!     dpsave did not: the damage law was handed a full previous step's
+!     damage increment at a step a thousand times smaller.  idtscale=1
+!     hands out the lagged RATE times the current step instead, see
+!     damnonlocalval.
+!
+      real*8 :: dtref=0.d0,dtcur=0.d0
+      integer :: idtscale=1
       real*8 :: relmax=0.d0
       real*8, allocatable :: vele(:),ebar(:),
      &     gdiag(:),grhs(:),gp(:),gap(:),gz(:),gr(:),
@@ -275,6 +287,9 @@
         iinner=1
         if(ichainset.eq.0) ichainon=1
       endif
+!
+      call getenv('CCX_DAMAGE_NONLOCAL_DTSCALE',carg)
+      if(carg(1:1).eq.'0') idtscale=0
 !
       call getenv('CCX_DAMAGE_NONLOCAL_LOCALIZING',carg)
       if(carg(1:1).ne.' ') then
@@ -743,6 +758,32 @@
       return
       end
 !
+!
+!     ==================================================================
+!     Step sizes for the time-consistent lag.  damnldtbase is called by
+!     calcdamagebase just before a backend rebuilds dpsave from the
+!     converged increment, so both sizes are that increment's.
+!     damnldtstep is called by results.c, before its threads start, with
+!     the size of the attempt being solved - what the lagged rate is
+!     multiplied by.
+!
+      subroutine damnldtbase(dt)
+      use damnlmod
+      implicit none
+      real*8 dt
+      dtref=dt
+      dtcur=dt
+      return
+      end
+!
+      subroutine damnldtstep(dt)
+      use damnlmod
+      implicit none
+      real*8 dt
+      dtcur=dt
+      return
+      end
+!
       subroutine damnonlocalset(ellin)
       use damnlmod
       implicit none
@@ -815,6 +856,10 @@
         call damnonlocal(ipkon,kon,lakon,co,ne0,mi,xstate,
      &       xstateini,nstate_)
       endif
+!
+!     the field just rebuilt was measured over the step being solved
+!
+      dtref=dtcur
       return
       end
 !
@@ -1113,6 +1158,30 @@
         endif
       endif
       val=dpsave(iel)
+!
+!     The lagged RATE times the current step, not the lagged increment.
+!     Unscaled, a cutback left the damage law a full previous step's
+!     increment at a step up to a thousand times smaller.  Measured on the
+!     notched bar of mkcross.py (24 slices, CHARLEN=1, VISCOSITY=1e-3):
+!       INTEGRAL l=0.375  unscaled: wall at t=0.3675, rc=201
+!                         scaled:   rupture, rc=0, 124 inc, 276 iter
+!       GRADIENT l=0.5    wall at t=0.2575 either way; its first Newton
+!                         correction hits the cap at every step size, a
+!                         different mechanism, still open
+!     and the two hexahedral gate decks (hex-nonlocal-card, INTEGRAL, and
+!     hex-gradient-card, GRADIENT): theta=0.215, rc=201 unscaled, the
+!     end of the step, rc=0, scaled;
+!     and on test/fast 10x6x6 GRADIENT l=0.4: 1150 iter against 1152,
+!     same 90 deletions.  Refreshing inside Newton (INNER=1) rescues both
+!     bar arms, NOT the hexahedral decks (theta=0.215 as unscaled), and
+!     costs +30 percent iterations on that deck; refreshing only on cut
+!     attempts rescued nothing this does not, so it was dropped.
+!     The factor is 1 while the step does not change; when the solver
+!     grows the step it grows the lagged increment with it, which is the
+!     same consistency argument.
+!
+      if((idtscale.eq.1).and.(dtref.gt.0.d0).and.(dtcur.gt.0.d0))
+     &     val=val*dtcur/dtref
       iok=1
       return
       end

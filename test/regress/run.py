@@ -209,6 +209,25 @@ def run_mixed(case,rundir,exe):
     r=sh('%s -i mixed > run.log 2>&1'%exe,env,cwd=rundir)
     return r.returncode,rundir/'run.log',rundir/'mixed.sta',None
 
+def run_cross(case,rundir,exe):
+    """The notched bar of test/crackband/mkcross.py, for a regularised arm.
+
+    mkcross.py writes no NONLOCAL= of its own, so the internal length goes
+    onto every *DAMAGE INITIATION card here, exactly as the wall study that
+    measured the case did: one regex, both materials.  A deck with no
+    such card is an error rather than a silently local run."""
+    rundir.mkdir(parents=True,exist_ok=True)
+    r=sh('python3 %s/test/crackband/mkcross.py -o %s %s'
+         %(ROOT,rundir/'t.inp',' '.join(case['gen'])),base_env([]))
+    if r.returncode!=0: return r.returncode,rundir/'run.log',None,None
+    txt=(rundir/'t.inp').read_text()
+    txt,n=re.subn(r'(EVOLUTION=DISPLACEMENT)$',
+                  r'\1, NONLOCAL=%g'%case['nonlocal_ell'],txt,flags=re.M)
+    if n==0: return 2,rundir/'run.log',None,None
+    (rundir/'t.inp').write_text(txt)
+    r=sh('%s -i t > run.log 2>&1'%exe,base_env(case['env']),cwd=rundir)
+    return r.returncode,rundir/'run.log',rundir/'t.sta',rundir/'t.damage'
+
 def one(case,outroot,exe,required,lines):
     rundir=outroot/case['name']
     if rundir.exists(): shutil.rmtree(rundir)
@@ -216,6 +235,7 @@ def one(case,outroot,exe,required,lines):
     if   case['kind']=='fast':  rc,log,sta,dam=run_fast(case,rundir,exe)
     elif case['kind']=='hex':   rc,log,sta,dam=run_hex(case,rundir,exe)
     elif case['kind']=='close': rc,log,sta,dam=run_close(case,rundir,exe)
+    elif case['kind']=='cross': rc,log,sta,dam=run_cross(case,rundir,exe)
     else:                       rc,log,sta,dam=run_mixed(case,rundir,exe)
     got={'rc':rc}
     inc,theta=last_sta(sta)
