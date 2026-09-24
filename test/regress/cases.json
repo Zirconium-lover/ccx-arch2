@@ -425,20 +425,18 @@
    "name": "hex-gradient-card",
    "kind": "hex",
    "mode": "uniaxial",
-   "nonlocal_ell": 0.3,
+   "nonlocal_ell": 0.5,
    "env": [
     "CCX_DAMAGE_CHARLEN=1",
     "CCX_DAMAGE_TANGENT=",
     "CCX_DAMAGE_NONLOCAL_MODE=GRADIENT"
    ],
-   "what": "the IMPLICIT GRADIENT backend on hexahedra, with the internal length taken from the MATERIAL CARD. Nothing in the gate ran this backend at all before this case, which is how it carried two silent failures at once: it skipped every element that was not C3D4 - so a hexahedral deck got NO regularisation while the banner named a backend - and it read ell from the ENVIRONMENT only, so a card-only deck ran with ell=0, i.e. ebar=e, which is again no regularisation. Neither shows up as a wrong answer to look at: a run that regularises nothing converges BETTER, so any expectation on convergence or deletions would have gone GREEN on both. What is pinned is therefore GEOMETRIC and exact: packed=576 is the size of the packed conductivity, 16 hexahedra times 8*9/2=36, so it is zero if the family is skipped and wrong if the packing is; gradell=0.3 is the length the backend armed itself with, which is 0.0 if the card is not read; gradrefused=0 says no element was dropped. Measured on the merged tree. Convergence is NOT pinned: this deck does not reach the end of its step with the internal length on, the same characterised limitation of the staggered scheme that hex-nonlocal-card carries, and pinning it would cement it. ADDED after the banner and the assembly came apart: gradell is what the backend REPORTS, and the per-element length was read into ell2e and then overwritten by the global one further down the same loop, so a card-only deck ran the whole backend at ell=0 - no regularisation - while the banner printed the card's 0.3 and this case stayed green. gradrel is a FLOOR on how far the regularised field actually moved from the local one, measured at 1.7e-2 here and exactly ZERO when the length does not reach the assembly. It pins what the backend DID, not what it was asked for. UPDATED 24.09 by Agent 1: the limitation described above was the lag of the staggered scheme, not the scheme itself. The averaged driving variable is an increment measured over the previous converged step; after a cutback it was handed out unchanged at a step up to a thousand times smaller. CCX_DAMAGE_NONLOCAL_DTSCALE (default on) hands out the lagged rate times the current step, and with it this deck reaches the end of its step: rc=0, theta=1.0, 77 increments. Convergence is therefore pinned now, because it is no longer a known limitation but the property the fix is for. RED PATH, run: CCX_DAMAGE_NONLOCAL_DTSCALE=0 stops it again at theta=0.215, rc=201, where it always stopped. Refreshing inside Newton instead (CCX_DAMAGE_NONLOCAL_INNER=1) does NOT rescue it - measured, it stops at the same theta=0.215 as with no fix at all.",
+   "what": "the IMPLICIT GRADIENT backend on hexahedra, with the internal length taken from the MATERIAL CARD. Nothing in the gate ran this backend at all before this case, which is how it carried two silent failures at once: it skipped every element that was not C3D4 - so a hexahedral deck got NO regularisation while the banner named a backend - and it read ell from the ENVIRONMENT only, so a card-only deck ran with ell=0, i.e. ebar=e, which is again no regularisation. Neither shows up as a wrong answer to look at: a run that regularises nothing converges BETTER, so any expectation on convergence or deletions would have gone GREEN on both. What is pinned is therefore GEOMETRIC and exact: packed=576 is the size of the packed conductivity, 16 hexahedra times 8*9/2=36, so it is zero if the family is skipped and wrong if the packing is; gradell=0.3 is the length the backend armed itself with, which is 0.0 if the card is not read; gradrefused=0 says no element was dropped. Measured on the merged tree. Convergence is NOT pinned: this deck does not reach the end of its step with the internal length on, the same characterised limitation of the staggered scheme that hex-nonlocal-card carries, and pinning it would cement it. ADDED after the banner and the assembly came apart: gradell is what the backend REPORTS, and the per-element length was read into ell2e and then overwritten by the global one further down the same loop, so a card-only deck ran the whole backend at ell=0 - no regularisation - while the banner printed the card's 0.3 and this case stayed green. gradrel is a FLOOR on how far the regularised field actually moved from the local one, measured at 1.7e-2 here and exactly ZERO when the length does not reach the assembly. It pins what the backend DID, not what it was asked for. CHANGED 24.09 by Agent 1, twice in one day. (1) The first change pinned rc=0 at ell=0.3 after the time-consistent lag let this deck finish; that pin is withdrawn with (2). (2) ell=0.3 is NOT RESOLVED by this deck - unit cubes, an estimated 0.9 elements within 2*ell, and the solver says so in its own warning - so the gradrel this case pinned there (1.7e-2, later 4.3e-2) was smoothing over the MESH, not over ell. The back-projection that produced it (dploc + Q(ebar - ebar0)) was retracted the same day: it passed every element mode the nodes cannot carry with factor one, and its dissipation length followed h (0.40 at h=0.25, 0.24 at h=0.125 for ell=0.5) instead of the continuum 2*sqrt(c); Bazant and Jirasek 2002, eq. 63, is the measure. The backend now interpolates ebar as Peerlings et al. 1996 do (their eq. 20) and hands an UNRESOLVED element its local value, so at ell=0.3 gradrel is exactly 0 - correct, and useless as a check. Hence ell=0.5 here: participation 4.2, resolved. gradrel is a FLOOR of 0.3: measured 0.568 with the interpolation, 0.089 on the binary before the change (7e5a596), so the retracted construction fails it - that is the red path, run. Convergence is again NOT pinned, and for a physical reason: at ell=0.5 the dissipation length 2*ell=1 is a quarter of this specimen, damage spreads through all of it, and all 16 elements stand at D=1 by theta=0.62 (none is deleted), after which nothing carries load and the run stops with rc=201. That is the end of the problem on a specimen this short against its internal length - Pijaudier-Cabot and Bazant 1987 note the same for a beam short against l - not a failure of the scheme: with CCX_DAMAGE_VISCOSITY=1e-3 the same deck runs to theta=1.0.",
    "expect": {
-    "rc": 0,
     "packed": 576,
-    "gradell": 0.3,
+    "gradell": 0.5,
     "gradrefused": 0,
-    "gradrel": 0.001,
-    "theta": "0.100000E+01"
+    "gradrel": 0.3
    }
   },
   {
@@ -465,9 +463,42 @@
    "env": [
     "CCX_DAMAGE_CHARLEN=1",
     "CCX_DAMAGE_VISCOSITY=1.e-3",
-    "CCX_DAMAGE_NONLOCAL_MODE=INTEGRAL"
+    "CCX_DAMAGE_NONLOCAL_MODE=INTEGRAL",
+    "CCX_DAMAGE_NLWIDTH=0"
    ],
-   "what": "the TIME-CONSISTENT LAG of the staggered nonlocal scheme. The averaged driving variable is rebuilt once per converged increment and read on every Newton iteration of the next one; it is an INCREMENT, so after a cutback the damage law used to receive a full previous step's increment at a step up to a thousand times smaller, and no cutback could remove the residual that made. CCX_DAMAGE_NONLOCAL_DTSCALE (on by default) hands out the lagged rate times the current step instead. This arm - the notched bar of mkcross.py, INTEGRAL backend at l=0.375 - is the one Agent 2 found dying deterministically between two passing lengths: with the switch set to 0 it stops at theta=0.3675, rc=201, the wall tools/wallclass.py classifies as carried-in (first residual 17.5 at dt=1e-2, 26.3 at dt=1e-5); with it on it runs to the end of the step, rc=0, 124 increments, 276 iterations, 9 deletions. RED PATH, run: CCX_DAMAGE_NONLOCAL_DTSCALE=0 in the environment turns this case red on rc. Deletions are NOT pinned - the count follows the trajectory, and what the case is for is that the step can be finished at all. NOT covered: the GRADIENT arm at l=0.5 on the same bar still dies at theta=0.2575 with the switch on; its first Newton correction hits the cap at every step size, which is a different mechanism, and only refreshing inside Newton (CCX_DAMAGE_NONLOCAL_INNER=1, +30 percent iterations on test/fast) gets past it.",
+   "what": "the TIME-CONSISTENT LAG of the staggered nonlocal scheme. The averaged driving variable is rebuilt once per converged increment and read on every Newton iteration of the next one; it is an INCREMENT, so after a cutback the damage law used to receive a full previous step's increment at a step up to a thousand times smaller, and no cutback could remove the residual that made. CCX_DAMAGE_NONLOCAL_DTSCALE (on by default) hands out the lagged rate times the current step instead. This arm - the notched bar of mkcross.py, INTEGRAL backend at l=0.375 - is the one Agent 2 found dying deterministically between two passing lengths: with the switch set to 0 it stops at theta=0.3675, rc=201, the wall tools/wallclass.py classifies as carried-in (first residual 17.5 at dt=1e-2, 26.3 at dt=1e-5); with it on it runs to the end of the step, rc=0, 124 increments, 276 iterations, 9 deletions. RED PATH, run: CCX_DAMAGE_NONLOCAL_DTSCALE=0 in the environment turns this case red on rc. Deletions are NOT pinned - the count follows the trajectory, and what the case is for is that the step can be finished at all. CCX_DAMAGE_NLWIDTH=0 is pinned in the env since 24.09, when the dissipation-length width became the default: with it this arm finishes even with the lag unscaled, so the case would stop seeing the lag - the configuration it pins is the one the lag killed. The GRADIENT arm on the same bar is cross-gradient-bp.",
+   "expect": {
+    "rc": 0,
+    "theta": "0.100000E+01"
+   }
+  },
+  {
+   "name": "cross-gradient-bp",
+   "kind": "cross",
+   "gen": [
+    "--nslice",
+    "24",
+    "--ltot",
+    "6.0",
+    "--ncross",
+    "1",
+    "--alldamage",
+    "--trigger",
+    "1.0",
+    "--notch",
+    "0.10",
+    "--notchlen",
+    "0.3333",
+    "--uend",
+    "0.30"
+   ],
+   "nonlocal_ell": 0.5,
+   "env": [
+    "CCX_DAMAGE_CHARLEN=1",
+    "CCX_DAMAGE_VISCOSITY=1.e-3",
+    "CCX_DAMAGE_NONLOCAL_MODE=GRADIENT"
+   ],
+   "what": "the GRADIENT backend's back-projection, on the arm it used to kill: the notched bar of mkcross.py at ell=0.5 (h=0.25, participation well above two), everything else as cross-integral-lag. Until 24.09 the backend returned dploc + Q(ebar - ebar0) per element, to make ell -> 0 reduce to the local model exactly. It did, and at every other ell it passed each element mode the nodes cannot carry with factor one - 47 of 144 on this mesh, 1596 of 2160 on test/fast - so two tetrahedra of one cross-section could soften alone: before the wall D ranged 0.14 to 0.86 inside one slice of a bar in uniaxial tension, the tangent went near singular, and the first Newton correction hit its cap at every step size down to 1e-5. Its dissipation length (Bazant and Jirasek 2002, eq. 63) followed the mesh, 0.40 at h=0.25 and 0.24 at h=0.125, instead of ell. The backend now interpolates ebar as Peerlings et al. 1996 do (eq. 20) and hands an unresolved element its local value. Measured: rc=0, theta=1.0, 118 increments, 271 iterations, 14 deletions; full refresh inside Newton had needed 601 iterations to get past the same wall. RED PATH, run: the binary before the change (7e5a596) stops at theta=0.2575, rc=201. Deletions are not pinned.",
    "expect": {
     "rc": 0,
     "theta": "0.100000E+01"

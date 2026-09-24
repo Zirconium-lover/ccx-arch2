@@ -337,6 +337,21 @@ averaging forms, `2*ell`, wherever the mesh resolves it, and leaves the
 element's own width elsewhere.  Off by default, so every earlier answer is
 unchanged to the bit and the gate does not move.
 
+> **Changed 2026-09-24 [A1].**  On by default now, and the length is no longer
+> `2*ell` for both backends but the operator's **dissipation length**
+> `l_d = 1/alpha(x_s,x_s)` (Bazant and Jirasek 2002, eqs. 61-63): `2*ell` for
+> GRADIENT, `sqrt(pi)*ell` for INTEGRAL.  This model averages the variable
+> that drives softening and keeps the flow local, and for that class the
+> plastic strain still localizes into a set of zero measure while the crack
+> dissipates `g_F * l_d` - so the length the law needs is `l_d`, and the band
+> width is not the objective quantity.  The scripts here pass `NLW`
+> explicitly (default 0), so their numbers keep their meaning; everything
+> below was measured with `2*ell` on both backends, and every GRADIENT row
+> with a back-projection retracted the same day (see `damgradient`).  The
+> `ell`=0.375 failure named as unexplained further down is explained: the
+> nonlocal increment was handed out unscaled after a cutback
+> (`CCX_DAMAGE_NONLOCAL_DTSCALE`, gate case `cross-integral-lag`).
+
 Two guards, and both make it a no-op rather than a guess.  The length comes
 from `damnlelleff(iel,ell,iok)` - the length that element was actually
 averaged with, including the material factor and the localising `g(D)`, not a

@@ -240,32 +240,21 @@ static const ccxopt_decl ccxopt_decl_table[]={
  "difference.  Hydrostatic tension has no determined band normal and is "
  "refused, falling back to the volume estimate",NULL},
 
-{"CCX_DAMAGE_NLWIDTH",CCXOPT_ENUM,"0 (off)",CCXOPT_UNBOUNDED,"0|1",
- "whether the crack-band width L in D+=L*dEps_p/u_f becomes the width of "
- "the band a NONLOCAL length forms, 2*ell, instead of the element's own "
- "size.  Off reproduces every earlier answer to the bit.  Why it exists: "
- "with L the element size an element dissipates G_f per unit area whatever "
- "its size - exact when the band is ONE element wide, which is the case the "
- "crack band is derived for and the case an internal length abolishes on "
- "purpose.  Charge G_f to each of the n layers of a band n wide and the "
- "model dissipates n*G_f for one crack.  MEASURED (test/crackband/"
- "run_nlwidth_scaling.sh), with the threshold-free width sum(D*V)/A and not "
- "the count over D>0.5 an earlier version of this text quoted, which was "
- "retracted: at h=0.25 the band width approaches 2*ell FROM ABOVE as ell/h "
- "grows, w/(2*ell) being 1.65, 1.26 and 1.08 at ell = 0.25, 0.5 and 1.0, "
- "and the post-peak work follows it, growing 2.66 times "
- "between ell=0.25 and ell=1.0 while the pre-peak work agrees to 0.03 per "
- "cent - so the dissipation tracks the number of element layers, ell/h, "
- "and is not a material constant.  Applied only where the mesh resolves "
- "the averaging length, by the same criterion damnonlocal.f guards with, "
- "and never below the element's own width since a band cannot be narrower "
- "than the element carrying it.  ITS VALIDITY CONDITION CANNOT BE CHECKED "
- "HERE: the substitution is right while the band really is 2*ell wide, and "
- "that width is known only after the run - the criterion the solver can "
- "check, whether the mesh resolves ell, holds even on an arm measured wrong "
- "by 95 per cent.  So check afterwards with "
- "test/crackband/check_nlwidth_domain.py <rundir>, which reads the run's own "
- "banner and damage field and says whether w >= 2*ell held",NULL},
+{"CCX_DAMAGE_NLWIDTH",CCXOPT_ENUM,"1 (on)",CCXOPT_UNBOUNDED,"0|1",
+ "whether the crack-band length L in D+=L*dEps_p/u_f becomes the "
+ "DISSIPATION LENGTH of the nonlocal operator instead of the element's own "
+ "size, where a nonlocal length is set and the mesh resolves it: 2*ell for "
+ "GRADIENT (2*sqrt(c), c=ell^2), sqrt(pi)*ell for INTEGRAL.  Why: this model "
+ "averages the variable that drives softening and keeps the flow local, the "
+ "class Bazant and Jirasek 2002 treat in eqs. 61-63 - the plastic strain "
+ "still localizes into a set of zero measure and the crack dissipates "
+ "G_F = g_F*l_d, l_d = 1/alpha(x_s,x_s).  g_F scales as 1/L, so G_F = G_f "
+ "exactly when L = l_d; with L = h it follows l_d/h and is not a material "
+ "constant.  ON BY DEFAULT since 2026-09-24 (it was off, and substituted "
+ "2*ell for both backends as a band width).  A local deck never reaches the "
+ "substitution.  0 keeps the element size everywhere.  Never below the "
+ "element's own size: the zone that dissipates cannot be narrower than the "
+ "element carrying it",NULL},
 
 {"CCX_DAMAGE_VISCOSITY",CCXOPT_REAL,"0 (off)",CCXOPT_UNBOUNDED,NULL,
  "viscous regularisation eta for the damage evolution; negative values are "

@@ -109,7 +109,6 @@
      &     gdiag(:),grhs(:),gp(:),gap(:),gz(:),gr(:),
      &     gmass(:,:),gkpk(:)
       integer, allocatable :: elnod(:,:),gnc(:),gkst(:)
-      real*8, allocatable :: gmsum(:),ebar0(:)
 !
 !     PER-ELEMENT internal length.  ell2e(i) is what the two assembly
 !     loops read; everything else in the backend is unchanged.  ellmf
@@ -655,6 +654,11 @@
 !     answer look nothing alike, which is exactly why neither was
 !     recognised as the same thing for as long as it was.
 !
+!     The gradient half of that is history: an unresolved element is now
+!     handed its local value (see the end of damgradient), so what the
+!     warning announces on both backends is the same - no regularisation
+!     where the mesh cannot carry it - not a wrong one.
+!
 !     THE NUMBER IS PARTICIPATION, NOT ell/h.  How many elements actually
 !     enter the average is what the question asks, it is already measured
 !     for the integral backend, and it needs no threshold chosen by
@@ -681,11 +685,11 @@
       write(*,*) '         Below 2 the average has no neighbour to'
       write(*,*) '         average with, so the model is ARMED but'
       write(*,*) '         DEGENERATE: the regularisation asked for is'
-      write(*,*) '         not being applied.  Measured consequences on'
-      write(*,*) '         the reference deck: the integral backend'
-      write(*,*) '         DIVERGES here, the gradient one COMPLETES'
-      write(*,*) '         with a driving variable off by up to 83 per'
-      write(*,*) '         cent.  Refine the mesh or raise ell.'
+      write(*,*) '         not being applied - the integral backend'
+      write(*,*) '         averages each element with itself, the'
+      write(*,*) '         gradient one hands it its LOCAL value, and'
+      write(*,*) '         the band width stays the element size.'
+      write(*,*) '         Refine the mesh or raise ell.'
       return
       end
 !
@@ -755,6 +759,61 @@
       endif
       if(part.lt.2.d0) return
       iok=1
+      return
+      end
+!
+!
+!     ==================================================================
+!     THE DISSIPATION LENGTH OF THE OPERATOR, FOR THE SOFTENING LAW.
+!
+!     This model averages the variable that drives softening - the
+!     plastic strain increment behind D - and keeps the flow local.  That
+!     is the class Bazant and Jirasek 2002 treat in eqs. 61-62, and for
+!     it Planas et al. 1993 showed that the plastic strain still
+!     localizes into a set of zero measure while the dissipation stays
+!     finite: G_F = g_F * l_d, with (eq. 63)
+!
+!         l_d = 1 / alpha(x_s, x_s)
+!
+!     the width of the rectangle with the weight function's area and its
+!     height at the origin (their Fig. 16).  With D += charlen*dEps/u_f
+!     the local work per unit volume scales as 1/charlen, so the crack
+!     dissipates the intended G_f exactly when charlen = l_d.  That last
+!     step is ours, from eq. 63 and this law; the rest is theirs.
+!
+!     l_d of the two kernels, one-dimensional marginal across a planar
+!     band, far from a boundary:
+!
+!       INTEGRAL  w = exp(-(d/ell)^2)            l_d = sqrt(pi) * ell
+!       GRADIENT  Green's function of 1 - c d2/dx2,
+!                 exp(-|x|/sqrt(c)) / (2 sqrt(c)), c = ell^2
+!                                                l_d = 2 * sqrt(c) = 2 ell
+!
+!     Measured on the mkcross bar as h / (weight of a slice on itself):
+!     integral 0.443 / 0.439 at ell=0.25 and 0.892 / 0.881 at ell=0.5 for
+!     h = 0.25 / 0.125; gradient 1.24 / 1.11 at ell=0.5, converging to
+!     1.0 at the rate of the interpolation error.  Near a free surface
+!     B&J note that l_d falls; that is not modelled here.
+!
+!     iok as damnlelleff: 0 where the mesh does not resolve the length,
+!     and for the FROZEN control, which averages nothing.
+!
+      subroutine damnlelld(iel,eld,iok)
+      use damnlmod
+      implicit none
+      integer iel,iok
+      real*8 eld,ell
+!
+      eld=0.d0
+      call damnlelleff(iel,ell,iok)
+      if(iok.ne.1) return
+      if(imodenl.eq.1) then
+        eld=2.d0*ell
+      elseif(imodenl.eq.0) then
+        eld=1.7724538509055159d0*ell
+      else
+        iok=0
+      endif
       return
       end
 !
@@ -1165,17 +1224,19 @@
 !     notched bar of mkcross.py (24 slices, CHARLEN=1, VISCOSITY=1e-3):
 !       INTEGRAL l=0.375  unscaled: wall at t=0.3675, rc=201
 !                         scaled:   rupture, rc=0, 124 inc, 276 iter
-!       GRADIENT l=0.5    wall at t=0.2575 either way; its first Newton
-!                         correction hits the cap at every step size, a
-!                         different mechanism, still open
+!       GRADIENT l=0.5    wall at t=0.2575 either way - a different
+!                         cause, found later the same day: the gradient
+!                         back-projection passed element modes unsmoothed
+!                         (see damgradient); runs to rupture since
 !     and the two hexahedral gate decks (hex-nonlocal-card, INTEGRAL, and
 !     hex-gradient-card, GRADIENT): theta=0.215, rc=201 unscaled, the
 !     end of the step, rc=0, scaled;
 !     and on test/fast 10x6x6 GRADIENT l=0.4: 1150 iter against 1152,
-!     same 90 deletions.  Refreshing inside Newton (INNER=1) rescues both
-!     bar arms, NOT the hexahedral decks (theta=0.215 as unscaled), and
-!     costs +30 percent iterations on that deck; refreshing only on cut
-!     attempts rescued nothing this does not, so it was dropped.
+!     same 90 deletions (both before the back-projection change).
+!     Refreshing inside Newton (INNER=1) rescued both bar arms, NOT the
+!     hexahedral decks (theta=0.215 as unscaled), and cost +30 percent
+!     iterations on that deck; refreshing only on cut attempts rescued
+!     nothing this does not, so it was dropped.
 !     The factor is 1 while the step does not change; when the solver
 !     grows the step it grows the lagged increment with it, which is the
 !     same consistency argument.
@@ -1832,9 +1893,8 @@
           enddo
         enddo
         if(allocated(ebar)) deallocate(ebar,gdiag,grhs,gp,gap,gz,gr)
-        if(allocated(gmsum)) deallocate(gmsum,ebar0)
         allocate(ebar(nknl),gdiag(nknl),grhs(nknl),gp(nknl),
-     &       gap(nknl),gz(nknl),gr(nknl),gmsum(nknl),ebar0(nknl))
+     &       gap(nknl),gz(nknl),gr(nknl))
         do i=1,nknl
           ebar(i)=0.d0
         enddo
@@ -1984,9 +2044,6 @@
         gdiag(i)=0.d0
         grhs(i)=0.d0
       enddo
-      do i=1,nknl
-        gmsum(i)=0.d0
-      enddo
       do i=1,ne0
         if(ipkon(i).lt.0) cycle
         nc=gnc(i)
@@ -1997,27 +2054,7 @@
           gdiag(nd)=gdiag(nd)+gmass(a,i)
      &         +ell2e(i)*gkpk(ib+a+a*(a-1)/2)
           grhs(nd)=grhs(nd)+gmass(a,i)*dploc(i)
-          gmsum(nd)=gmsum(nd)+gmass(a,i)
         enddo
-      enddo
-!
-!     THE ZERO-LENGTH PROJECTION.  ebar0 is what this backend returns when
-!     ell=0: the system is then M ebar = M e with M diagonal, so the answer
-!     is available without a solve - it is the mass-weighted mean of the
-!     elements meeting at the node.
-!
-!     It is NOT the identity, and that is the whole point.  dploc lives on
-!     elements; ebar lives on nodes; the round trip element -> node ->
-!     element averages twice and smooths over a distance set by the MESH,
-!     not by ell.  Measured on this deck: at ell=0.01, thirty times smaller
-!     than an element, max|dpsave-dploc|/max|dploc| was 0.55 to 0.83, and
-!     the band width scaled with h (ratio 2.02 across a halving, against
-!     1.11 along the band).  So the backend carried an internal length
-!     nobody gave it.
-!
-      do i=1,nknl
-        ebar0(i)=0.d0
-        if(gmsum(i).gt.0.d0) ebar0(i)=grhs(i)/gmsum(i)
       enddo
 !
 !     a node with no live support carries no equation; keep the row
@@ -2092,59 +2129,71 @@
 !
 !     ---------------- back to the element -----------------------------
 !
-!     Back to the element, as the DIFFERENCE of two projections.
+!     Back to the element, as Peerlings et al. 1996 do it: the value
+!     at a point is the nodal field interpolated there (their eq. 20,
+!     used in the damage update, eq. 29).  For the element's single
+!     driving value that is the mass-weighted mean of its nodal values,
+!     int ebar dV / V; on a linear tetrahedron every mass is V/4.
 !
-!         dpsave = dploc + Q( ebar - ebar0 )
+!     RETRACTED, 2026-09-24: this used to return dploc + Q(ebar-ebar0),
+!     ebar0 being the same round trip at ell=0, so that the model would
+!     reduce to the local one exactly as ell -> 0 on a fixed mesh.  It
+!     did, and it stopped regularising at every other ell.  An element
+!     field has more modes than the nodes can carry - 33 per cent of
+!     them on the mkcross bar, 74 per cent on test/fast - and each of
+!     those passes through dploc - Q(ebar0) with factor ONE, unsmoothed.
+!     Bazant and Jirasek 2002, eq. 63, give the measure that matters for
+!     a model whose softening variable is averaged while the flow stays
+!     local (eqs. 61-62): the dissipation length l_d = 1/alpha(x_s,x_s).
+!     Measured on the bar, the construction gave l_d = 0.40 at h=0.25
+!     and 0.24 at h=0.125 for ell=0.5 - about 1.8 h, following the mesh
+!     and not ell - while this interpolation gives 1.24 and 1.11,
+!     converging to the continuum 2*sqrt(c) = 1.0, and the integral
+!     backend 0.89 and 0.88 against sqrt(pi)*ell = 0.886.  The gradient
+!     arm at ell=0.5 on that bar hit a wall at t=0.2575 with the
+!     construction - two tetrahedra of one cross-section softening
+!     alone, the tangent near singular - and runs to rupture with this.
 !
-!     Q is the mass-weighted mean of the element's nodal values, which is
-!     int ebar dV / V; on a linear tetrahedron every mass is V/4 and it is
-!     the plain quarter-sum the backend used to take.
+!     WHAT TAKES ITS PLACE AT ell -> 0.  The round trip does smooth over
+!     a length set by h; that is the discretisation error of this
+!     interpolation and it vanishes as h -> 0 at fixed ell, which is the
+!     convergence Peerlings et al. demonstrate.  Where the mesh does not
+!     resolve ell at all the element is handed its LOCAL value instead,
+!     by the one criterion damnlelleff already applies for the band
+!     width: participation below two means no neighbour would join the
+!     average.  That is a statement about the mesh, not an operator
+!     changed at every ell.
 !
-!     WHY THE DIFFERENCE AND NOT ebar ITSELF.  Q(ebar) alone contains the
-!     element -> node -> element round trip, which smooths over a distance
-!     set by h and NOT by ell: at ell=0 it is exactly [1 2 1]/4 on a
-!     uniform chain, a parasitic length of 0.707 h.  Subtracting Q(ebar0),
-!     the same round trip applied to the same field at ell=0, removes that
-!     term identically.  At ell=0 the correction vanishes and dpsave =
-!     dploc EXACTLY, which is what the model requires and what this
-!     backend did not do.
-!
-!     THIS IS A CONSTRUCTION, NOT THE SCHEME OF Peerlings et al. 1996.
-!     Subtracting the zero-length projection changes the operator at EVERY
-!     ell, not only at zero: what is solved is still their PDE, but what
-!     reaches the damage law is the ell-dependent PART of its discrete
-!     solution.  The justification is that the removed part is an artefact
-!     of the discretisation rather than physics - it has no ell in it at
-!     all - but it should be read as a deliberate choice made here, not as
-!     an implementation of that paper.
-!
-!     One property worth naming because it is not obvious: both operators
-!     preserve the total, sum Q(.) m = sum dploc m, so their difference
-!     sums to zero and sum dpsave = sum dploc EXACTLY at any ell.  For a
-!     quantity that enters an energy balance that is worth having.
-!
-!     POSITIVITY IS NOT ASSUMED.  The correction is a difference of two
-!     averaging operators and is therefore sign-changing, so dpsave can go
-!     negative beside a peak even though dploc never does.  It is clipped
-!     below at zero - but a clip HIDES, so the clipping is COUNTED and
-!     reported rather than done quietly.
-!
-      ndneg=0
-      dnwrst=0.d0
       do i=1,ne0
         dpsave(i)=0.d0
         if(ipkon(i).lt.0) cycle
         nc=gnc(i)
         if(nc.le.0) cycle
+        call damnlelleff(i,elli,iokel)
+        if(iokel.ne.1) then
+          dpsave(i)=dploc(i)
+          cycle
+        endif
         s=0.d0
         wsum=0.d0
         do a=1,nc
           nd=elnod(a,i)
-          s=s+gmass(a,i)*(ebar(nd)-ebar0(nd))
+          s=s+gmass(a,i)*ebar(nd)
           wsum=wsum+gmass(a,i)
         enddo
         if(wsum.le.0.d0) cycle
-        dpsave(i)=dploc(i)+s/wsum
+        dpsave(i)=s/wsum
+      enddo
+!
+!     POSITIVITY IS NOT ASSUMED.  M + ell^2 K is not an M-matrix on
+!     tetrahedra with obtuse dihedral angles, so its inverse can carry
+!     small negative entries and the interpolated value can dip below
+!     zero beside a peak even though dploc never does.  It is clipped
+!     below at zero - but a clip HIDES, so it is COUNTED and reported.
+!
+      ndneg=0
+      dnwrst=0.d0
+      do i=1,ne0
         if(dpsave(i).lt.0.d0) then
           ndneg=ndneg+1
           dnwrst=dmin1(dnwrst,dpsave(i))
@@ -2153,14 +2202,13 @@
       enddo
 !
 !     HOW FAR THE REGULARISED FIELD IS FROM THE LOCAL ONE.  This is the
-!     number that makes the backend's own health visible: at an ell well
-!     below the element size it must be SMALL, because there is nothing
-!     for the regularisation to do.  Before the zero-length projection was
-!     subtracted it was 0.55 to 0.83 at ell=0.01 on the reference deck -
-!     the field handed to the damage law differed from the local one by
-!     most of its own magnitude while the run looked healthy.  It is now
-!     about 1e-3 there, which is the size of ell^2/h^2 and therefore the
-!     regularisation itself rather than an artefact.
+!     number that makes the backend's own health visible.  It is LARGE
+!     where the regularisation works - a band one element wide is the
+!     field the average exists to spread - and zero where every element
+!     is unresolved and handed back its local value.  What it must not
+!     be is small at an ell the mesh resolves: that is how the retracted
+!     construction above looked, 0.04 on hex-gradient-card at ell=0.3,
+!     against 0.47 with this interpolation.
 !
 !     Printed only when the running maximum GROWS, so a long run says it
 !     a handful of times instead of once per call.  A diagnostic that
@@ -2177,8 +2225,13 @@
       if(dgden.gt.0.d0) then
         if(dgmx/dgden.gt.relmax*1.05d0+1.d-12) then
           relmax=dgmx/dgden
+!
+!         the length configured, not ellsave: ellsave is only the
+!         environment's, and on a card-only deck it printed 0.0
+!
+          call damnlellmax(ellrep)
           write(*,*) '[DAMAGE NONLOCAL] gradient: |ebar-e|/|e| =',
-     &         relmax,' at ell=',ellsave
+     &         relmax,' at ell=',ellrep
         endif
       endif
       if(ndneg.gt.0) then

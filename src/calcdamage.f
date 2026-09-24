@@ -485,68 +485,74 @@
 !
       subroutine damcbnlwread()
 !
-!     CB-NL: read CCX_DAMAGE_NLWIDTH once.  OFF BY DEFAULT, so every deck
-!     that ran before this switch existed keeps its answer to the bit.
+!     CB-NL: read CCX_DAMAGE_NLWIDTH once.  ON BY DEFAULT since
+!     2026-09-24: with a nonlocal length the element size is not the
+!     length the dissipation is set by (see damcbnlwidth), so keeping it
+!     was the inconsistent choice, not the conservative one.  =0 restores
+!     the element width.  A local deck never reaches the substitution -
+!     damnlelld refuses without a resolved nonlocal length - so local
+!     answers are unchanged either way.
 !
       use damcbmod
       implicit none
       character*132 carg
 !
       if(cbnlw.ge.0) return
-      cbnlw=0
+      cbnlw=1
       call getenv('CCX_DAMAGE_NLWIDTH',carg)
-      if(carg(1:1).eq.'1') cbnlw=1
+      if(carg(1:1).eq.'0') cbnlw=0
       return
       end
 !
       subroutine damcbnlwidth(iel,charlen)
 !
-!     WHEN THE DAMAGE DRIVER IS A NONLOCAL AVERAGE, THE WIDTH IN THE
-!     SOFTENING LAW MUST BE THE WIDTH OF THE BAND THAT FORMS.
+!     WHEN THE DAMAGE DRIVER IS A NONLOCAL AVERAGE, THE LENGTH IN THE
+!     SOFTENING LAW IS THE OPERATOR'S DISSIPATION LENGTH, NOT h.
 !
 !     D advances as charlen*dEps_p/u_f, so an element reaches D=1 once the
 !     plastic displacement ACROSS it reaches u_f, and it therefore
 !     dissipates G_f = sigma_0 u_f / 2 per unit area whatever its size.
 !     That is the property Bazant and Oh 1983 build the crack band for,
-!     and it is exact for one reason only: the band is assumed to be ONE
-!     element wide.  Charge it to every element of a band that is n layers
-!     wide and the model dissipates n*G_f for one crack.
+!     and it is exact for one reason only: the zone that dissipates is
+!     ONE element wide.  Jirasek and Bauer 2012, section 4, make the same
+!     point from the other side: the length in the law has to be the
+!     effective size h_b of the zone that actually localizes, and a
+!     mismatch makes the response too brittle or too ductile by h_b/L.
 !
-!     An internal length abolishes that assumption on purpose - it exists
-!     to fix the band's width in the material rather than in the mesh - so
-!     the two regularisations cannot both keep their own length.  Measured
-!     on this tree (test/crackband/run_nlwidth_scaling.sh, forum
-!     2026-09-17): at h=0.25 the band width approaches 2*ell from ABOVE as
-!     ell/h grows - w/(2*ell) of 1.65, 1.26, 1.08 at ell = 0.25, 0.5, 1.0 -
-!     and W_post follows it, growing by 2.66 between ell=0.25 and ell=1.0
-!     while the pre-peak work agrees to 0.03 per cent.  The dissipation is
-!     proportional to the number of ELEMENT LAYERS, which is ell/h, and so
-!     is a material constant only when the band is one element wide.
+!     WHICH LENGTH, with an internal length (changed 2026-09-24).  This
+!     used to substitute 2*ell, read as the width of the damage band.
+!     Bazant and Jirasek 2002, eqs. 61-63, settle what the right reading
+!     is for a model like this one - softening driven by the nonlocal
+!     average of the plastic strain, flow rule local: the plastic strain
+!     still localizes into a set of zero measure (Planas et al. 1993),
+!     and the crack dissipates G_F = g_F * l_d with l_d = 1/alpha(x_s,x_s)
+!     the operator's dissipation length.  g_F scales as 1/charlen here,
+!     so G_F = G_f exactly when charlen = l_d.  damnlelld returns it:
+!     2*ell for GRADIENT (2*sqrt(c), c=ell^2) - the old value, now with a
+!     reason - and sqrt(pi)*ell for INTEGRAL, 13 per cent below it.
 !
-!     An earlier version of this comment said the width follows 2*ell to
-!     within +8/-12 per cent.  That came from measuring the width as a count
-!     of integration points over D>0.5, which was retracted: the same runs
-!     give three different verdicts for the three thresholds de1stats
-!     writes.  The numbers above are the threshold-free measure,
-!     sum(D*V)/A.  The retraction was grepped through test/crackband and not
-!     through src/, which is how it survived here - after a retraction the
-!     tree is what needs walking, not the directory the work happened in.
-!
-!     Jirasek and Bauer 2012, section 5, state the requirement directly:
-!     the width entering the softening law must be the width of the band
-!     that actually forms.
+!     The damage BAND is therefore not what the length has to match, and
+!     its width is not the objective quantity: the dissipation is.  The
+!     measurements Agent 2 took of the band (test/crackband/
+!     run_nlwidth_scaling.sh, forum 2026-09-17) - w/(2*ell) of 1.65, 1.26,
+!     1.08 at ell = 0.25, 0.5, 1.0, W_post growing 2.66 times while the
+!     pre-peak work agreed to 0.03 per cent - were taken with this
+!     substitution OFF, so they measure the element-width law, and those
+!     on the GRADIENT backend were taken with a back-projection that has
+!     since been retracted (damgradient).  They are history, not a check
+!     of this.
 !
 !     TWO GUARDS, both of which make this a no-op rather than a guess:
 !
-!       iok=0 from damnlelleff - the mesh does not resolve the averaging
-!       length, so the band the averaging would form is not represented
-!       and 2*ell is not the width of anything.  The criterion lives in
-!       damnonlocal.f and is NOT repeated here: repeating it would let the
-!       two copies disagree.
+!       iok=0 from damnlelld - the mesh does not resolve the averaging
+!       length, so no averaging happens there and l_d is not the length
+!       of anything.  The criterion lives in damnonlocal.f and is NOT
+!       repeated here: repeating it would let the two copies disagree.
 !
-!       2*ell below the element's own width - a band cannot be narrower
-!       than the one element that carries it, so the element size remains
-!       the floor.  dmax1 rather than a replacement for that reason.
+!       l_d below the element's own width - the zone that dissipates
+!       cannot be narrower than the one element that carries it, so the
+!       element size remains the floor.  dmax1 rather than a replacement
+!       for that reason.
 !
       use damcbmod
       implicit none
@@ -556,21 +562,22 @@
       call damcbnlwread()
       if(cbnlw.ne.1) return
       if(charlen.le.0.d0) return
-      call damnlelleff(iel,ellv,iokv)
+      call damnlelld(iel,ellv,iokv)
       if(iokv.ne.1) return
       if(ellv.le.0.d0) return
-      wnl=2.d0*ellv
+      wnl=ellv
       charlen=dmax1(charlen,wnl)
       if(cbnlwarn.eq.0) then
         cbnlwarn=1
         write(*,*)
-        write(*,*) '*INFO in calcdamage: CCX_DAMAGE_NLWIDTH=1, the'
-        write(*,*) '      crack-band width in the softening law is'
-        write(*,*) '      the band width the nonlocal averaging'
-        write(*,*) '      forms, 2*ell, where the mesh resolves it,'
-        write(*,*) '      and the element width elsewhere.  Without'
-        write(*,*) '      this the fracture energy of the combined'
-        write(*,*) '      model scales with ell/h.'
+        write(*,*) '*INFO in calcdamage: the crack-band width in the'
+        write(*,*) '      softening law is the dissipation length of'
+        write(*,*) '      the nonlocal operator (Bazant and Jirasek'
+        write(*,*) '      2002, eq. 63): 2*ell for GRADIENT,'
+        write(*,*) '      sqrt(pi)*ell for INTEGRAL, where the mesh'
+        write(*,*) '      resolves ell, and the element width'
+        write(*,*) '      elsewhere.  CCX_DAMAGE_NLWIDTH=0 keeps the'
+        write(*,*) '      element width everywhere.'
         write(*,*)
       endif
       return
@@ -1438,8 +1445,9 @@
               if(cbiok.eq.1) charlen=cbwid
             endif
 !
-!           CB-NL: a nonlocal driver needs the band's width, not the
-!           element's.  Inert unless CCX_DAMAGE_NLWIDTH=1.
+!           CB-NL: a nonlocal driver needs the operator's dissipation
+!           length, not the element's.  Inert for a local model and
+!           with CCX_DAMAGE_NLWIDTH=0.
 !
             call damcbnlwidth(i,charlen)
 !
