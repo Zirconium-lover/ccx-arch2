@@ -9562,9 +9562,25 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	     two halves of au, or use J where J^T is meant, and the identity
 	     fails at once.  It is checked on every armed iteration and the
 	     mechanism REFUSES TO ARM when it is off by more than 1e-3. */
+	  /* THE SYMMETRIC OPERATOR, added 2026-09-24.  This used to refuse
+	     unless the asymmetric layout was assembled (nasym=1,
+	     symmetryflag=2), and the default tangent is the secant g(D)*Cep,
+	     which is symmetric - so on default settings level 3 could never
+	     arm: the GLOBALIZE CENSUS of every such run reads "trust region
+	     (dogleg) ... never fired".  Measured once it can: it converges
+	     the fast-wrapped reference wall (inc 96, attempt 4, 10
+	     iterations) and that run stops two increments later at the next
+	     one, deletion set unchanged.  For a symmetric J the stored half IS the transpose half: au
+	     holds only the strict lower triangle, J(r,c) = J(c,r) = au[k],
+	     and there is no au[nzs[2]+k].  daoff selects the transpose half,
+	     so every product below is the same loop on either layout.  The
+	     identity dot(J^T r0, p_N) = |r0|^2 checked further down proves
+	     it on every armed iteration, on this layout as on the other. */
+	  ITG daoff=(nasym==1)?nzs[2]:0;
 	  if(((damage_dl_on==1)||(damage_dl_lc_due==1))&&
 	     (damage_dl_r0!=NULL)&&(*mortar<=1)){
-	    if((nasym!=1)||(symmetryflag!=2)||(*ithermal>=2)||
+	    if(!(((nasym==1)&&(symmetryflag==2))||
+	         ((nasym==0)&&(symmetryflag==0)))||(*ithermal>=2)||
 	       (nzs[2]!=nzs[1])||(neq[0]!=neq[1])){
 	      if(damage_dl_have>=0){
 	        printf("[DAMAGE TR] REFUSING TO ARM: the assembled operator is "
@@ -9594,7 +9610,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	        for(dk=jq[dc]-1;dk<jq[dc+1]-1;dk++){
 	          dr=irow[dk]-1;
 	          damage_dl_d[dc]+=au[dk]*damage_dl_r0[dr];
-	          damage_dl_d[dr]+=au[nzs[2]+dk]*damage_dl_r0[dc];
+	          damage_dl_d[dr]+=au[daoff+dk]*damage_dl_r0[dc];
 	        }
 	      }
 	      /* w = J d   (the same loop with the two halves exchanged) */
@@ -9604,7 +9620,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	        for(dk=jq[dc]-1;dk<jq[dc+1]-1;dk++){
 	          dr=irow[dk]-1;
 	          damage_dl_w[dr]+=au[dk]*damage_dl_d[dc];
-	          damage_dl_w[dc]+=au[nzs[2]+dk]*damage_dl_d[dr];
+	          damage_dl_w[dc]+=au[daoff+dk]*damage_dl_d[dr];
 	        }
 	      }
 	      isiz=neq[1];cpypardou(damage_dl_pn,b,&isiz,&num_cpus);
@@ -9635,7 +9651,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	          for(dk=jq[dc]-1;dk<jq[dc+1]-1;dk++){
 	            dr=irow[dk]-1;
 	            damage_dl_wm[dr]+=au[dk]*damage_dl_pm[dc];
-	            damage_dl_wm[dc]+=au[nzs[2]+dk]*damage_dl_pm[dr];
+	            damage_dl_wm[dc]+=au[daoff+dk]*damage_dl_pm[dr];
 	          }
 	        }
 	        damage_dl_npm2=0.;
@@ -9655,7 +9671,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	         because the dogleg is only worth building if J^T != J */
 	      damage_dl_asym=0.;daden=0.;
 	      for(dk=0;dk<nzs[1];dk++){
-	        dad=fabs(au[dk]-au[nzs[2]+dk]);
+	        dad=fabs(au[dk]-au[daoff+dk]);
 	        if(dad>damage_dl_asym) damage_dl_asym=dad;
 	        if(fabs(au[dk])>daden) daden=fabs(au[dk]);
 	      }
@@ -10708,7 +10724,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                 for(e1k=jq[e1c]-1;e1k<jq[e1c+1]-1;e1k++){
                   e1r=irow[e1k]-1;
                   e1y[e1r]+=e1au[e1k]*damage_dl_pn[e1c];
-                  e1y[e1c]+=e1au[nzs[2]+e1k]*damage_dl_pn[e1r];
+                  e1y[e1c]+=e1au[((nasym==1)?nzs[2]:0)+e1k]*
+                    damage_dl_pn[e1r];
                 }
               }
               for(e1i=0;e1i<neq[1];e1i++){
@@ -13912,12 +13929,36 @@ damage_active_set_closed:
                              damage_fracture_setb,&lc_b,&lc_nb)==1)){
               if((damage_cut_ref>0.)&&(damage_cut_exact==0))
                 lc_target=damage_cut_frac*damage_cut_ref;
+              /* THE STIFFNESS THE ASSEMBLY USES.  loadcut.c weights a bulk
+                 element by 1-D read from dam, and says that is "the same
+                 residual stiffness the assembly uses".  With the viscosity
+                 on it is not: resultsmech.f scales the stress by 1-Dvis
+                 (see damage_de13_mark_terminal).  Measured on fast-plain
+                 with a nonlocal length, D reaches 1 across the section by
+                 theta=0.14 while the specimen carries load until 0.93, so
+                 the cut read on D said "severed" eight tenths of the run
+                 too early and could never be armed.  Hand it 1+Dvis in the
+                 slot it reads; dam itself is not touched. */
+              double *lc_dam=dam;
+              if((damage_visc_eta>0.)&&(damage_damvisc!=NULL)){
+                ITG lci,lcj;
+                NNEW(lc_dam,double,mi[0]*(*ne));
+                for(lci=0;lci<*ne;lci++){
+                  for(lcj=0;lcj<mi[0];lcj++){
+                    lc_dam[mi[0]*lci+lcj]=dam[mi[0]*lci+lcj];
+                  }
+                  if((lci<ne0)&&(ipkon[lci]>=0)&&(lakon[8*lci]=='C')){
+                    lc_dam[mi[0]*lci]=1.+damage_damvisc[mi[0]*lci];
+                  }
+                }
+              }
               damage_cut_now=loadcut_width(co,ipkon,kon,lakon,*ne,*nk,
-                                           lc_a,lc_na,lc_b,lc_nb,dam,mi,
+                                           lc_a,lc_na,lc_b,lc_nb,lc_dam,mi,
                                            damage_cut_gmin,xstate,*nstate_,
                                            damage_ifacdead,lc_target,
                                            &lc_nf,&lc_nel,&lc_bel,&lc_ex,
                                            &lc_w);
+              if(lc_dam!=dam) SFREE(lc_dam);
               if(damage_cut_now<0.){
                 damage_cut_bad=1;
               }else{
@@ -14990,6 +15031,7 @@ damage_controller_done:
         dthetaref=dthetarefdamage;
         idiscon=1;
         idamagereeq=1;
+
         continue;
       }
     }
