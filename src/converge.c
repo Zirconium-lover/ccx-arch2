@@ -225,9 +225,9 @@ void converge_report(const converge *c,const ITG *nactdofinv,ITG mt,
       printf("[DAMAGE AUTOSPC-FORCE] excluded %" ITGFORMAT " dof(s) on "
              "AUTOSPC-masked nodes from ram[0]; largest excluded "
              "residual %.6e at node %" ITGFORMAT " (ram[0]=%.6e, "
-             "tolerance %.6e = %.4f x qam)%s",
+             "tolerance %.6e = %.4g x qam; excluded peak = %.4g x qam)%s",
              c->excl_count,c->excl_max,c->excl_node,
-             ram[0],ran*qam[0],
+             ram[0],ran*qam[0],ran,
              (qam[0]>0.)?c->excl_max/qam[0]:0.,"\n");
     }
     if((ITG)((double)nactdofinv[(ITG)ram[2]]/mt)+1==0){

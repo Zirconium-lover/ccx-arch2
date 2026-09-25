@@ -1930,7 +1930,11 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     damage_fracture_link=0,damage_deadfacet=0,damage_facetdel=0,
     damage_facetdel_new=0,damage_facetdel_total=0,damage_arc=0,damage_diss_step=1,damage_spc_neg=0,damage_census_ok=1,
     damage_ls_trials=DAMAGE_LINESEARCH_MAX_TRIALS,
-    damage_bare=0,damage_bare_rep=-1,damage_free_probe=0,
+    /* damage_bare starts at -1 = NOT COUNTED: only damdangle counts bare
+       nodes, and it runs only with its switches armed.  Starting at 0
+       printed "0 node(s)" on every run where nothing was counted -
+       measured on s3rad, 185 nodes held only by facets at the wall. */
+    damage_bare=-1,damage_bare_rep=-1,damage_free_probe=0,
     damage_free_cnt=0,damage_free_rep=-1,*damage_free_nb=NULL,
     damage_free_worst=-1,damage_free_raw=0,damage_free_rawrep=-1,
     damage_dump_node=0,damage_dump_inc=1,damage_dump_n=0,
