@@ -138,17 +138,21 @@
   },
   {
    "name": "fast-wrapped",
-   "what": "the eroding phase wrapped in facets: reaches a node with no bulk support, and walls on the crack-face kink REBASELINED when the unconditional CCX_DAMAGE_TANGENT=UNSYM export was removed from run_s3rad.sh, so this case now runs the binary's DEFAULT tangent instead of a forced one. What moved is trajectory and nothing else: last_inc 99 -> 96 and the fifth digit of theta, 0.158766E+00 -> 0.158754E+00. The deletion set was checked element by element against the run with the export and is IDENTICAL (64 elements, same members) - that check is what makes this a rebaseline rather than a change of answer, and if it had moved the removal would have been stopped instead. Measured cost of the removal on this gate: 154 s against 179 s for the full 20 cases at -j 2, one thread per process - NOT the 37 percent the binary's banner quotes, which was measured on s3rad rather than on these decks. REBASELINED 25.09 by Agent 1: the rescue ladder's LEVEL 3, the trust-region dogleg, refused to arm on a symmetric operator (nasym=0), and the default tangent is symmetric - so on default settings it could never fire, which every run's GLOBALIZE CENSUS showed as 'trust region (dogleg) ... never fired'. It now reads the transpose half from the stored half when the matrix is symmetric, and its own identity check dot(J^T r0,p_N)=|r0|^2 passes to 1e-12. On this wall it CONVERGES the increment that stopped here (inc 96, attempt 4, in 10 iterations), and the run stops at the next wall: last_inc 96 -> 98, theta 0.158754E+00 -> 0.158762E+00. m.sta is identical line for line up to inc 96 attempt 4, and the deletion set is identical - 64 elements, same members, same order - so this is a rebaseline of where the stop falls, not a change of answer.",
+   "what": "the eroding phase wrapped in facets: reaches a node with no bulk support, and walls on the crack-face kink REBASELINED when the unconditional CCX_DAMAGE_TANGENT=UNSYM export was removed from run_s3rad.sh, so this case now runs the binary's DEFAULT tangent instead of a forced one. What moved is trajectory and nothing else: last_inc 99 -> 96 and the fifth digit of theta, 0.158766E+00 -> 0.158754E+00. The deletion set was checked element by element against the run with the export and is IDENTICAL (64 elements, same members) - that check is what makes this a rebaseline rather than a change of answer, and if it had moved the removal would have been stopped instead. Measured cost of the removal on this gate: 154 s against 179 s for the full 20 cases at -j 2, one thread per process - NOT the 37 percent the binary's banner quotes, which was measured on s3rad rather than on these decks. REBASELINED 25.09 by Agent 1: the rescue ladder's LEVEL 3, the trust-region dogleg, refused to arm on a symmetric operator (nasym=0), and the default tangent is symmetric - so on default settings it could never fire, which every run's GLOBALIZE CENSUS showed as 'trust region (dogleg) ... never fired'. It now reads the transpose half from the stored half when the matrix is symmetric, and its own identity check dot(J^T r0,p_N)=|r0|^2 passes to 1e-12. On this wall it CONVERGES the increment that stopped here (inc 96, attempt 4, in 10 iterations), and the run stops at the next wall: last_inc 96 -> 98, theta 0.158754E+00 -> 0.158762E+00. m.sta is identical line for line up to inc 96 attempt 4, and the deletion set is identical - 64 elements, same members, same order - so this is a rebaseline of where the stop falls, not a change of answer. ENDING RECLASSIFIED 25.09 by Agent 1: rc 201 -> 0, and nothing else moved - m.sta and m.damage are byte-identical to the run before the change. The run still stops where it stopped; what changed is what the stop is called. At this point every one of the 54 cohesive facets is dead by its own law, the bulk elements the law broke are already deleted, and [FRACTURE SEPARATION] finds the grips joined by nothing the damage law has left unbroken; the end force is 1.5 per cent of peak (0.84 against 54.7). When every rescue level has then failed, checkconvergence ends the step as a completed fracture on the last committed state instead of the stock error stop. That the state carries a little load is the numerical floor, not material: fast-wrapped-gmin, whose facets keep more residual stiffness, passes through the same separated state and carries up to 10 per cent of peak through dead facets to theta=1. log_has pins the REASON, because rc=0 alone is also what a run that never fractured returns.",
    "kind": "fast",
    "variant": "wrapped",
    "env": [],
    "expect": {
-    "rc": 201,
+    "rc": 0,
     "last_inc": 98,
     "theta": "0.158762E+00",
     "deletions": 64,
     "masked_max": 1,
-    "worst_ratio": 0.00044641
+    "worst_ratio": 0.00044641,
+    "log_has": [
+     "[FRACTURE COMPLETE]",
+     "joined only by material the damage law has broken"
+    ]
    }
   },
   {
@@ -185,17 +189,21 @@
   },
   {
    "name": "fast-wrapped-nospc",
-   "what": "the same wall without the load-path mask, which must not change it. MEASURED, once the override actually reached the binary: m.sta and m.damage are byte-identical to fast-wrapped - same wall at increment 99, same 64 deletions in the same order - and m.cvg differs at exactly one place, increment 93 attempt 2 iteration 3, CORR.DISP 0.1018 against 0.1438. That single difference IS the mask: it excludes a node from the displacement norm and changes nothing else. REBASELINED when the unconditional CCX_DAMAGE_TANGENT=UNSYM export was removed from run_s3rad.sh, so this case now runs the binary's DEFAULT tangent instead of a forced one. What moved is trajectory and nothing else: last_inc 99 -> 96 and theta 0.158766E+00 -> 0.158754E+00. The deletion set was checked element by element against the run with the export and is IDENTICAL (64 elements, same members) - that check is what makes this a rebaseline rather than a change of answer, and if it had moved the removal would have been stopped instead. Measured cost of the removal on this gate: 154 s against 179 s for the full 20 cases at -j 2, one thread per process - NOT the 37 percent the binary's banner quotes, which was measured on s3rad rather than on these decks. REBASELINED 25.09 by Agent 1: the rescue ladder's LEVEL 3, the trust-region dogleg, refused to arm on a symmetric operator (nasym=0), and the default tangent is symmetric - so on default settings it could never fire, which every run's GLOBALIZE CENSUS showed as 'trust region (dogleg) ... never fired'. It now reads the transpose half from the stored half when the matrix is symmetric, and its own identity check dot(J^T r0,p_N)=|r0|^2 passes to 1e-12. On this wall it CONVERGES the increment that stopped here (inc 96, attempt 4, in 10 iterations), and the run stops at the next wall: last_inc 96 -> 98, theta 0.158754E+00 -> 0.158762E+00. m.sta is identical line for line up to inc 96 attempt 4, and the deletion set is identical - 64 elements, same members, same order - so this is a rebaseline of where the stop falls, not a change of answer.",
+   "what": "the same wall without the load-path mask, which must not change it. MEASURED, once the override actually reached the binary: m.sta and m.damage are byte-identical to fast-wrapped - same wall at increment 99, same 64 deletions in the same order - and m.cvg differs at exactly one place, increment 93 attempt 2 iteration 3, CORR.DISP 0.1018 against 0.1438. That single difference IS the mask: it excludes a node from the displacement norm and changes nothing else. REBASELINED when the unconditional CCX_DAMAGE_TANGENT=UNSYM export was removed from run_s3rad.sh, so this case now runs the binary's DEFAULT tangent instead of a forced one. What moved is trajectory and nothing else: last_inc 99 -> 96 and theta 0.158766E+00 -> 0.158754E+00. The deletion set was checked element by element against the run with the export and is IDENTICAL (64 elements, same members) - that check is what makes this a rebaseline rather than a change of answer, and if it had moved the removal would have been stopped instead. Measured cost of the removal on this gate: 154 s against 179 s for the full 20 cases at -j 2, one thread per process - NOT the 37 percent the binary's banner quotes, which was measured on s3rad rather than on these decks. REBASELINED 25.09 by Agent 1: the rescue ladder's LEVEL 3, the trust-region dogleg, refused to arm on a symmetric operator (nasym=0), and the default tangent is symmetric - so on default settings it could never fire, which every run's GLOBALIZE CENSUS showed as 'trust region (dogleg) ... never fired'. It now reads the transpose half from the stored half when the matrix is symmetric, and its own identity check dot(J^T r0,p_N)=|r0|^2 passes to 1e-12. On this wall it CONVERGES the increment that stopped here (inc 96, attempt 4, in 10 iterations), and the run stops at the next wall: last_inc 96 -> 98, theta 0.158754E+00 -> 0.158762E+00. m.sta is identical line for line up to inc 96 attempt 4, and the deletion set is identical - 64 elements, same members, same order - so this is a rebaseline of where the stop falls, not a change of answer. ENDING RECLASSIFIED 25.09 by Agent 1: rc 201 -> 0, and nothing else moved - m.sta and m.damage are byte-identical to the run before the change. The run still stops where it stopped; what changed is what the stop is called. At this point every one of the 54 cohesive facets is dead by its own law, the bulk elements the law broke are already deleted, and [FRACTURE SEPARATION] finds the grips joined by nothing the damage law has left unbroken; the end force is 1.5 per cent of peak (0.84 against 54.7). When every rescue level has then failed, checkconvergence ends the step as a completed fracture on the last committed state instead of the stock error stop. That the state carries a little load is the numerical floor, not material: fast-wrapped-gmin, whose facets keep more residual stiffness, passes through the same separated state and carries up to 10 per cent of peak through dead facets to theta=1. log_has pins the REASON, because rc=0 alone is also what a run that never fractured returns.",
    "kind": "fast",
    "variant": "wrapped",
    "env": [
     "CCX_DAMAGE_AUTOSPC=0"
    ],
    "expect": {
-    "rc": 201,
+    "rc": 0,
     "last_inc": 98,
     "theta": "0.158762E+00",
-    "deletions": 64
+    "deletions": 64,
+    "log_has": [
+     "[FRACTURE COMPLETE]",
+     "joined only by material the damage law has broken"
+    ]
    },
    "equal_to": {
     "case": "fast-wrapped",
@@ -209,7 +217,7 @@
   },
   {
    "name": "fast-wrapped-noglob",
-   "what": "the walling deck with the same four mechanisms off. MEASURED: it still walls - and it walls 0.5 percent LATER in load factor, 0.159572 against 0.158766, with 568 Newton iterations against 606 and one FEWER element deleted (63 against 64). The apparatus built one mechanism per wall does not move this wall in the direction it was built for. Pinned at the wall, which is the physically meaningful event here, not at whichever increment the solver gave up on.",
+   "what": "the walling deck with the same four mechanisms off. MEASURED: it still walls - and it walls 0.5 percent LATER in load factor, 0.159572 against 0.158766, with 568 Newton iterations against 606 and one FEWER element deleted (63 against 64). The apparatus built one mechanism per wall does not move this wall in the direction it was built for. Pinned at the wall, which is the physically meaningful event here, not at whichever increment the solver gave up on. ENDING RECLASSIFIED 25.09 by Agent 1: rc 201 -> 0, and nothing else moved - m.sta and m.damage are byte-identical to the run before the change. The run still stops where it stopped; what changed is what the stop is called. At this point every one of the 54 cohesive facets is dead by its own law, the bulk elements the law broke are already deleted, and [FRACTURE SEPARATION] finds the grips joined by nothing the damage law has left unbroken; the end force is 1.5 per cent of peak (0.84 against 54.7). When every rescue level has then failed, checkconvergence ends the step as a completed fracture on the last committed state instead of the stock error stop. That the state carries a little load is the numerical floor, not material: fast-wrapped-gmin, whose facets keep more residual stiffness, passes through the same separated state and carries up to 10 per cent of peak through dead facets to theta=1. log_has pins the REASON, because rc=0 alone is also what a run that never fractured returns.",
    "kind": "fast",
    "variant": "wrapped",
    "env": [
@@ -219,25 +227,33 @@
     "CCX_DAMAGE_REEQ_SCALE="
    ],
    "expect": {
-    "rc": 201,
+    "rc": 0,
     "last_inc": 101,
     "theta": "0.159572E+00",
-    "deletions": 63
+    "deletions": 63,
+    "log_has": [
+     "[FRACTURE COMPLETE]",
+     "joined only by material the damage law has broken"
+    ]
    }
   },
   {
    "name": "fast-wrapped-cut",
-   "what": "the same wall with the load-path WIDTH measured on every committed batch but the stopping threshold set to 1e-09, which nothing reaches. This is the no-perturbation proof: a measurement that silently changes the run it measures is worse than no measurement, so all five output files must be byte-identical to fast-wrapped. The measure's self test - fifteen checks including the one where deleting a wide bridge collapses the cut by 99.9 percent while every boolean rule still says CONNECTED - runs before the switch is allowed to arm and must report PASSED. REBASELINED when the unconditional CCX_DAMAGE_TANGENT=UNSYM export was removed from run_s3rad.sh, so this case now runs the binary's DEFAULT tangent instead of a forced one. What moved is trajectory and nothing else: last_inc 99 -> 96 and theta 0.158766E+00 -> 0.158754E+00. The deletion set was checked element by element against the run with the export and is IDENTICAL (64 elements, same members) - that check is what makes this a rebaseline rather than a change of answer, and if it had moved the removal would have been stopped instead. Measured cost of the removal on this gate: 154 s against 179 s for the full 20 cases at -j 2, one thread per process - NOT the 37 percent the binary's banner quotes, which was measured on s3rad rather than on these decks. REBASELINED 25.09 by Agent 1: the rescue ladder's LEVEL 3, the trust-region dogleg, refused to arm on a symmetric operator (nasym=0), and the default tangent is symmetric - so on default settings it could never fire, which every run's GLOBALIZE CENSUS showed as 'trust region (dogleg) ... never fired'. It now reads the transpose half from the stored half when the matrix is symmetric, and its own identity check dot(J^T r0,p_N)=|r0|^2 passes to 1e-12. On this wall it CONVERGES the increment that stopped here (inc 96, attempt 4, in 10 iterations), and the run stops at the next wall: last_inc 96 -> 98, theta 0.158754E+00 -> 0.158762E+00. m.sta is identical line for line up to inc 96 attempt 4, and the deletion set is identical - 64 elements, same members, same order - so this is a rebaseline of where the stop falls, not a change of answer.",
+   "what": "the same wall with the load-path WIDTH measured on every committed batch but the stopping threshold set to 1e-09, which nothing reaches. This is the no-perturbation proof: a measurement that silently changes the run it measures is worse than no measurement, so all five output files must be byte-identical to fast-wrapped. The measure's self test - fifteen checks including the one where deleting a wide bridge collapses the cut by 99.9 percent while every boolean rule still says CONNECTED - runs before the switch is allowed to arm and must report PASSED. REBASELINED when the unconditional CCX_DAMAGE_TANGENT=UNSYM export was removed from run_s3rad.sh, so this case now runs the binary's DEFAULT tangent instead of a forced one. What moved is trajectory and nothing else: last_inc 99 -> 96 and theta 0.158766E+00 -> 0.158754E+00. The deletion set was checked element by element against the run with the export and is IDENTICAL (64 elements, same members) - that check is what makes this a rebaseline rather than a change of answer, and if it had moved the removal would have been stopped instead. Measured cost of the removal on this gate: 154 s against 179 s for the full 20 cases at -j 2, one thread per process - NOT the 37 percent the binary's banner quotes, which was measured on s3rad rather than on these decks. REBASELINED 25.09 by Agent 1: the rescue ladder's LEVEL 3, the trust-region dogleg, refused to arm on a symmetric operator (nasym=0), and the default tangent is symmetric - so on default settings it could never fire, which every run's GLOBALIZE CENSUS showed as 'trust region (dogleg) ... never fired'. It now reads the transpose half from the stored half when the matrix is symmetric, and its own identity check dot(J^T r0,p_N)=|r0|^2 passes to 1e-12. On this wall it CONVERGES the increment that stopped here (inc 96, attempt 4, in 10 iterations), and the run stops at the next wall: last_inc 96 -> 98, theta 0.158754E+00 -> 0.158762E+00. m.sta is identical line for line up to inc 96 attempt 4, and the deletion set is identical - 64 elements, same members, same order - so this is a rebaseline of where the stop falls, not a change of answer. ENDING RECLASSIFIED 25.09 by Agent 1: rc 201 -> 0, and nothing else moved - m.sta and m.damage are byte-identical to the run before the change. The run still stops where it stopped; what changed is what the stop is called. At this point every one of the 54 cohesive facets is dead by its own law, the bulk elements the law broke are already deleted, and [FRACTURE SEPARATION] finds the grips joined by nothing the damage law has left unbroken; the end force is 1.5 per cent of peak (0.84 against 54.7). When every rescue level has then failed, checkconvergence ends the step as a completed fracture on the last committed state instead of the stock error stop. That the state carries a little load is the numerical floor, not material: fast-wrapped-gmin, whose facets keep more residual stiffness, passes through the same separated state and carries up to 10 per cent of peak through dead facets to theta=1. log_has pins the REASON, because rc=0 alone is also what a run that never fractured returns.",
    "kind": "fast",
    "variant": "wrapped",
    "env": [
     "CCX_FRACTURE_CUT=1.e-9"
    ],
    "expect": {
-    "rc": 201,
+    "rc": 0,
     "last_inc": 98,
     "theta": "0.158762E+00",
-    "deletions": 64
+    "deletions": 64,
+    "log_has": [
+     "[FRACTURE COMPLETE]",
+     "joined only by material the damage law has broken"
+    ]
    },
    "same_deletion_set_as": "fast-wrapped",
    "equal_to": [
@@ -502,6 +518,42 @@
    "expect": {
     "rc": 0,
     "theta": "0.100000E+01"
+   }
+  },
+  {
+   "name": "cross-separation-end",
+   "kind": "cross",
+   "gen": [
+    "--nslice",
+    "48",
+    "--ltot",
+    "6.0",
+    "--ncross",
+    "1",
+    "--alldamage",
+    "--trigger",
+    "1.0",
+    "--notch",
+    "0.10",
+    "--notchlen",
+    "0.33333333333333333",
+    "--uend",
+    "0.30"
+   ],
+   "nonlocal_ell": 0.5,
+   "env": [
+    "CCX_DAMAGE_CHARLEN=1",
+    "CCX_DAMAGE_VISCOSITY=1.e-3",
+    "CCX_DAMAGE_NONLOCAL_MODE=INTEGRAL",
+    "CCX_FRACTURE_TERMINATION=NLEFT:NRIGHT"
+   ],
+   "what": "the END of a regularised fracture: the notched bar of run_nlobjectivity.sh at h=0.125, INTEGRAL backend, ell=0.5. It used to stop with rc=201 at theta=0.139 and was the one arm missing from the objectivity sweep. It is not a scheme failure: the end force is 0.155 against a peak of 373.6 (0.04 per cent), the coarser meshes carry 0.4 and 0.7 per cent at the same theta, and at the rollbacks of inc 28 and 30 [FRACTURE SEPARATION] finds the grips joined only by 24 bulk elements at D>=0.999 - broken by the damage law, held by the viscous lag Dvis alone (a regularisation, Gao and Bower 2004). The final stop comes at inc 31 on an ordinary Newton failure after every rescue level, which is why the separation flag is sticky: damage never decreases. The step now ends as a completed fracture, rc=0. RED PATH, run: the binary before the change (e6329a7) returns rc=201 here. theta is not pinned - it follows the trajectory; log_has pins why the run ended.",
+   "expect": {
+    "rc": 0,
+    "log_has": [
+     "[FRACTURE COMPLETE]",
+     "joined only by material the damage law has broken"
+    ]
    }
   }
  ],

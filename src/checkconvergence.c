@@ -27,6 +27,9 @@
      ccx_rescue_arm    : a rescue attempt is still available here
      ccx_rescue_req    : set HERE, read by nonlingeo.c */
 extern ITG ccx_rescue_active,ccx_rescue_arm,ccx_rescue_req;
+/* [FRACTURE SEPARATION] owned by nonlingeo.c, 0 unless a same-load solve
+   after a deletion rolled back with the grips separated by the damage law */
+extern ITG ccx_fracture_sep,ccx_fracture_end;
 #ifdef SPOOLES 
 #include "spooles.h"
 #endif
@@ -654,6 +657,26 @@ void checkconvergence(double *co,ITG *nk,ITG *kon,ITG *ipkon,char *lakon,
 	      (*icutb)++;
 	      return;
 	    }
+	    /* [FRACTURE SEPARATION] every rescue level has failed.  If
+	       nonlingeo found the grips separated by the damage law - held
+	       only by elements at D=1 through their viscous lag and by dead
+	       facets - there is no equilibrium left to find: end the step
+	       as a completed fracture on the last committed state, leaving
+	       as a cutback leaves so the standard rollback restores it. */
+	    if(ccx_fracture_sep==1){
+	      printf("\n[FRACTURE COMPLETE] inc=%" ITGFORMAT " time=%.12e\n"
+	             "                    the grips are joined only by material"
+	             " the damage law has broken\n"
+	             "                    (bulk at the deletion threshold, dead"
+	             " facets) and no equilibrium was found\n"
+	             "                    after every rescue level; the step ends"
+	             " on the last committed state\n\n",*iinc,*time);
+	      fflush(stdout);
+	      ccx_fracture_end=1;
+	      *icntrl=1;
+	      (*icutb)++;
+	      return;
+	    }
 	    if(ccx_rescue_active==1){
 	      printf("[DAMAGE RESCUE] the rescue attempt did not"
 	             " converge; executing the ORIGINAL stock stop"
@@ -794,6 +817,26 @@ void checkconvergence(double *co,ITG *nk,ITG *kon,ITG *ipkon,char *lakon,
 	             *iinc,*iit,*time,*dtime,*dtheta,*tmin);
 	      fflush(stdout);
 	      ccx_rescue_req=1;
+	      *icntrl=1;
+	      (*icutb)++;
+	      return;
+	    }
+	    /* [FRACTURE SEPARATION] every rescue level has failed.  If
+	       nonlingeo found the grips separated by the damage law - held
+	       only by elements at D=1 through their viscous lag and by dead
+	       facets - there is no equilibrium left to find: end the step
+	       as a completed fracture on the last committed state, leaving
+	       as a cutback leaves so the standard rollback restores it. */
+	    if(ccx_fracture_sep==1){
+	      printf("\n[FRACTURE COMPLETE] inc=%" ITGFORMAT " time=%.12e\n"
+	             "                    the grips are joined only by material"
+	             " the damage law has broken\n"
+	             "                    (bulk at the deletion threshold, dead"
+	             " facets) and no equilibrium was found\n"
+	             "                    after every rescue level; the step ends"
+	             " on the last committed state\n\n",*iinc,*time);
+	      fflush(stdout);
+	      ccx_fracture_end=1;
 	      *icntrl=1;
 	      (*icutb)++;
 	      return;

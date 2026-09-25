@@ -283,6 +283,13 @@ def one(case,outroot,exe,required,lines):
     if any(k in exp for k in ('packed','gradell','gradrefused','gradnodes',
                               'gradrel')):
         got.update(gradient_facts(log))
+    if 'log_has' in exp:
+        # a line the run must print, checked as a substring of the log.
+        # For a stop whose EXIT CODE alone cannot say why the run ended:
+        # rc=0 is also what a run that never reached the fracture returns.
+        try: txt=open(log,errors='replace').read()
+        except OSError: txt=''
+        got['log_has']=[t for t in exp['log_has'] if t in txt]
     if 'check_mixed' in exp:
         r=sh('python3 %s/test/pathfollow/check_mixed.py %s'%(ROOT,rundir),base_env([]))
         got['check_mixed']='PASSED' if 'PASSED' in r.stdout else 'FAILED'

@@ -206,6 +206,16 @@ static double pf_project(const double *fh,const double *a,const double *c,
    Layout: dam(mi(1),*)          -> dam[mi0*i+j]
            xstate(nstate_,mi(1),*) -> xstate[nstate_*mi0*i + nstate_*j + k] */
 ITG ccx_rescue_active=0,ccx_rescue_arm=0,ccx_rescue_req=0;
+/* [FRACTURE SEPARATION] set by nonlingeo when a same-load solve after a
+   deletion rolls back and the grips are no longer joined by anything the
+   damage law has left unbroken; read by checkconvergence at the stock stop,
+   which then ends the step as a completed fracture (ccx_fracture_end).
+   STICKY on purpose: damage never decreases, a dead facet never revives
+   and a deleted element never returns, so a separation once established
+   stays true.  Measured why it matters: on the notched bar at h=0.125 it
+   is established at the rollbacks of inc 28 and 30, and the final stop
+   comes at inc 31 on an ordinary Newton failure, after a commit. */
+ITG ccx_fracture_sep=0,ccx_fracture_end=0;
 
 #define DAMCAT_PLAST   1   /* bulk: accumulated plastic strain this increment */
 #define DAMCAT_DINIT   2   /* bulk: damage initiated (dam >= 1)               */
@@ -12806,6 +12816,17 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 			 &allwkini,&temax,&sizemaxinc,&ne0,&neini,&dampwk,
 			 &dampwkini,energystartstep);
 
+        /* [FRACTURE SEPARATION] checkconvergence ended the step as a
+           completed fracture instead of the stock stop.  It left as a
+           cutback leaves, so the standard rollback below restores the last
+           committed state, and the loop then ends on damage_fracture_complete
+           - the same exit the connectivity check uses. */
+        if(ccx_fracture_end==1){
+          ccx_fracture_end=0;
+          ccx_fracture_sep=0;
+          damage_fracture_complete=1;
+        }
+
         /* [DAMAGE RESCUE] checkconvergence deferred the stop.  It left
            exactly as an ordinary cutback leaves, so the standard rollback at
            `if(icutb!=0)` further down restores the start of this increment
@@ -15268,6 +15289,79 @@ damage_controller_done:
                  " -> restore topology and constitutive baseline\n",
                  dtxn.increment,dtxn.step_time,
                  dtxn.count);
+          /* [FRACTURE SEPARATION] the same-load solve after a deletion
+             failed.  Ask whether the grips are still joined by anything
+             the damage LAW has not already broken: connectivity with
+             every bulk element whose rate-independent D has reached the
+             deletion threshold removed, and every dead cohesive facet
+             removed.  Such an element is held only by the viscous lag
+             Dvis - a regularisation (Gao and Bower 2004), not material -
+             and a dead facet transmits contact in compression only, which
+             does not hold a piece pulled away in tension.
+
+             Measured where this was written: fast-plain at ell=0.4 stopped
+             at theta=0.934 (GRADIENT) and 0.517 (INTEGRAL) with the end
+             force at 1.4 and 0.9 per cent of peak; after the deletion
+             there was no equilibrium near the state (first correction 760
+             times the physical scale, a trust region on the same residual
+             did not converge), and with uy=uz=0 on the loaded face both
+             completed - the loaded piece hung laterally on broken material.
+             There this test says SEPARATED: 7 and 3 bulk elements at D=1
+             plus all 36 facets dead.  The notched bar at h=0.125 (no
+             facets): SEPARATED with 24 bulk elements.
+
+             This DECIDES NOTHING by itself.  It only arms ccx_fracture_sep,
+             and checkconvergence acts on it at the one point where the run
+             would otherwise stop with an error: every rescue level has
+             failed.  A run that equilibrates, however badly, never sees it. */
+          if(damage_fracture_seta!=NULL){
+            ITG *sepflag=NULL,si,sj,snb=0,snf=0,sconn=1,sreach=0,sconn2=1,
+              sreach2=0,snip;
+            double sd;
+            NNEW(sepflag,ITG,*ne);
+            for(si=0;si<*ne;si++){
+              if(ipkon[si]<0) continue;
+              if((si<ne0)&&(strcmp1(&lakon[8*si],"C3D4")==0)){
+                snip=1;
+                sd=0.;
+                for(sj=0;sj<snip;sj++){
+                  if(dam[mi[0]*si+sj]-1.>sd) sd=dam[mi[0]*si+sj]-1.;
+                }
+                if(sd>=damage_de13_delete_d){sepflag[si]=1;snb++;}
+              }
+            }
+            FORTRAN(damconnectsets,(ipkon,kon,lakon,ne,nk,set,nset,
+                                    istartset,iendset,ialset,
+                                    damage_fracture_a,damage_fracture_b,
+                                    &sconn,&sreach,
+                                    &damage_fracture_link,sepflag));
+            if(*nstate_>=4){
+              for(si=0;si<*ne;si++){
+                if(ipkon[si]<0) continue;
+                if(lakon[8*si]!='U') continue;
+                if(damstate_facet_dead(xstate,*nstate_,mi[0],si,3)){
+                  sepflag[si]=1;snf++;
+                }
+              }
+              FORTRAN(damconnectsets,(ipkon,kon,lakon,ne,nk,set,nset,
+                                      istartset,iendset,ialset,
+                                      damage_fracture_a,damage_fracture_b,
+                                      &sconn2,&sreach2,
+                                      &damage_fracture_link,sepflag));
+            }
+            if((sconn2==0)||(sconn==0)) ccx_fracture_sep=1;
+            printf("[FRACTURE SEPARATION] inc=%" ITGFORMAT " time=%.12e "
+                   "%s by the damage law: %" ITGFORMAT " bulk element(s) "
+                   "at D>=%.4f and %" ITGFORMAT " dead cohesive facet(s) "
+                   "excluded%s\n",iinc,theta**tper,
+                   ((sconn2==0)||(sconn==0))?"SEPARATED":"CONNECTED",
+                   snb,damage_de13_delete_d,snf,
+                   ((sconn2==0)||(sconn==0))?"; if the rescue ladder is "
+                   "exhausted too, the step ends as a completed fracture"
+                   :"");
+            fflush(stdout);
+            SFREE(sepflag);
+          }
         }else{
           printf("[DAMAGE ROLLBACK] inc=%" ITGFORMAT
                  " time=%.12e tentative=%" ITGFORMAT "\n",
