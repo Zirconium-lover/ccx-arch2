@@ -59,6 +59,15 @@ static const ccxopt_decl ccxopt_decl_table[]={
  "a node whose entire live support is dead below this fraction is treated as "
  "having none; clamped to [0,0.5] in nonlingeo.c",NULL},
 
+{"CCX_DAMAGE_VISCOUS_DAMPING",CCXOPT_REAL,"unset (off)",0.,1.e3,NULL,
+ "nodal dashpot in the STATIC equations: force -c*m*(u-u_ini)/dtime in the "
+ "residual and c*m/dtime on the tangent diagonal, m = the node's share of "
+ "the reference bulk volume (unit density).  Abaqus STABILIZE as used by "
+ "Seupel et al. 2018 (c = 2e-4) to carry element deletion through an "
+ "implicit run; unlike CCX_DAMAGE_STABILISE it changes the equations, so "
+ "it can hold a node whose static equilibrium does not exist.  The "
+ "dissipated fraction of the work is printed; check it",NULL},
+
 {"CCX_DAMAGE_FACET_DEBRIS",CCXOPT_BOOL,"unset (off)",CCXOPT_UNBOUNDED,NULL,
  "remove a UC6 facet with a corner at which NEITHER node keeps a live bulk "
  "element whose law damage D is below the deletion threshold - a facet that "

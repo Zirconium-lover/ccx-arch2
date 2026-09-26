@@ -329,6 +329,13 @@ def main():
     # same geometry, a different mesh: measures how much of a difference
     # between seeds a mesh alone can make (the deck is local)
     ap.add_argument('--mesh-seed', type=int, default=0)
+    # Turon et al. 2007 eq. 7: K = alpha*E/t with alpha >= 50 keeps the
+    # interface's added compliance under 2 percent.  The committed deck's
+    # Kn = 2e5 N/mm^3 is alpha ~ 0.14 for a 0.09 thick ZrH plate (E=1.3e5):
+    # plate plus its two interfaces ~ 12 percent of the plate's stiffness.
+    ap.add_argument('--kn', type=float, default=None,
+                    help='cohesive normal stiffness Kn [N/mm^3] for both '
+                         'user sections; default keeps the deck value')
     ap.add_argument('-v', action='store_true')
     a = ap.parse_args()
     if (a.seed is None) == (a.centres_from is None):
@@ -342,6 +349,25 @@ def main():
     src_tail = txt[i:]
     if not src_tail.endswith('\n'):
         src_tail += '\n'
+    kn_note = 'Kn as in the committed deck'
+    if a.kn is not None:
+        # --kn replaces the FIRST constant (Kn, normal penalty stiffness,
+        # cohesive_uc6.f prop 1) of every *User Section data line and
+        # nothing else.  delta_f = 2 Gc / Tn0 does not depend on it, so
+        # the fracture energy and the softening slope are unchanged; only
+        # delta_0 = Tn0 / Kn and the interface compliance move.
+        lines = src_tail.split('\n')
+        nrep = 0
+        for j, l in enumerate(lines):
+            if l.strip().upper().startswith('*USER SECTION'):
+                f = lines[j + 1].split(',')
+                f[0] = '%.6e' % a.kn
+                lines[j + 1] = ','.join(f)
+                nrep += 1
+        if nrep != 2:
+            sys.exit('expected two *User Section cards, found %d' % nrep)
+        src_tail = '\n'.join(lines)
+        kn_note = 'Kn replaced by %.6e in both *User Section cards' % a.kn
 
     if a.seed is not None:
         centres = place(a.seed)
@@ -355,6 +381,7 @@ def main():
                   'the sets copied from m12_s3rad_gc24_w.inp sha256 %s'
                   % (a.smin, a.smax, a.dmax, a.sin, a.mesh_seed,
                      SRC_SHA[:16]))
+    header.append(kn_note)
     X, mat, hyd, ptri = mesh(centres, a.smin, a.smax, a.dmax, a.sin,
                              a.algo3d, a.mesh_seed, a.v)
     co, elems, matrix, plate, facets, seed = build(centres, X, mat, hyd,

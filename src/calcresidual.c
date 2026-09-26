@@ -29,6 +29,8 @@
 #include "tau.h"
 #endif
 
+extern double ccx_visc_c,*ccx_visc_m,ccx_visc_dtlast;
+
 
 void calcresidual(ITG *nmethod,ITG *neq,double *b,double *fext,double *f,
 		  ITG *iexpl,ITG *nactdof,double *aux2,double *vold,
@@ -48,6 +50,27 @@ void calcresidual(ITG *nmethod,ITG *neq,double *b,double *fext,double *f,
   if(*nmethod!=4){
     for(k=0;k<neq[1];++k){
       b[k]=fext[k]-f[k];
+    }
+
+    /* CCX_DAMAGE_VISCOUS_DAMPING (nonlingeo.c): a nodal dashpot
+       -c*m*(u-u_ini)/dtime, the viscous force of Abaqus' STABILIZE used by
+       Seupel et al. 2018 (Eng. Fract. Mech., section 6) to carry element
+       deletion through an implicit quasi-static run.  It is IN the
+       residual, so it can hold a node whose static equilibrium does not
+       exist; a stiffness added to the tangent alone cannot. */
+
+    if((ccx_visc_m!=NULL)&&(*dtime>0.)){
+      double cdt=ccx_visc_c/(*dtime);
+      for(k=0;k<*nk;++k){
+	if(ccx_visc_m[k]<=0.) continue;
+	for(j=1;j<4;++j){
+	  if(nactdof[mt*k+j]>0){
+	    b[nactdof[mt*k+j]-1]-=cdt*ccx_visc_m[k]*
+	      (vold[mt*k+j]-vini[mt*k+j]);
+	  }
+	}
+      }
+      ccx_visc_dtlast=*dtime;
     }
   }
       

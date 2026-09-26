@@ -217,6 +217,15 @@ ITG ccx_rescue_active=0,ccx_rescue_arm=0,ccx_rescue_req=0;
    comes at inc 31 on an ordinary Newton failure, after a commit. */
 ITG ccx_fracture_sep=0,ccx_fracture_end=0;
 
+/* CCX_DAMAGE_VISCOUS_DAMPING: nodal dashpot in the static equations.
+   calcresidual.c adds -c*m*(u-u_ini)/dtime to the residual, the assembly
+   below adds c*m/dtime to the diagonal.  m is the node's share of the
+   REFERENCE bulk volume (unit density), fixed at the start of the step so
+   that a node whose elements are deleted keeps its dashpot.  NULL = off,
+   and every other caller of calcresidual sees NULL. */
+double ccx_visc_c=0.,*ccx_visc_m=NULL,ccx_visc_dtlast=0.;
+static double ccx_visc_ediss=0.,ccx_visc_wext=0.,ccx_visc_ratio_rep=0.;
+
 #define DAMCAT_PLAST   1   /* bulk: accumulated plastic strain this increment */
 #define DAMCAT_DINIT   2   /* bulk: damage initiated (dam >= 1)               */
 #define DAMCAT_DGROW   4   /* bulk: damage grew from the committed baseline   */
@@ -4068,6 +4077,51 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                  "support of a node is deleted\n",damage_deadsole_g);
         }
       }
+      {
+        /* Seupel et al. 2018 (Eng. Fract. Mech. 193, section 6): gradient
+           damage with element deletion in an implicit quasi-static run
+           needs "numerical damping by adding viscous forces" (Abaqus
+           STABILIZE, c = 2e-4, unit density) to get past the force jumps
+           of deletion; Poggenpohl et al. 2022 (Int. J. Plast. 154, eqs.
+           37-38) add eta*dE/dt at the Gauss points for the same reason and
+           report that smaller eta "failed due to numerical instabilities".
+           CCX_DAMAGE_STABILISE, by contrast, shifts the tangent only: it
+           cannot create an equilibrium that does not exist, which is what
+           a node held by nothing but softening facets lacks. */
+        const char *vde=ccxopt_getenv("CCX_DAMAGE_VISCOUS_DAMPING");
+        if(ccx_visc_m!=NULL){SFREE(ccx_visc_m);ccx_visc_m=NULL;}
+        ccx_visc_c=0.;ccx_visc_ediss=0.;ccx_visc_wext=0.;
+        ccx_visc_ratio_rep=0.;ccx_visc_dtlast=0.;
+        if(vde!=NULL) ccx_visc_c=atof(vde);
+        if(ccx_visc_c>0.){
+          ITG vi,vj,nv=0;
+          double vtot=0.;
+          NNEW(ccx_visc_m,double,*nk);
+          for(vi=0;vi<*ne;vi++){
+            if(ipkon[vi]<0) continue;
+            if(strcmp1(&lakon[8*vi],"C3D4")!=0) continue;
+            {
+              const ITG *kk=&kon[ipkon[vi]];
+              const double *p0=&co[3*(kk[0]-1)],*p1=&co[3*(kk[1]-1)],
+                *p2=&co[3*(kk[2]-1)],*p3=&co[3*(kk[3]-1)];
+              double a1=p1[0]-p0[0],a2=p1[1]-p0[1],a3=p1[2]-p0[2];
+              double b1=p2[0]-p0[0],b2=p2[1]-p0[1],b3=p2[2]-p0[2];
+              double c1=p3[0]-p0[0],c2=p3[1]-p0[1],c3=p3[2]-p0[2];
+              double vol=fabs(a1*(b2*c3-b3*c2)-a2*(b1*c3-b3*c1)
+                              +a3*(b1*c2-b2*c1))/6.;
+              vtot+=vol;
+              for(vj=0;vj<4;vj++) ccx_visc_m[kk[vj]-1]+=0.25*vol;
+            }
+          }
+          for(vi=0;vi<*nk;vi++) if(ccx_visc_m[vi]>0.) nv++;
+          printf("[DAMAGE VISCOUS DAMPING] nodal dashpot c=%.3e in the "
+                 "static residual and tangent: force -c*m*du/dt, m = the "
+                 "node's share of the reference volume (unit density); %"
+                 ITGFORMAT " nodes, volume %.6e\n",ccx_visc_c,nv,vtot);
+        }else{
+          ccx_visc_c=0.;
+        }
+      }
       damage_stab_env=ccxopt_getenv("CCX_DAMAGE_STABILISE");
       if(damage_stab_env!=NULL){
         damage_stab_alpha=atof(damage_stab_env);
@@ -5900,6 +5954,37 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         fflush(stdout);
       }
       pf_pending=pf_on;
+
+      /* dashpot audit on the increment just committed: dissipated
+         c*m*|du|^2/dt against the work sum(fn.du) over all dofs (the
+         reactions carry it), so a run states how much of its answer the
+         damping is */
+      if((ccx_visc_m!=NULL)&&(ccx_visc_dtlast>0.)&&(fn!=NULL)){
+        ITG vi,vj;
+        double de=0.,dw=0.,du;
+        for(vi=0;vi<*nk;vi++){
+          for(vj=1;vj<4;vj++){
+            du=vold[mt*vi+vj]-vini[mt*vi+vj];
+            de+=ccx_visc_m[vi]*du*du;
+            dw+=fn[mt*vi+vj]*du;
+          }
+        }
+        de*=ccx_visc_c/ccx_visc_dtlast;
+        if((de>0.)||(dw!=0.)){
+          ccx_visc_ediss+=de;
+          ccx_visc_wext+=dw;
+          if(ccx_visc_wext>0.){
+            double r=ccx_visc_ediss/ccx_visc_wext;
+            if(r>2.*ccx_visc_ratio_rep){
+              ccx_visc_ratio_rep=r;
+              printf("[DAMAGE VISCOUS DAMPING] inc=%" ITGFORMAT " dissipated "
+                     "%.6e of work %.6e (fraction %.3e, new maximum)\n",
+                     iinc,ccx_visc_ediss,ccx_visc_wext,r);
+              fflush(stdout);
+            }
+          }
+        }
+      }
 
       /* vold is copied into vini */
 	  
@@ -8672,6 +8757,18 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 
 	   DEFAULT OFF.  CCX_DAMAGE_STABILISE=<alpha> switches it on. */
 
+	if((ccx_visc_m!=NULL)&&(dtime>0.)&&(*ithermal<2)){
+	  /* the dashpot's tangent, c*m/dtime on the diagonal; the force is
+	     added in calcresidual.c */
+	  double cdt=ccx_visc_c/dtime;
+	  for(i=0;i<*nk;i++){
+	    if(ccx_visc_m[i]<=0.) continue;
+	    for(idir=1;idir<=3;idir++){
+	      k=nactdof[mt*i+idir];
+	      if(k>0) ad[k-1]+=cdt*ccx_visc_m[i];
+	    }
+	  }
+	}
 	if((damage_stab_alpha>0.)&&(damage_de12_enabled)&&(*ithermal<2)){
 	  ITG nstabnode=0;
 	  NNEW(damage_stab_node,ITG,*nk);
@@ -16192,6 +16289,14 @@ damage_controller_done:
   if(*nener==1)SFREE(enerini);
   if(*nstate_!=0){SFREE(xstateini);}
 
+  if(ccx_visc_m!=NULL){
+    printf("[DAMAGE VISCOUS DAMPING] step total: dissipated %.6e, work "
+           "sum(fn.du) %.6e (fraction %.3e)\n",ccx_visc_ediss,
+           ccx_visc_wext,(ccx_visc_wext!=0.)?
+           ccx_visc_ediss/fabs(ccx_visc_wext):0.);
+    fflush(stdout);
+    SFREE(ccx_visc_m);ccx_visc_m=NULL;
+  }
   SFREE(aux);SFREE(iaux);SFREE(vini);
 
   if((*ndmat_>0)&&(*iexpl<=1)){
