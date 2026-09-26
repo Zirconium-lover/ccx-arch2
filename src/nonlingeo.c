@@ -1434,6 +1434,87 @@ static ITG damage_de13_mark_deadall(const double *dam,const double *visc,
   return nnew;
 }
 
+/* CCX_DAMAGE_FACET_DEBRIS: a cohesive facet that ties debris to debris.
+ *
+ * Measured on the seed decks built by test/s3rad/mkseeddeck.py (forum,
+ * 2026-09-26): three of five stop rc=201 at 61-81 percent of peak on the
+ * same configuration.  s3regen: matrix-side node 84 keeps one bulk element,
+ * at D=1; its hydride-side twin 7268 has none; the three facets joining them
+ * are still softening (D 0.35-0.58).  Masking 84 (CCX_DAMAGE_AUTOSPC=1e-2)
+ * brings the force residual under tolerance, and then the correction on 7268
+ * grows every iteration, 0.45 -> 2.96 mm: two nodes held only by each other
+ * through a softening law are a mechanism.  s6 (node 998) and s7 (node 7908)
+ * stop on the same pattern.
+ *
+ * The rule works corner by corner.  A UC6 corner pairs minus node k with plus
+ * node k+3.  A node is SOUND if at least one live bulk element at it has the
+ * law's damage D (not the viscous Dvis - the same reading as the separation
+ * test of S1) below the deletion threshold.  A facet with a corner at which
+ * NEITHER node is sound ties nothing load-bearing to anything load-bearing
+ * there, and it is removed.
+ *
+ * Why not "a whole side without support": measured on the five final states,
+ * that rule selects 0 facets at every stall above; the corner rule selects
+ * all of the facets at the stalled node in s3regen and s6 and three of six in
+ * s7, and 0-43 facets in a whole run's final state, against 173-608 for "any
+ * corner node unsupported".
+ *
+ * NOT covered: s5, whose stalled hydride node hangs on a SOUND matrix, and s4,
+ * a whole plate detached behind dead facets.  Default OFF. */
+static ITG damage_mark_facet_debris(const double *dam,ITG *ipkon,
+                                    const char *lakon,const ITG *kon,ITG nk,
+                                    ITG ne0,ITG mi0,double ddelete,
+                                    ITG batchmax,ITG verbose)
+{
+  ITG i,j,n,nip,nnew=0,*nsound=NULL;
+  double dmx;
+
+  if((nk<=0)||(batchmax<=0)) return 0;
+  NNEW(nsound,ITG,nk);
+
+  for(i=0;i<ne0;i++){
+    if(ipkon[i]<0) continue;
+    if(strcmp1(&lakon[8*i],"C3D4")!=0) continue;
+    nip=topo_element_nip(&lakon[8*i],mi0);
+    if(nip<1) nip=1;
+    if(nip>mi0) nip=mi0;
+    dmx=0.;
+    for(j=0;j<nip;j++){
+      /* dam holds 1+D */
+      double dd=dam[mi0*i+j]-1.;
+      if(dd>dmx) dmx=dd;
+    }
+    if(dmx>=ddelete) continue;
+    for(j=0;j<4;j++){
+      n=kon[ipkon[i]+j]-1;
+      if((n>=0)&&(n<nk)) nsound[n]++;
+    }
+  }
+
+  for(i=0;i<ne0;i++){
+    if(nnew>=batchmax) break;
+    if(ipkon[i]<0) continue;
+    if(lakon[8*i]!='U') continue;
+    if((ITG)((unsigned char)lakon[8*i+7])!=6) continue;
+    for(j=0;j<3;j++){
+      ITG nm=kon[ipkon[i]+j]-1,np=kon[ipkon[i]+j+3]-1;
+      if((nm<0)||(nm>=nk)||(np<0)||(np>=nk)) continue;
+      if((nsound[nm]==0)&&(nsound[np]==0)) break;
+    }
+    if(j==3) continue;
+    if(verbose){
+      printf("[DAMAGE FACET DEBRIS]   facet %" ITGFORMAT " removed: corner "
+             "%" ITGFORMAT "/%" ITGFORMAT " has no sound bulk on either "
+             "side\n",i+1,kon[ipkon[i]+j],kon[ipkon[i]+j+3]);
+    }
+    ipkon[i]=-ipkon[i]-2;
+    nnew++;
+  }
+
+  SFREE(nsound);
+  return nnew;
+}
+
 static ITG damage_de13_mark_terminal(double *dam,ITG *ipkon,
                                      const char *lakon,const ITG *ielmat,
                                      ITG mi2,const ITG *ndmcon,
@@ -1927,6 +2008,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     damage_null_cnt=0,damage_null_seed=987654321,damage_null_nit=4,
     damage_stab_maxdof=0,damage_stab_maxdead=0,*damage_stab_node=NULL,
     damage_deadsole_total=0,damage_deadall_total=0,damage_deadall_nodes=0,
+    damage_facetdebris=0,damage_facetdebris_total=0,
     damage_fracture_link=0,damage_deadfacet=0,damage_facetdel=0,
     damage_facetdel_new=0,damage_facetdel_total=0,damage_arc=0,damage_diss_step=1,damage_spc_neg=0,damage_census_ok=1,
     damage_ls_trials=DAMAGE_LINESEARCH_MAX_TRIALS,
@@ -3964,6 +4046,16 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                  "(g < %.1e) and which no cohesive facet holds has that "
                  "support deleted; only dead elements can be taken\n",
                  damage_deadall_g);
+        }
+      }
+      if(ccxopt_getenv("CCX_DAMAGE_FACET_DEBRIS")!=NULL){
+        damage_facetdebris=(strcmp(ccxopt_getenv("CCX_DAMAGE_FACET_DEBRIS"),
+                                   "0")==0)?0:1;
+        if(damage_facetdebris){
+          printf("[DAMAGE FACET DEBRIS] a cohesive facet with a corner at "
+                 "which NEITHER node keeps a live bulk element below the "
+                 "deletion threshold (law damage D) is removed: it ties "
+                 "debris to debris\n");
         }
       }
       damage_deadsole_env=ccxopt_getenv("CCX_DAMAGE_DEADSOLE");
@@ -13240,6 +13332,19 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
             fflush(stdout);
           }
         }
+        if(damage_facetdebris&&(damage_de13_new<DAMAGE_DE13_BATCH_MAX)){
+          ITG nfd=damage_mark_facet_debris(
+              dam,ipkon,lakon,kon,*nk,ne0,mi[0],damage_de13_delete_d,
+              DAMAGE_DE13_BATCH_MAX-damage_de13_new,1);
+          if(nfd>0){
+            damage_de13_new+=nfd;
+            damage_facetdebris_total+=nfd;
+            printf("[DAMAGE FACET DEBRIS] inc=%" ITGFORMAT " time=%.12e "
+                   "removed=%" ITGFORMAT " total=%" ITGFORMAT "\n",
+                   iinc,theta**tper,nfd,damage_facetdebris_total);
+            fflush(stdout);
+          }
+        }
         if(damage_de13_new>0){
           damage_de13_transaction=1;
           idamage+=damage_de13_new;
@@ -14664,6 +14769,19 @@ damage_controller_done:
           printf("[DAMAGE DEADSOLE] inc=%" ITGFORMAT " time=%.12e "
                  "deleted=%" ITGFORMAT " total=%" ITGFORMAT "\n",
                  iinc,theta**tper,nds,damage_deadsole_total);
+          fflush(stdout);
+        }
+      }
+      if(damage_facetdebris&&(damage_de13_new<DAMAGE_DE13_BATCH_MAX)){
+        ITG nfd=damage_mark_facet_debris(
+            dam,ipkon,lakon,kon,*nk,ne0,mi[0],damage_de13_delete_d,
+            DAMAGE_DE13_BATCH_MAX-damage_de13_new,1);
+        if(nfd>0){
+          damage_de13_new+=nfd;
+          damage_facetdebris_total+=nfd;
+          printf("[DAMAGE FACET DEBRIS] inc=%" ITGFORMAT " time=%.12e "
+                 "removed=%" ITGFORMAT " total=%" ITGFORMAT "\n",
+                 iinc,theta**tper,nfd,damage_facetdebris_total);
           fflush(stdout);
         }
       }

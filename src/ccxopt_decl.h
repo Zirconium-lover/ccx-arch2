@@ -59,6 +59,16 @@ static const ccxopt_decl ccxopt_decl_table[]={
  "a node whose entire live support is dead below this fraction is treated as "
  "having none; clamped to [0,0.5] in nonlingeo.c",NULL},
 
+{"CCX_DAMAGE_FACET_DEBRIS",CCXOPT_BOOL,"unset (off)",CCXOPT_UNBOUNDED,NULL,
+ "remove a UC6 facet with a corner at which NEITHER node keeps a live bulk "
+ "element whose law damage D is below the deletion threshold - a facet that "
+ "ties debris to debris.  Measured on the mkseeddeck.py seed decks: the "
+ "two nodes of such a corner are a mechanism (correction 0.45 -> 2.96 mm "
+ "over eight iterations once the residual is masked) and three of five "
+ "seeds stop rc=201 on it at 61-81 percent of peak.  Travels the "
+ "transactional deletion path.  Any value except the string 0 means on",
+ NULL},
+
 /* ---- erosion and topology ----------------------------------------- */
 {"CCX_DAMAGE_DELETE_MAT",CCXOPT_STRING,"unset (no filter)",CCXOPT_UNBOUNDED,NULL,
  "restrict terminal deletion to elements of these materials; ALL means every "
