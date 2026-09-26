@@ -333,6 +333,13 @@ def main():
     # interface's added compliance under 2 percent.  The committed deck's
     # Kn = 2e5 N/mm^3 is alpha ~ 0.14 for a 0.09 thick ZrH plate (E=1.3e5):
     # plate plus its two interfaces ~ 12 percent of the plate's stiffness.
+    # The dead facet keeps gmin*Kn in tension (cohesive_uc6.f, g =
+    # max(gmin, 1-Dvis)).  Raising Kn 500x raises that residual 500x: at
+    # Kn=1e8 a 'dead' facet opened 0.05 mm still carries ~50 MPa.  --gmin
+    # rescales it; gmin*Kn = 2 N/mm^3 is the committed deck's value.
+    ap.add_argument('--gmin', type=float, default=None,
+                    help='residual stiffness fraction gmin for both user '
+                         'sections; default keeps the deck value')
     ap.add_argument('--kn', type=float, default=None,
                     help='cohesive normal stiffness Kn [N/mm^3] for both '
                          'user sections; default keeps the deck value')
@@ -350,7 +357,7 @@ def main():
     if not src_tail.endswith('\n'):
         src_tail += '\n'
     kn_note = 'Kn as in the committed deck'
-    if a.kn is not None:
+    if a.kn is not None or a.gmin is not None:
         # --kn replaces the FIRST constant (Kn, normal penalty stiffness,
         # cohesive_uc6.f prop 1) of every *User Section data line and
         # nothing else.  delta_f = 2 Gc / Tn0 does not depend on it, so
@@ -361,13 +368,18 @@ def main():
         for j, l in enumerate(lines):
             if l.strip().upper().startswith('*USER SECTION'):
                 f = lines[j + 1].split(',')
-                f[0] = '%.6e' % a.kn
+                if a.kn is not None:
+                    f[0] = '%.6e' % a.kn
+                if a.gmin is not None:
+                    f[4] = ' %.6e' % a.gmin
                 lines[j + 1] = ','.join(f)
                 nrep += 1
         if nrep != 2:
             sys.exit('expected two *User Section cards, found %d' % nrep)
         src_tail = '\n'.join(lines)
-        kn_note = 'Kn replaced by %.6e in both *User Section cards' % a.kn
+        kn_note = ('both *User Section cards: Kn %s, gmin %s'
+                   % ('%.6e' % a.kn if a.kn is not None else 'as deck',
+                      '%.6e' % a.gmin if a.gmin is not None else 'as deck'))
 
     if a.seed is not None:
         centres = place(a.seed)
