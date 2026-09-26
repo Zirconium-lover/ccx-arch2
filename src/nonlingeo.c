@@ -5965,8 +5965,11 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         for(vi=0;vi<*nk;vi++){
           for(vj=1;vj<4;vj++){
             du=vold[mt*vi+vj]-vini[mt*vi+vj];
+            if(!isfinite(du)) continue;
             de+=ccx_visc_m[vi]*du*du;
-            dw+=fn[mt*vi+vj]*du;
+            /* fn of a node whose every element is deleted is not
+               defined (NaN measured on s3regen); it does no work */
+            if(isfinite(fn[mt*vi+vj])) dw+=fn[mt*vi+vj]*du;
           }
         }
         de*=ccx_visc_c/ccx_visc_dtlast;
