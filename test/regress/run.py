@@ -28,7 +28,7 @@ def sh(cmd,env,cwd=None,timeout=3600):
 # against the script itself in the preflight below, because this number is
 # the reason a case's env goes through positionally and a stale one would
 # quietly invalidate that reasoning.
-EXPORTED_CCX_NAMES=12
+EXPORTED_CCX_NAMES=13
 
 def base_env(extra):
     """NAME= with an empty value UNSETS the name; it does not set it empty.

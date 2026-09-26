@@ -61,6 +61,19 @@ export MKL_CBWR=${MKL_CBWR:-COMPATIBLE}
 # overrides below still win over both, and the provenance line says which
 # values came from where, so nothing is decided silently.
 export CCX_DAMAGE_AUTOSPC=${CCX_DAMAGE_AUTOSPC:-1.e-3}
+# Exclude AUTOSPC-masked nodes from the FORCE residual too, not only from
+# the displacement norm.  Measured 2026-09-25 (forum f53fa30): without it
+# the deck stops rc=201 at theta 0.2550, 2.16 percent of peak, on node
+# 1246 - no bulk element left, held by cohesive facets only - whose
+# residual (0.9 percent of qam against 0.5) cannot be balanced.  UNSYM
+# stops at the same point, viscosity 1e-3 stops earlier (62 percent of
+# peak), so it is the criterion and not the mechanics.  With it the run
+# reaches [FRACTURE COMPLETE] at theta 0.258, 1.59 percent of peak, and
+# F(theta) agrees with the stopped run to 0.5 percent of peak.  The price,
+# printed on every increment: 8 accepted states carry an excluded residual
+# above the tolerance, all on bulk-free nodes, at most 4.4e-3 N = 0.006
+# percent of the grip force.
+export CCX_DAMAGE_AUTOSPC_FORCE=${CCX_DAMAGE_AUTOSPC_FORCE:-1}
 export CCX_DAMAGE_DEADALL=${CCX_DAMAGE_DEADALL:-1.e-2}
 export CCX_DAMAGE_DELETE_MAT=${CCX_DAMAGE_DELETE_MAT:-ALL}
 export CCX_DAMAGE_LINESEARCH=${CCX_DAMAGE_LINESEARCH:-ADAPTIVE}
