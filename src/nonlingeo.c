@@ -226,6 +226,60 @@ ITG ccx_fracture_sep=0,ccx_fracture_end=0;
 double ccx_visc_c=0.,*ccx_visc_m=NULL,ccx_visc_dtlast=0.;
 static double ccx_visc_ediss=0.,ccx_visc_wext=0.,ccx_visc_ratio_rep=0.;
 
+/* CCX_DAMAGE_GRADUAL_DELETE=N: gradual release of the forces of a deleted
+   batch (Liu & Liu 2018, the element-deletion "force release" of node-release
+   crack growth).  An instant deletion hands the whole force the batch carried
+   to a same-load Newton solve at once; where the node left behind hangs on one
+   softened tetrahedron and dead facets, that solve has no nearby solution and
+   the run stops (s6 node 1997, s7 node 866, forum 2026-09-26).
+
+   The same-load pass after a deletion starts from the converged state, so its
+   first residual is exactly the force the removed elements exerted on what
+   remains.  calcresidual.c stores it (ccx_gd_rel, per node and dof) and adds
+   beta*rel to every later residual: at beta=1 the converged state is in
+   equilibrium on the new topology, and beta is walked to 0 in steps of 1/N,
+   each a converged same-load solve.  A step that fails is retried from the
+   last converged beta with half the step, up to GD_MAX_HALVINGS times;
+   beyond that the stock rollback runs unchanged.  Material history does not
+   depend on the walk: every pass restarts the increment from xstateini, so
+   only the end point beta=0 enters the answer, which is the instant
+   deletion's.  The walk is a continuation path for Newton and nothing else.
+   N=0 (default) = off, calcresidual sees NULL. */
+double ccx_gd_beta=0.,*ccx_gd_rel=NULL;
+ITG ccx_gd_capture=0;
+#define GD_MAX_HALVINGS 6
+static ITG gd_n=0,gd_active=0,gd_halv=0,gd_pass=0,gd_first=0,gd_bisect=0;
+static ITG gd_nbatch=0,gd_nbisect=0,gd_nexhaust=0,gd_npass=0;
+static double gd_dbeta=0.,gd_beta_ok=1.,*gd_vsave=NULL;
+
+/* Arm the walk for the batch just marked.  vold is the converged state the
+   same-load pass restarts from, and the first step is taken at once: beta=1
+   would be a pass with nothing to solve. */
+static void gd_arm(const double *vold,ITG n,ITG iinc,double time)
+{
+  ITG i;
+  if(gd_n<=0) return;
+  if(ccx_gd_rel==NULL) NNEW(ccx_gd_rel,double,n);
+  if(gd_vsave==NULL) NNEW(gd_vsave,double,n);
+  for(i=0;i<n;i++){ccx_gd_rel[i]=0.;gd_vsave[i]=vold[i];}
+  gd_dbeta=1./(double)gd_n;
+  gd_beta_ok=1.;
+  ccx_gd_beta=1.-gd_dbeta;
+  if(ccx_gd_beta<1.e-9) ccx_gd_beta=0.;
+  ccx_gd_capture=1;
+  gd_active=1;gd_halv=0;gd_pass=0;gd_first=1;
+  gd_nbatch++;
+  printf("[DAMAGE GRADUAL] inc=%" ITGFORMAT " time=%.12e batch released "
+         "over %" ITGFORMAT " same-load steps, beta=%.6f\n",
+         iinc,time,gd_n,ccx_gd_beta);
+  fflush(stdout);
+}
+
+static void gd_reset(void)
+{
+  gd_active=0;ccx_gd_beta=0.;ccx_gd_capture=0;gd_bisect=0;
+}
+
 #define DAMCAT_PLAST   1   /* bulk: accumulated plastic strain this increment */
 #define DAMCAT_DINIT   2   /* bulk: damage initiated (dam >= 1)               */
 #define DAMCAT_DGROW   4   /* bulk: damage grew from the committed baseline   */
@@ -4120,6 +4174,20 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                  ITGFORMAT " nodes, volume %.6e\n",ccx_visc_c,nv,vtot);
         }else{
           ccx_visc_c=0.;
+        }
+      }
+      {
+        const char *gde=ccxopt_getenv("CCX_DAMAGE_GRADUAL_DELETE");
+        gd_reset();
+        gd_n=0;gd_nbatch=0;gd_nbisect=0;gd_nexhaust=0;gd_npass=0;
+        if(gde!=NULL) gd_n=atoi(gde);
+        if(gd_n<0) gd_n=0;
+        if(gd_n>1000) gd_n=1000;
+        if(gd_n>0){
+          printf("[DAMAGE GRADUAL] the forces of a deleted batch are released "
+                 "over %" ITGFORMAT " same-load steps (beta 1 -> 0), a failed "
+                 "step is halved up to %d times before the stock rollback\n",
+                 gd_n,GD_MAX_HALVINGS);
         }
       }
       damage_stab_env=ccxopt_getenv("CCX_DAMAGE_STABILISE");
@@ -13358,6 +13426,51 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
       SFREE(islavactdof);
     }
 
+    if((icutb==0)&&(idamagereeq==1)&&(gd_active==1)){
+
+      /* CCX_DAMAGE_GRADUAL_DELETE: the pass at beta has converged.  Keep it
+         as the restart point of a failed next step, then take that step at
+         the same load.  beta=0 falls through to the ordinary closure below:
+         damage update, further terminal candidates, commit. */
+      isiz=mt**nk;cpypardou(gd_vsave,vold,&isiz,&num_cpus);
+      gd_beta_ok=ccx_gd_beta;
+      gd_pass++;gd_npass++;
+      if(gd_first==1){
+        double rmax=0.,rsum=0.;
+        ITG rnode=0,rk,rj;
+        for(rk=0;rk<*nk;rk++){
+          double r2=0.;
+          for(rj=1;rj<4;rj++) r2+=ccx_gd_rel[mt*rk+rj]*ccx_gd_rel[mt*rk+rj];
+          rsum+=r2;
+          if(r2>rmax){rmax=r2;rnode=rk+1;}
+        }
+        printf("[DAMAGE GRADUAL] inc=%" ITGFORMAT " released force: norm "
+               "%.6e, largest %.6e at node %" ITGFORMAT "\n",
+               iinc,sqrt(rsum),sqrt(rmax),rnode);
+        gd_first=0;
+      }
+      if(ccx_gd_beta<=0.){
+        printf("[DAMAGE GRADUAL] inc=%" ITGFORMAT " batch fully released "
+               "after %" ITGFORMAT " converged step(s)\n",iinc,gd_pass);
+        fflush(stdout);
+        gd_reset();
+      }else{
+        if(gd_halv>0){gd_dbeta*=2.;gd_halv--;}
+        ccx_gd_beta=gd_beta_ok-gd_dbeta;
+        if(ccx_gd_beta<1.e-9) ccx_gd_beta=0.;
+        if(gd_pass>=16*gd_n+4*GD_MAX_HALVINGS) ccx_gd_beta=0.;
+        printf("[DAMAGE GRADUAL] inc=%" ITGFORMAT " step %" ITGFORMAT
+               " converged at beta=%.6f -> beta=%.6f\n",
+               iinc,gd_pass,gd_beta_ok,ccx_gd_beta);
+        fflush(stdout);
+        theta=thetadamage;
+        dtheta=dthetadamage;
+        dthetaref=dthetarefdamage;
+        idiscon=1;
+        continue;
+      }
+    }
+
     if((icutb==0)&&(idamagereeq==1)){
 
       /* The same-load Newton solve on the current eroded topology has
@@ -13448,6 +13561,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         if(damage_de13_new>0){
           damage_de13_transaction=1;
           idamage+=damage_de13_new;
+          gd_arm(vold,mt**nk,iinc,theta**tper);
           printf("[DAMAGE DE1.3 EXTEND] inc=%" ITGFORMAT
                  " pass=%" ITGFORMAT " time=%.12e new_terminal=%"
                  ITGFORMAT " batch_Dmax=%.6e batch_Dvis=%.6e\n",
@@ -14890,6 +15004,7 @@ damage_controller_done:
         damage_de13_transaction=1;
         damage_soft_reeq=0;
         damage_active_pass=1;
+        gd_arm(vold,mt**nk,iinc,theta**tper);
         damage_reeq_uam_ref[0]=uam[0];
         damage_reeq_uam_ref[1]=uam[1];
         /* J-09: keep the reference from collapsing with the step.  The peak
@@ -15404,6 +15519,22 @@ damage_controller_done:
 
     if(icutb!=0){
 
+      gd_bisect=0;
+      if((gd_active==1)&&(idamagereeq==1)){
+        if(gd_halv<GD_MAX_HALVINGS){
+          gd_bisect=1;
+        }else{
+          printf("[DAMAGE GRADUAL] inc=%" ITGFORMAT " step from beta=%.6f "
+                 "failed after %d halvings -> stock rollback\n",
+                 iinc,gd_beta_ok,GD_MAX_HALVINGS);
+          fflush(stdout);
+          gd_nexhaust++;
+          gd_reset();
+        }
+      }else if(gd_active==1){
+        gd_reset();
+      }
+
       if(damage_rescue_bt_on==1){
         printf("[DAMAGE RESCUE] STANDARD cutback rollback executed: vold, "
                "xbounact, f, sti, eme, ener, xstate, dam, damvisc and ipkon "
@@ -15420,7 +15551,7 @@ damage_controller_done:
          below remains unchanged. */
 
       if((ilocalsubstep==0)&&(*ndmat_>0)&&(*iexpl<=1)&&
-         (*nmethod!=4)&&(*idrct==0)&&
+         (*nmethod!=4)&&(*idrct==0)&&(gd_bisect==0)&&
          (theta_goal>theta+1.e-12)){
         ilocalsubstep=1;
         if(damage_event_cut==1){
@@ -15495,6 +15626,29 @@ damage_controller_done:
 	  }    
 	} 
       }
+      /* CCX_DAMAGE_GRADUAL_DELETE: the failed attempt was a step of the
+         release walk.  Keep the tentative topology and damage, restart from
+         the last converged beta with half the step, at the same load. */
+      if(gd_bisect==1){
+        isiz=mt**nk;cpypardou(vold,gd_vsave,&isiz,&num_cpus);
+        gd_dbeta*=0.5;
+        gd_halv++;gd_nbisect++;
+        ccx_gd_beta=gd_beta_ok-gd_dbeta;
+        if(ccx_gd_beta<1.e-9) ccx_gd_beta=0.;
+        printf("[DAMAGE GRADUAL] inc=%" ITGFORMAT " step failed -> retry "
+               "from beta=%.6f to beta=%.6f (halving %" ITGFORMAT ")\n",
+               iinc,gd_beta_ok,ccx_gd_beta,gd_halv);
+        fflush(stdout);
+        gd_bisect=0;
+        theta=thetadamage;
+        dtheta=dthetadamage;
+        dthetaref=dthetarefdamage;
+        idiscon=1;
+        icutb=0;
+        damage_event_cut=0;
+        continue;
+      }
+
       /* if the failed attempt was a damage re-equilibration,
          restore the topology and damage state at the beginning
          of the physical increment before retrying with the smaller step */
@@ -16292,6 +16446,16 @@ damage_controller_done:
   if(*nener==1)SFREE(enerini);
   if(*nstate_!=0){SFREE(xstateini);}
 
+  if(gd_n>0){
+    printf("[DAMAGE GRADUAL] step total: %" ITGFORMAT " batch(es), %"
+           ITGFORMAT " converged step(s), %" ITGFORMAT " halving(s), %"
+           ITGFORMAT " exhausted\n",gd_nbatch,gd_npass,gd_nbisect,
+           gd_nexhaust);
+    fflush(stdout);
+  }
+  gd_reset();
+  if(ccx_gd_rel!=NULL){SFREE(ccx_gd_rel);ccx_gd_rel=NULL;}
+  if(gd_vsave!=NULL){SFREE(gd_vsave);gd_vsave=NULL;}
   if(ccx_visc_m!=NULL){
     printf("[DAMAGE VISCOUS DAMPING] step total: dissipated %.6e, work "
            "sum(fn.du) %.6e (fraction %.3e)\n",ccx_visc_ediss,

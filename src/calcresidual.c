@@ -30,6 +30,8 @@
 #endif
 
 extern double ccx_visc_c,*ccx_visc_m,ccx_visc_dtlast;
+extern double ccx_gd_beta,*ccx_gd_rel;
+extern ITG ccx_gd_capture;
 
 
 void calcresidual(ITG *nmethod,ITG *neq,double *b,double *fext,double *f,
@@ -71,6 +73,32 @@ void calcresidual(ITG *nmethod,ITG *neq,double *b,double *fext,double *f,
 	}
       }
       ccx_visc_dtlast=*dtime;
+    }
+
+    /* CCX_DAMAGE_GRADUAL_DELETE (nonlingeo.c): the first residual of the
+       same-load pass after a deletion is the force the removed elements
+       exerted on what remains; store it and add beta times it back, so the
+       release is walked from beta=1 (the converged state) to beta=0. */
+
+    if(ccx_gd_rel!=NULL){
+      if(ccx_gd_capture==1){
+	for(k=0;k<*nk;++k){
+	  for(j=1;j<4;++j){
+	    ccx_gd_rel[mt*k+j]=(nactdof[mt*k+j]>0)?
+	      -b[nactdof[mt*k+j]-1]:0.;
+	  }
+	}
+	ccx_gd_capture=0;
+      }
+      if(ccx_gd_beta>0.){
+	for(k=0;k<*nk;++k){
+	  for(j=1;j<4;++j){
+	    if(nactdof[mt*k+j]>0){
+	      b[nactdof[mt*k+j]-1]+=ccx_gd_beta*ccx_gd_rel[mt*k+j];
+	    }
+	  }
+	}
+      }
     }
   }
       

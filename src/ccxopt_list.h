@@ -13,7 +13,7 @@
    Regenerate with tools/mkswitches.py; tools/mkswitches.py --check
    fails if this file is stale. */
 
-#define CCXOPT_KNOWN_COUNT 160
+#define CCXOPT_KNOWN_COUNT 161
 
 static const char *const ccxopt_known_name[CCXOPT_KNOWN_COUNT]={
   "CCX_CONVERGE_EXPLAIN",
@@ -67,6 +67,7 @@ static const char *const ccxopt_known_name[CCXOPT_KNOWN_COUNT]={
   "CCX_DAMAGE_FREE_PROBE",
   "CCX_DAMAGE_GMIN",
   "CCX_DAMAGE_GMIN_TANGENT",
+  "CCX_DAMAGE_GRADUAL_DELETE",
   "CCX_DAMAGE_LINESEARCH",
   "CCX_DAMAGE_LS_LEGACY",
   "CCX_DAMAGE_LS_MIN",
@@ -230,6 +231,7 @@ static const char ccxopt_known_fortran[CCXOPT_KNOWN_COUNT]={
   0,
   1,
   1,
+  0,
   0,
   0,
   0,
