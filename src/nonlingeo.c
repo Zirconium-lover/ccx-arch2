@@ -1524,6 +1524,156 @@ static ITG damage_de13_mark_deadall(const double *dam,const double *visc,
  *
  * NOT covered: s5, whose stalled hydride node hangs on a SOUND matrix, and s4,
  * a whole plate detached behind dead facets.  Default OFF. */
+/* CCX_DAMAGE_HINGE_CLUSTER: debris of several elements.
+ *
+ * Measured on seed 5 at Fn=0 (all plates tangential; forum 2026-09-27): the
+ * run stops rc=201 at theta 0.4921 with the force at 90 percent of peak.
+ * Tetrahedra 38873, 38988, 39020 and 39243 of one plate (D 0.70-0.96) share
+ * no node with any other live bulk element; they are held only through the
+ * cohesive facets at 9153, 9154 and 9162.  Every node of the group has a
+ * second live bulk element - its neighbour in the group - so HINGE and its
+ * spikes, which judge one element at a time, take none of them, and damfloat
+ * does not either: it walks through any live facet, whatever its D.  The
+ * same-load re-equilibration then loops (inc 430-442, three facets marked
+ * and rolled back each time) with the correction on 4309, inside the group,
+ * falling 5 percent per iteration until the stock stop.
+ *
+ * The rule generalises HINGE from one element to a group.  Live bulk
+ * elements are joined into groups by shared nodes.  A group with a
+ * constrained dof is grounded and never touched.  A node of the group is
+ * ANCHORED if a live facet (D < Dmin at some point, the HINGE reading) ties
+ * it, at the same facet corner, to a node carrying live bulk of ANOTHER
+ * group; a corner whose partner has no live bulk ties it to a bare node and
+ * anchors nothing.  A group with at most two anchored nodes can turn about
+ * an edge, carries nothing and is deleted whole - or not at all: if it does
+ * not fit into what is left of the batch it stays and is reported, so a
+ * detached plate (hundreds of elements) never goes this way.
+ *
+ * Groups that stay with three to five anchors and at most 64 elements are
+ * reported too (the three smallest per pass), so that a stall this rule does
+ * not take can still be read off the log.  Returns the number of elements
+ * marked. */
+static ITG damage_mark_cluster(ITG *ipkon,const char *lakon,const ITG *kon,
+                               ITG ne,ITG ne0,ITG nk,const ITG *nactdof,
+                               ITG mt,const double *xstate,ITG nstate,
+                               ITG mi0,double dmin,ITG batchmax)
+{
+  ITG i,j,k,n,a,b,nope,nip,nnew=0,ngrp=0,nfree=0,ntaken=0,nrep=0,
+    *par=NULL,*hasb=NULL,*grp=NULL,*gsize=NULL,*gfix=NULL,*ganch=NULL,
+    *anch=NULL,*done=NULL;
+  double d,*gdmin=NULL;
+
+  if((xstate==NULL)||(nstate<2)||(batchmax<=0)||(nk<=0)) return 0;
+  NNEW(par,ITG,nk);NNEW(hasb,ITG,nk);NNEW(anch,ITG,nk);
+  for(n=0;n<nk;n++) par[n]=n;
+#define CLU_FIND(x) {while(par[x]!=x){par[x]=par[par[x]];x=par[x];}}
+  for(i=0;i<ne0;i++){
+    if(ipkon[i]<0) continue;
+    if(strcmp1(&lakon[8*i],"C3D4")!=0) continue;
+    a=kon[ipkon[i]]-1;
+    if((a<0)||(a>=nk)) continue;
+    hasb[a]=1;
+    CLU_FIND(a);
+    for(j=1;j<4;j++){
+      b=kon[ipkon[i]+j]-1;
+      if((b<0)||(b>=nk)) continue;
+      hasb[b]=1;
+      CLU_FIND(b);
+      if(a!=b){par[b]=a;}
+    }
+  }
+  /* group index per root */
+  NNEW(grp,ITG,nk);
+  for(n=0;n<nk;n++) grp[n]=-1;
+  for(n=0;n<nk;n++){
+    if(!hasb[n]) continue;
+    a=n; CLU_FIND(a);
+    if(grp[a]<0) grp[a]=ngrp++;
+    grp[n]=grp[a];
+  }
+  NNEW(gsize,ITG,ngrp);NNEW(gfix,ITG,ngrp);NNEW(ganch,ITG,ngrp);
+  NNEW(gdmin,double,ngrp);NNEW(done,ITG,ngrp);
+  for(k=0;k<ngrp;k++) gdmin[k]=1.;
+  for(n=0;n<nk;n++){
+    if(grp[n]<0) continue;
+    for(k=1;k<4;k++) if(nactdof[mt*n+k]<=0) gfix[grp[n]]=1;
+  }
+  for(i=0;i<ne0;i++){
+    if(ipkon[i]<0) continue;
+    if(strcmp1(&lakon[8*i],"C3D4")==0) gsize[grp[kon[ipkon[i]]-1]]++;
+  }
+  /* anchors: live facet corners joining two different groups */
+  for(i=0;(i<ne)&&(i<ne0);i++){
+    if(ipkon[i]<0) continue;
+    if(lakon[8*i]!='U') continue;
+    nope=(ITG)((unsigned char)lakon[8*i+7]);
+    if(nope!=6) continue;
+    nip=(mi0<3)?mi0:3;
+    d=1.;
+    for(j=0;j<nip;j++){
+      double dj=xstate[1+nstate*(j+mi0*i)];
+      if(dj<d) d=dj;
+    }
+    if(d>=dmin) continue;
+    for(j=0;j<3;j++){
+      a=kon[ipkon[i]+j]-1; b=kon[ipkon[i]+j+3]-1;
+      if((a<0)||(a>=nk)||(b<0)||(b>=nk)) continue;
+      if((grp[a]<0)||(grp[b]<0)||(grp[a]==grp[b])) continue;
+      if(!anch[a]){anch[a]=1;ganch[grp[a]]++;}
+      if(!anch[b]){anch[b]=1;ganch[grp[b]]++;}
+      if(d<gdmin[grp[a]]) gdmin[grp[a]]=d;
+      if(d<gdmin[grp[b]]) gdmin[grp[b]]=d;
+    }
+  }
+  for(k=0;k<ngrp;k++){
+    if(gfix[k]) continue;
+    nfree++;
+    if(ganch[k]>2) continue;
+    if(nnew+gsize[k]>batchmax){
+      printf("[DAMAGE HINGE]   cluster of %" ITGFORMAT " element(s), %"
+             ITGFORMAT " anchored node(s): left, does not fit the batch (%"
+             ITGFORMAT " left)\n",gsize[k],ganch[k],batchmax-nnew);
+      continue;
+    }
+    done[k]=1; ntaken++;
+    printf("[DAMAGE HINGE]   cluster of %" ITGFORMAT " element(s) held by %"
+           ITGFORMAT " anchored node(s), weakest live facet D=%.4f:",
+           gsize[k],ganch[k],gdmin[k]);
+    for(i=0;i<ne0;i++){
+      if(ipkon[i]<0) continue;
+      if(strcmp1(&lakon[8*i],"C3D4")!=0) continue;
+      if(grp[kon[ipkon[i]]-1]!=k) continue;
+      printf(" %" ITGFORMAT,i+1);
+      ipkon[i]=-ipkon[i]-2;
+      nnew++;
+    }
+    printf("\n");
+  }
+  /* report the smallest groups that stay with 3-5 anchors */
+  for(j=0;j<3;j++){
+    ITG best=-1;
+    for(k=0;k<ngrp;k++){
+      if(gfix[k]||done[k]||(ganch[k]<3)||(ganch[k]>5)||(gsize[k]>64))
+        continue;
+      if((best<0)||(gsize[k]<gsize[best])) best=k;
+    }
+    if(best<0) break;
+    done[best]=2; nrep++;
+    printf("[DAMAGE HINGE]   cluster of %" ITGFORMAT " element(s) stays: %"
+           ITGFORMAT " anchored nodes, weakest live facet D=%.4f\n",
+           gsize[best],ganch[best],gdmin[best]);
+  }
+  if(ntaken>0){
+    printf("[DAMAGE HINGE]   clusters: %" ITGFORMAT " groups, %" ITGFORMAT
+           " without a constrained dof, %" ITGFORMAT " deleted\n",
+           ngrp,nfree,ntaken);
+  }
+#undef CLU_FIND
+  SFREE(par);SFREE(hasb);SFREE(anch);SFREE(grp);SFREE(gsize);SFREE(gfix);
+  SFREE(ganch);SFREE(gdmin);SFREE(done);
+  return nnew;
+}
+
 /* CCX_DAMAGE_HINGE=Dmin: a live bulk element hinged on an edge or a vertex.
  *
  * Measured on s5 (D + GRADUAL_DELETE=8 + DEADSOLE_LAW + BARE_MASK, forum
@@ -2459,7 +2609,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
   double damage_qam_floor=0.;
   converge damage_cvg;
   ITG damage_deadsole_law=0,damage_bare_rep_mask=0,damage_hinge_total=0,
-    damage_hinge_pendant=0;
+    damage_hinge_pendant=0,damage_hinge_cluster=0;
   double damage_hinge_d=0.;
   double damage_bare_d=0.;
   double damage_stab_alpha=0.,damage_deadsole_g=0.,damage_deadall_g=0.,
@@ -4387,6 +4537,17 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         if(damage_hinge_pendant){
           printf("[DAMAGE HINGE] spikes too: a live bulk element whose one "
                  "free node is held only by it and by dead facets%s",
+                 (damage_hinge_d>0.)?"\n":
+                 " - but CCX_DAMAGE_HINGE is not set, so it never runs\n");
+        }
+      }
+      if(ccxopt_getenv("CCX_DAMAGE_HINGE_CLUSTER")!=NULL){
+        damage_hinge_cluster=(strcmp(ccxopt_getenv("CCX_DAMAGE_HINGE_CLUSTER"),
+                                     "0")==0)?0:1;
+        if(damage_hinge_cluster){
+          printf("[DAMAGE HINGE] clusters too: a group of live bulk elements "
+                 "sharing no node with the rest, held by at most two nodes "
+                 "through live facets%s",
                  (damage_hinge_d>0.)?"\n":
                  " - but CCX_DAMAGE_HINGE is not set, so it never runs\n");
         }
@@ -13828,6 +13989,20 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
             fflush(stdout);
           }
         }
+        if((damage_hinge_d>0.)&&damage_hinge_cluster&&
+           (damage_de13_new<DAMAGE_DE13_BATCH_MAX)){
+          ITG ncl=damage_mark_cluster(ipkon,lakon,kon,*ne,ne0,*nk,nactdof,mt,
+              xstate,*nstate_,mi[0],damage_hinge_d,
+              DAMAGE_DE13_BATCH_MAX-damage_de13_new);
+          if(ncl>0){
+            damage_de13_new+=ncl;
+            damage_hinge_total+=ncl;
+            printf("[DAMAGE HINGE] inc=%" ITGFORMAT " time=%.12e "
+                   "cluster elements deleted=%" ITGFORMAT " total=%" ITGFORMAT "\n",
+                   iinc,theta**tper,ncl,damage_hinge_total);
+            fflush(stdout);
+          }
+        }
         if((damage_hinge_d>0.)&&(damage_de13_new<DAMAGE_DE13_BATCH_MAX)){
           ITG nhg=damage_mark_hinge(ipkon,lakon,kon,*ne,ne0,*nk,nactdof,mt,
               xstate,*nstate_,mi[0],damage_hinge_d,
@@ -15281,6 +15456,20 @@ damage_controller_done:
           printf("[DAMAGE DEADSOLE] inc=%" ITGFORMAT " time=%.12e "
                  "deleted=%" ITGFORMAT " total=%" ITGFORMAT "\n",
                  iinc,theta**tper,nds,damage_deadsole_total);
+          fflush(stdout);
+        }
+      }
+      if((damage_hinge_d>0.)&&damage_hinge_cluster&&
+         (damage_de13_new<DAMAGE_DE13_BATCH_MAX)){
+        ITG ncl=damage_mark_cluster(ipkon,lakon,kon,*ne,ne0,*nk,nactdof,mt,
+            xstate,*nstate_,mi[0],damage_hinge_d,
+            DAMAGE_DE13_BATCH_MAX-damage_de13_new);
+        if(ncl>0){
+          damage_de13_new+=ncl;
+          damage_hinge_total+=ncl;
+          printf("[DAMAGE HINGE] inc=%" ITGFORMAT " time=%.12e "
+                 "cluster elements deleted=%" ITGFORMAT " total=%" ITGFORMAT "\n",
+                 iinc,theta**tper,ncl,damage_hinge_total);
           fflush(stdout);
         }
       }
