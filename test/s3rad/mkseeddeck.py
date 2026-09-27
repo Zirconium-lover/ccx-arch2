@@ -36,6 +36,21 @@ is how this generator is checked against s3rad.
 
     ./mkseeddeck.py --seed 4 -o s4rad.inp
     ./mkseeddeck.py --centres-from m12_s3rad_gc24_w.inp -o s3regen.inp
+
+Mixed orientation (--fn)
+------------------------
+--fn P makes P percent of the plates RADIAL (axis along x, the load, as in
+every deck above) and the rest TANGENTIAL (axis along y: the plate lies in
+the x-z plane, parallel to the load).  round(P/100*12) plates are radial.
+The centres are placed so that EVERY pair keeps the 0.1 clearance in
+EVERY combination of the two orientations, so one seed gives one set of
+centres for the whole series and only the orientation changes between
+its members.  Which plates are radial is a fixed random order per seed,
+taken from the front, so the radial sets are nested: the plates radial at
+P=40 are radial at P=60 too.  Without --fn nothing changes - the decks are
+byte-identical to what this script wrote before the option existed.
+
+    for p in 0 20 40 60 80 100; do ./mkseeddeck.py --seed 5 --fn $p -o fn$p.inp; done
 """
 
 import argparse
@@ -66,6 +81,84 @@ def pill_gap(a, b):
     rho = np.hypot(a[1] - b[1], a[2] - b[2])
     core = RAD - RIM
     return np.hypot(dx, max(rho - 2. * core, 0.)) - THK
+
+
+AX_X = np.array([1., 0., 0.])
+AX_Y = np.array([0., 1., 0.])
+
+
+def _basis(a):
+    t = np.array([0., 0., 1.]) if abs(a[2]) < 0.9 else np.array([1., 0., 0.])
+    u = np.cross(a, t)
+    u /= np.linalg.norm(u)
+    return u, np.cross(a, u)
+
+
+def _disk_pts(c, a, n_r=8, n_t=48):
+    """Points on the core disc of a pill (centre c, axis a)."""
+    u, v = _basis(a)
+    core = RAD - RIM
+    P = [c]
+    th = np.linspace(0., 2. * np.pi, n_t, endpoint=False)
+    for r in np.linspace(core / n_r, core, n_r):
+        P += list(c + r * (np.outer(np.cos(th), u) + np.outer(np.sin(th), v)))
+    return np.array(P)
+
+
+def _pt_disk(P, c, a):
+    """Exact distance from points P to the core disc (c, a)."""
+    d = P - c
+    h = d @ a
+    rho = np.linalg.norm(d - np.outer(h, a), axis=1)
+    return np.hypot(h, np.maximum(rho - (RAD - RIM), 0.))
+
+
+def pill_gap_axes(c1, a1, c2, a2):
+    """Clearance between two pills of any axes: the pill is its core disc
+    swollen by RIM, so the gap is the disc-to-disc distance less THK.  The
+    distance is sampled on one disc (resolution ~0.005) and taken exactly
+    to the other, both ways; for coaxial x pills it reproduces pill_gap()
+    to three figures on the five seed decks."""
+    return min(_pt_disk(_disk_pts(c2, a2), c1, a1).min(),
+               _pt_disk(_disk_pts(c1, a1), c2, a2).min()) - THK
+
+
+def pill_gap_any(a, b):
+    """Smallest clearance over all four radial/tangential combinations."""
+    if np.linalg.norm(a - b) > 2. * RAD + CLEAR + 1e-9:
+        return 1.
+    return min(pill_gap_axes(a, p, b, q) for p in (AX_X, AX_Y)
+               for q in (AX_X, AX_Y))
+
+
+def place_any(seed):
+    """As place(), but the clearance holds for any orientation of any
+    plate (--fn).  A different stream from place(): the two are not
+    meant to give the same centres."""
+    rng = np.random.default_rng(seed)
+    lo = np.array([BOX_X[0], BOX_Y[0], BOX_Z[0]])
+    hi = np.array([BOX_X[1], BOX_Y[1], BOX_Z[1]])
+    for attempt in range(1000):
+        c = []
+        tries = 0
+        while len(c) < NPLATE and tries < 100000:
+            tries += 1
+            p = lo + (hi - lo) * rng.random(3)
+            if all(pill_gap_any(p, q) >= CLEAR for q in c):
+                c.append(p)
+        if len(c) == NPLATE:
+            return np.round(np.array(c), 4)
+    sys.exit('could not place %d plates' % NPLATE)
+
+
+def axes_for(seed, fn):
+    """Radial plates first in a fixed random order: nested across fn."""
+    order = np.random.default_rng(10000 + seed).permutation(NPLATE)
+    nrad = int(round(fn / 100. * NPLATE))
+    ax = [AX_Y.copy() for _ in range(NPLATE)]
+    for k in order[:nrad]:
+        ax[k] = AX_X.copy()
+    return ax, nrad
 
 
 def place(seed):
@@ -104,7 +197,8 @@ def centres_from(deck):
                      for k in range(NPLATE)])
 
 
-def mesh(centres, smin, smax, dmax, sin, algo3d, mseed, verbose):
+def mesh(centres, smin, smax, dmax, sin, algo3d, mseed, verbose,
+         axes=None):
     import gmsh
     gmsh.initialize()
     gmsh.option.setNumber('General.Terminal', 1 if verbose else 0)
@@ -113,9 +207,17 @@ def mesh(centres, smin, smax, dmax, sin, algo3d, mseed, verbose):
     box = occ.addBox(0, 0, 0, LX, LY, LZ)
     pills = []
     core = RAD - RIM
-    for c in centres:
-        cyl = occ.addCylinder(c[0] - RIM, c[1], c[2], THK, 0, 0, core)
-        tor = occ.addTorus(c[0], c[1], c[2], core, RIM, zAxis=[1, 0, 0])
+    for k, c in enumerate(centres):
+        if axes is None:
+            cyl = occ.addCylinder(c[0] - RIM, c[1], c[2], THK, 0, 0, core)
+            tor = occ.addTorus(c[0], c[1], c[2], core, RIM, zAxis=[1, 0, 0])
+        else:
+            a = axes[k]
+            b = c - RIM * a
+            cyl = occ.addCylinder(b[0], b[1], b[2], THK * a[0], THK * a[1],
+                                  THK * a[2], core)
+            tor = occ.addTorus(c[0], c[1], c[2], core, RIM,
+                               zAxis=list(a))
         out, _ = occ.fuse([(3, cyl)], [(3, tor)])
         pills.append(out[0][1])
     out, omap = occ.fragment([(3, box)], [(3, p) for p in pills])
@@ -201,7 +303,7 @@ def orient_tet(t, X):
     return list(t)
 
 
-def build(centres, X, mat, hyd, ptri):
+def build(centres, X, mat, hyd, ptri, axes=None):
     # renumber: nodes 1..N in gmsh order, duplicates appended
     old = sorted(X)
     nid = {o: i + 1 for i, o in enumerate(old)}
@@ -209,14 +311,17 @@ def build(centres, X, mat, hyd, ptri):
     nnext = len(old) + 1
     elems = []          # (id, type, nodes)
     eid = 1
-    matrix, plate = [], []
+    matrix, plate, pplate = [], [], []
     for t in mat:
         elems.append((eid, 'C3D4', orient_tet([nid[i] for i in t], co)))
         matrix.append(eid)
         eid += 1
     facets = []
     seed_pick = int(np.argmin(centres[:, 0]))
-    seed_target = centres[seed_pick] - np.array([RIM, 0., 0.])
+    # the pill's -x extreme: the flat face of a radial plate (RIM from the
+    # centre), the rim of a tangential one (RAD)
+    seed_ext = RIM if (axes is None or axes[seed_pick][0] > 0.5) else RAD
+    seed_target = centres[seed_pick] - np.array([seed_ext, 0., 0.])
     seed_best = (1e9, None)
     for k in range(NPLATE):
         surf = set(nid[i] for i in ptri[k].ravel())
@@ -231,6 +336,7 @@ def build(centres, X, mat, hyd, ptri):
             nodes = [dup.get(n, n) for n in nodes]
             elems.append((eid, 'C3D4', orient_tet(nodes, co)))
             plate.append(eid)
+            pplate.append(k)
             eid += 1
         for tri in ptri[k]:
             m = [nid[i] for i in tri]
@@ -239,15 +345,18 @@ def build(centres, X, mat, hyd, ptri):
             cen = (a + b + c) / 3.
             # inward direction of the pill at cen: towards the core disc
             d = cen - pc
-            rho = np.hypot(d[1], d[2])
+            ax = AX_X if axes is None else axes[k]
+            h = d @ ax
+            radv = d - h * ax
+            rho = np.linalg.norm(radv)
             core = RAD - RIM
             if rho > core:
-                q = pc + np.array([0., d[1], d[2]]) * core / rho
+                q = pc + radv * core / rho
             else:
-                q = pc + np.array([0., d[1], d[2]])
+                q = pc + radv
             inward = q - cen
             if np.linalg.norm(inward) < 1e-12:
-                inward = -np.array([np.sign(d[0]), 0., 0.])
+                inward = -np.sign(h) * ax
             if np.dot(nrm, inward) < 0.:
                 m = [m[0], m[2], m[1]]
             facets.append([eid, m + [dup[n] for n in m], k, cen])
@@ -256,11 +365,11 @@ def build(centres, X, mat, hyd, ptri):
                 if dist < seed_best[0]:
                     seed_best = (dist, eid)
             eid += 1
-    return co, elems, matrix, plate, facets, seed_best[1]
+    return co, elems, matrix, plate, facets, seed_best[1], pplate
 
 
 def write(out, centres, co, elems, matrix, plate, facets, seed, src_tail,
-          header):
+          header, axes=None, pplate=None):
     def rows(ids, per=16):
         return '\n'.join(', '.join(str(i) for i in ids[j:j + per])
                          for j in range(0, len(ids), per))
@@ -272,7 +381,13 @@ def write(out, centres, co, elems, matrix, plate, facets, seed, src_tail,
     L.append('** Interface facets: %d' % len(facets))
     L.append('** Plate centres (x y z):')
     for k, c in enumerate(centres):
-        L.append('**   %2d  %.4f %.4f %.4f' % (k, c[0], c[1], c[2]))
+        if axes is None:
+            L.append('**   %2d  %.4f %.4f %.4f' % (k, c[0], c[1], c[2]))
+        else:
+            L.append('**   %2d  %.4f %.4f %.4f  %s' % (
+                k, c[0], c[1], c[2],
+                'radial (axis x)' if axes[k][0] > 0.5 else
+                'tangential (axis y)'))
     L.append('*Node')
     for n in sorted(co):
         x = co[n]
@@ -289,6 +404,17 @@ def write(out, centres, co, elems, matrix, plate, facets, seed, src_tail,
     L.append(rows(matrix))
     L.append('*Elset, Elset=PLATETANGENTIAL')
     L.append(rows(plate))
+    if axes is not None:
+        # the same elements as PLATETANGENTIAL (which carries the ZrH
+        # section whatever the orientation), split for post-processing
+        rad = [e for e, k in zip(plate, pplate) if axes[k][0] > 0.5]
+        tan = [e for e, k in zip(plate, pplate) if axes[k][0] <= 0.5]
+        if rad:
+            L.append('*Elset, Elset=HYDRIDE_RADIAL')
+            L.append(rows(rad))
+        if tan:
+            L.append('*Elset, Elset=HYDRIDE_TANGENTIAL')
+            L.append(rows(tan))
     L.append('*Elset, Elset=INTERFACE_SEED')
     L.append(str(seed))
     L.append('*Elset, Elset=INTERFACE_REGULAR')
@@ -343,6 +469,10 @@ def main():
     ap.add_argument('--kn', type=float, default=None,
                     help='cohesive normal stiffness Kn [N/mm^3] for both '
                          'user sections; default keeps the deck value')
+    ap.add_argument('--fn', type=float, default=None,
+                    help='percent of plates radial (axis x); the rest are '
+                         'tangential (axis y).  Needs --seed; see the '
+                         'module docstring')
     ap.add_argument('-v', action='store_true')
     a = ap.parse_args()
     if (a.seed is None) == (a.centres_from is None):
@@ -381,7 +511,21 @@ def main():
                    % ('%.6e' % a.kn if a.kn is not None else 'as deck',
                       '%.6e' % a.gmin if a.gmin is not None else 'as deck'))
 
-    if a.seed is not None:
+    axes = None
+    if a.fn is not None:
+        if a.seed is None:
+            sys.exit('--fn needs --seed')
+        if not 0. <= a.fn <= 100.:
+            sys.exit('--fn is a percentage, 0..100')
+        centres = place_any(a.seed)
+        axes, nrad = axes_for(a.seed, a.fn)
+        header = ['Generated by mkseeddeck.py --seed %d --fn %g (numpy '
+                  'default_rng; centres valid for any orientation)'
+                  % (a.seed, a.fn),
+                  'Fn: %d of %d plates radial (axis x, the load), %d '
+                  'tangential (axis y) = %.1f percent radial'
+                  % (nrad, NPLATE, NPLATE - nrad, 100. * nrad / NPLATE)]
+    elif a.seed is not None:
         centres = place(a.seed)
         header = ['Generated by mkseeddeck.py --seed %d (numpy default_rng)'
                   % a.seed]
@@ -395,11 +539,11 @@ def main():
                      SRC_SHA[:16]))
     header.append(kn_note)
     X, mat, hyd, ptri = mesh(centres, a.smin, a.smax, a.dmax, a.sin,
-                             a.algo3d, a.mesh_seed, a.v)
-    co, elems, matrix, plate, facets, seed = build(centres, X, mat, hyd,
-                                                   ptri)
+                             a.algo3d, a.mesh_seed, a.v, axes)
+    co, elems, matrix, plate, facets, seed, pplate = build(
+        centres, X, mat, hyd, ptri, axes)
     write(a.out, centres, co, elems, matrix, plate, facets, seed, src_tail,
-          header)
+          header, axes, pplate)
     print('%s: nodes %d, MATRIX %d, PLATETANGENTIAL %d, UC6 %d, seed facet '
           '%d' % (a.out, len(co), len(matrix), len(plate), len(facets),
                   seed))
