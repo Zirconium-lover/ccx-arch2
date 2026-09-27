@@ -1537,9 +1537,12 @@ static ITG damage_de13_mark_deadall(const double *dam,const double *visc,
  * (it is connected).
  *
  * A node is ANCHORED if it has another live bulk element, a constrained dof,
- * a live facet (D < Dmin at some point), or no facet at all - the last so
- * that a mesh corner owned by one tetrahedron from the start is never read
- * as debris.  An element with at most two anchored nodes, every other node
+ * a live facet (D < Dmin at some point), or had only this one bulk element
+ * from the start of the step - the last so that a mesh corner is never read
+ * as debris.  An earlier version used "no facet at all" as that proxy and so
+ * missed a tip left hanging in the matrix away from any interface: the final
+ * states of the five seeds hold 4-19 such tips each, and 0 nodes owned by
+ * one element from the start.  An element with at most two anchored nodes, every other node
  * being held by it alone and by dead facets, carries nothing through the
  * free nodes and is deleted.  Its free nodes then fall to BARE_MASK / BK4.
  *
@@ -1547,13 +1550,27 @@ static ITG damage_de13_mark_deadall(const double *dam,const double *visc,
 static ITG damage_mark_hinge(ITG *ipkon,const char *lakon,const ITG *kon,
                              ITG ne,ITG ne0,ITG nk,const ITG *nactdof,ITG mt,
                              const double *xstate,ITG nstate,ITG mi0,
-                             double dmin,ITG batchmax)
+                             double dmin,ITG batchmax,ITG pendant)
 {
-  ITG i,j,n,nope,nip,nnew=0,nanch,*nbulk=NULL,*nfac=NULL,*nlivef=NULL;
+  ITG i,j,n,nope,nip,nnew=0,nanch,*nbulk=NULL,*nfac=NULL,*nlivef=NULL,
+    *cand=NULL,ncand=0,*nbulk0=NULL;
   double d;
 
   if((xstate==NULL)||(nstate<2)||(batchmax<=0)||(nk<=0)) return 0;
-  NNEW(nbulk,ITG,nk);NNEW(nfac,ITG,nk);NNEW(nlivef,ITG,nk);
+  NNEW(nbulk,ITG,nk);NNEW(nfac,ITG,nk);NNEW(nlivef,ITG,nk);NNEW(nbulk0,ITG,nk);
+  /* nbulk0 counts every C3D4 at the node, deleted ones included (a deleted
+     element keeps its connectivity at -ipkon-2): the node's support at the
+     start of the step. */
+  for(i=0;i<ne0;i++){
+    ITG ip;
+    if(strcmp1(&lakon[8*i],"C3D4")!=0) continue;
+    ip=(ipkon[i]<0)?-ipkon[i]-2:ipkon[i];
+    if(ip<0) continue;
+    for(j=0;j<4;j++){
+      n=kon[ip+j]-1;
+      if((n>=0)&&(n<nk)) nbulk0[n]++;
+    }
+  }
   for(i=0;i<ne;i++){
     if(ipkon[i]<0) continue;
     if(strcmp1(&lakon[8*i],"C3D4")==0){
@@ -1579,6 +1596,51 @@ static ITG damage_mark_hinge(ITG *ipkon,const char *lakon,const ITG *kon,
       if(d<dmin) nlivef[n]++;
     }
   }
+  /* CCX_DAMAGE_HINGE_PENDANT: a SPIKE - three anchored nodes, the fourth
+     held by this element alone and by dead facets - goes too.  Measured on
+     s4 (full configuration, forum 2026-09-27): elements 20356 and 23736 each
+     carry one such tip, 1943 and 1942; the tip takes a 0.457 correction in
+     one iteration, and the residual at the base (1908, 6703) then stalls at
+     0.13 with 343 iterations estimated.  The final states of the five seeds
+     hold 4-28 spikes each, in 28-35 thousand elements.
+
+     The decision is taken on the counts at the START of the pass and never
+     updated within it: removing one spike can free a node of its neighbour,
+     and updating would let one pass strip a chain along the crack face.  A
+     spike exposed by this pass is judged on the next one, after the
+     equilibrium has been recomputed. */
+  if(pendant){
+    NNEW(cand,ITG,ne0);
+    for(i=0;i<ne0;i++){
+      if(ipkon[i]<0) continue;
+      if(strcmp1(&lakon[8*i],"C3D4")!=0) continue;
+      nanch=0;
+      for(j=0;j<4;j++){
+        ITG k,fixed=0;
+        n=kon[ipkon[i]+j]-1;
+        if((n<0)||(n>=nk)){nanch++;continue;}
+        for(k=1;k<4;k++) if(nactdof[mt*n+k]<=0) fixed=1;
+        if(fixed||(nbulk[n]>=2)||(nlivef[n]>0)||(nbulk0[n]<=1)) nanch++;
+      }
+      if(nanch==3) cand[ncand++]=i;
+    }
+    for(j=0;(j<ncand)&&(nnew<batchmax);j++){
+      ITG m;
+      i=cand[j];
+      printf("[DAMAGE HINGE]   spike %" ITGFORMAT ":",i+1);
+      for(m=0;m<4;m++){
+        n=kon[ipkon[i]+m]-1;
+        if((n>=0)&&(n<nk)) printf(" %" ITGFORMAT "(b%" ITGFORMAT ",f%"
+                                  ITGFORMAT "/%" ITGFORMAT ")",n+1,nbulk[n],
+                                  nlivef[n],nfac[n]);
+      }
+      printf("\n");
+      ipkon[i]=-ipkon[i]-2;
+      nnew++;
+    }
+    SFREE(cand);
+  }
+
   for(i=0;i<ne0;i++){
     if(nnew>=batchmax) break;
     if(ipkon[i]<0) continue;
@@ -1589,7 +1651,7 @@ static ITG damage_mark_hinge(ITG *ipkon,const char *lakon,const ITG *kon,
       n=kon[ipkon[i]+j]-1;
       if((n<0)||(n>=nk)){nanch++;continue;}
       for(k=1;k<4;k++) if(nactdof[mt*n+k]<=0) fixed=1;
-      if(fixed||(nbulk[n]>=2)||(nlivef[n]>0)||(nfac[n]==0)) nanch++;
+      if(fixed||(nbulk[n]>=2)||(nlivef[n]>0)||(nbulk0[n]<=1)) nanch++;
     }
     if(nanch>2) continue;
     printf("[DAMAGE HINGE]   element %" ITGFORMAT " joined to the bulk by %"
@@ -1608,7 +1670,7 @@ static ITG damage_mark_hinge(ITG *ipkon,const char *lakon,const ITG *kon,
     ipkon[i]=-ipkon[i]-2;
     nnew++;
   }
-  SFREE(nbulk);SFREE(nfac);SFREE(nlivef);
+  SFREE(nbulk);SFREE(nfac);SFREE(nlivef);SFREE(nbulk0);
   return nnew;
 }
 
@@ -2396,7 +2458,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
   ITG damage_nl_mode=0;
   double damage_qam_floor=0.;
   converge damage_cvg;
-  ITG damage_deadsole_law=0,damage_bare_rep_mask=0,damage_hinge_total=0;
+  ITG damage_deadsole_law=0,damage_bare_rep_mask=0,damage_hinge_total=0,
+    damage_hinge_pendant=0;
   double damage_hinge_d=0.;
   double damage_bare_d=0.;
   double damage_stab_alpha=0.,damage_deadsole_g=0.,damage_deadall_g=0.,
@@ -4316,6 +4379,16 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           printf("[DAMAGE HINGE] a live bulk element joined to the bulk by at "
                  "most two nodes, its other nodes held only by it and by "
                  "facets at D >= %.3f, is deleted\n",damage_hinge_d);
+        }
+      }
+      if(ccxopt_getenv("CCX_DAMAGE_HINGE_PENDANT")!=NULL){
+        damage_hinge_pendant=(strcmp(ccxopt_getenv("CCX_DAMAGE_HINGE_PENDANT"),
+                                     "0")==0)?0:1;
+        if(damage_hinge_pendant){
+          printf("[DAMAGE HINGE] spikes too: a live bulk element whose one "
+                 "free node is held only by it and by dead facets%s",
+                 (damage_hinge_d>0.)?"\n":
+                 " - but CCX_DAMAGE_HINGE is not set, so it never runs\n");
         }
       }
       /* CCX_DAMAGE_BARE_MASK=Dmin: see damage_bare_mask(). */
@@ -13758,7 +13831,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         if((damage_hinge_d>0.)&&(damage_de13_new<DAMAGE_DE13_BATCH_MAX)){
           ITG nhg=damage_mark_hinge(ipkon,lakon,kon,*ne,ne0,*nk,nactdof,mt,
               xstate,*nstate_,mi[0],damage_hinge_d,
-              DAMAGE_DE13_BATCH_MAX-damage_de13_new);
+              DAMAGE_DE13_BATCH_MAX-damage_de13_new,
+              damage_hinge_pendant);
           if(nhg>0){
             damage_de13_new+=nhg;
             damage_hinge_total+=nhg;
@@ -15213,7 +15287,8 @@ damage_controller_done:
       if((damage_hinge_d>0.)&&(damage_de13_new<DAMAGE_DE13_BATCH_MAX)){
         ITG nhg=damage_mark_hinge(ipkon,lakon,kon,*ne,ne0,*nk,nactdof,mt,
             xstate,*nstate_,mi[0],damage_hinge_d,
-            DAMAGE_DE13_BATCH_MAX-damage_de13_new);
+            DAMAGE_DE13_BATCH_MAX-damage_de13_new,
+            damage_hinge_pendant);
         if(nhg>0){
           damage_de13_new+=nhg;
           damage_hinge_total+=nhg;
