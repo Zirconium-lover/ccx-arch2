@@ -18,6 +18,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <stdlib.h>
+#include <string.h>
 #include "CalculiX.h"
 
 /* [DAMAGE RESCUE] owned by nonlingeo.c.  All three are 0 unless
@@ -30,6 +31,22 @@ extern ITG ccx_rescue_active,ccx_rescue_arm,ccx_rescue_req;
 /* [FRACTURE SEPARATION] owned by nonlingeo.c, 0 unless a same-load solve
    after a deletion rolled back with the grips separated by the damage law */
 extern ITG ccx_fracture_sep,ccx_fracture_end;
+
+/* CCX_DAMAGE_RESCUE_CUTBACKS, read once. */
+static ITG ccx_rescue_cutbacks(void){
+  static ITG on=-1;
+  if(on<0){
+    const char *v=ccxopt_getenv("CCX_DAMAGE_RESCUE_CUTBACKS");
+    on=((v!=NULL)&&(strcmp(v,"0")!=0))?1:0;
+    if(on){
+      printf("[DAMAGE RESCUE] the cutback-count stop is routed like the "
+             "minimum-step stop: rescue ladder first, then the "
+             "completed-fracture exit (CCX_DAMAGE_RESCUE_CUTBACKS)\n");
+      fflush(stdout);
+    }
+  }
+  return on;
+}
 #ifdef SPOOLES 
 #include "spooles.h"
 #endif
@@ -720,6 +737,41 @@ void checkconvergence(double *co,ITG *nk,ITG *kon,ITG *ipkon,char *lakon,
 	  /* check whether too many cutbacks */
 
 	  if(*icutb>ia){
+	  /* CCX_DAMAGE_RESCUE_CUTBACKS: the cutback-count stop, routed like
+	     the minimum-step stop above.  Measured on seed 5 at Fn=40 (forum
+	     2026-09-27): inc 381 stops here at 31 percent of peak after six
+	     attempts, dtheta 5.6e-4 -> 1.8e-5, still 18 times above tmin, so
+	     neither the rescue ladder nor the separation test ever ran - they
+	     are reachable only through the tmin branch.  With the switch the
+	     same two exits are offered first: one rescue attempt while the
+	     ladder is armed, then the completed-fracture exit when the grips
+	     are joined only by broken material.  Otherwise the stock stop
+	     below runs unchanged.  Default OFF. */
+	  if(ccx_rescue_cutbacks()){
+	    if((ccx_rescue_arm==1)&&(ccx_rescue_req==0)){
+	      printf("[DAMAGE RESCUE] WALL inc=%" ITGFORMAT " iter=%"
+	             ITGFORMAT " time=%.12e dtime=%.12e reason=too-many-cutbacks"
+	             " icutb=%" ITGFORMAT " dtheta_next=%.12e tmin=%.12e -> stop"
+	             " DEFERRED, handing the increment to the STANDARD cutback"
+	             " rollback for one rescue attempt\n",
+	             *iinc,*iit,*time,*dtime,*icutb,*dtheta,*tmin);
+	      fflush(stdout);
+	      ccx_rescue_req=1;
+	      return;
+	    }
+	    if(ccx_fracture_sep==1){
+	      printf("\n[FRACTURE COMPLETE] inc=%" ITGFORMAT " time=%.12e\n"
+	             "                    the grips are joined only by material"
+	             " the damage law has broken\n"
+	             "                    (bulk at the deletion threshold, dead"
+	             " facets) and no equilibrium was found\n"
+	             "                    after every rescue level; the step ends"
+	             " on the last committed state\n\n",*iinc,*time);
+	      fflush(stdout);
+	      ccx_fracture_end=1;
+	      return;
+	    }
+	  }
 	    printf("\n *ERROR: too many cutbacks\n");
 	    printf(" best solution and residuals are in the frd file\n\n");
 	    NNEW(fn,double,mt**nk);
@@ -884,6 +936,41 @@ void checkconvergence(double *co,ITG *nk,ITG *kon,ITG *ipkon,char *lakon,
 	  //		    if(*mortar==1) *kscale=100;
 
 	  if(*icutb>ia){
+	  /* CCX_DAMAGE_RESCUE_CUTBACKS: the cutback-count stop, routed like
+	     the minimum-step stop above.  Measured on seed 5 at Fn=40 (forum
+	     2026-09-27): inc 381 stops here at 31 percent of peak after six
+	     attempts, dtheta 5.6e-4 -> 1.8e-5, still 18 times above tmin, so
+	     neither the rescue ladder nor the separation test ever ran - they
+	     are reachable only through the tmin branch.  With the switch the
+	     same two exits are offered first: one rescue attempt while the
+	     ladder is armed, then the completed-fracture exit when the grips
+	     are joined only by broken material.  Otherwise the stock stop
+	     below runs unchanged.  Default OFF. */
+	  if(ccx_rescue_cutbacks()){
+	    if((ccx_rescue_arm==1)&&(ccx_rescue_req==0)){
+	      printf("[DAMAGE RESCUE] WALL inc=%" ITGFORMAT " iter=%"
+	             ITGFORMAT " time=%.12e dtime=%.12e reason=too-many-cutbacks"
+	             " icutb=%" ITGFORMAT " dtheta_next=%.12e tmin=%.12e -> stop"
+	             " DEFERRED, handing the increment to the STANDARD cutback"
+	             " rollback for one rescue attempt\n",
+	             *iinc,*iit,*time,*dtime,*icutb,*dtheta,*tmin);
+	      fflush(stdout);
+	      ccx_rescue_req=1;
+	      return;
+	    }
+	    if(ccx_fracture_sep==1){
+	      printf("\n[FRACTURE COMPLETE] inc=%" ITGFORMAT " time=%.12e\n"
+	             "                    the grips are joined only by material"
+	             " the damage law has broken\n"
+	             "                    (bulk at the deletion threshold, dead"
+	             " facets) and no equilibrium was found\n"
+	             "                    after every rescue level; the step ends"
+	             " on the last committed state\n\n",*iinc,*time);
+	      fflush(stdout);
+	      ccx_fracture_end=1;
+	      return;
+	    }
+	  }
 	    printf("\n *ERROR: too many cutbacks\n");
 	    printf(" best solution and residuals are in the frd file\n\n");
 	    NNEW(fn,double,mt**nk);

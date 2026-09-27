@@ -2382,6 +2382,9 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     damage_ct_used=0,
     damage_ct_p2r=0,damage_ct_p3r=0,damage_ct_nprog=0,
     damage_dl_mode=0,damage_dl_on=0,damage_dl_have=0,damage_dl_used=0,
+    damage_dl_sticky_mode=0,damage_dl_sticky=0,damage_dl_st_n=0,
+    damage_dl_st_rej0=0,damage_dl_st_cau0=0,damage_dl_st_dog0=0,
+    damage_dl_st_fail0=0,
     damage_dl_maxtrial=6,damage_dl_maxeval=600,damage_dl_maxfact=250,
     damage_dl_neval=0,damage_dl_nfact=0,damage_dl_narm=0,
     damage_dl_maxarm=12,damage_dl_nacc=0,damage_dl_nrej=0,
@@ -3937,6 +3940,10 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           damage_dl_maxfact=atoi(damage_de13_env);
         if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_TR_MAXARM"))!=NULL)
           damage_dl_maxarm=atoi(damage_de13_env);
+        /* CCX_DAMAGE_TR_STICKY: see the [DAMAGE TR] STICKY block where a
+           trust-region rescue converges. */
+        if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_TR_STICKY"))!=NULL)
+          damage_dl_sticky_mode=(strcmp(damage_de13_env,"0")==0)?0:1;
         if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_TR_D0"))!=NULL)
           damage_dl_d0fac=atof(damage_de13_env);
         if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_TR_LINCHECK"))!=NULL)
@@ -6154,6 +6161,35 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           damage_rec_unrec=0;
         }
       }
+      if((damage_dl_sticky==1)&&(damage_rescue_bt_on==0)){
+        ITG strej=damage_dl_nrej-damage_dl_st_rej0,
+          stcau=damage_dl_ncau-damage_dl_st_cau0,
+          stdog=damage_dl_ndog-damage_dl_st_dog0,
+          stfail=damage_dl_nfail-damage_dl_st_fail0;
+        damage_dl_st_n++;
+        if((damage_dl_on==1)&&(strej==0)&&(stcau==0)&&(stdog==0)&&
+           (stfail==0)){
+          printf("[DAMAGE TR] STICKY OFF inc=%" ITGFORMAT ": the trust "
+                 "region kept the full Newton step at every iteration of "
+                 "this increment, so it is no longer needed; plain Newton "
+                 "from the next increment.  Sticky increments: %"
+                 ITGFORMAT "%s",iinc,damage_dl_st_n,"\n");
+          damage_dl_sticky=0;damage_dl_on=0;damage_dl_delta=0.;
+        }else if(damage_dl_on==1){
+          damage_dl_lasthelp=iinc;
+          printf("[DAMAGE TR] STICKY inc=%" ITGFORMAT " committed with the "
+                 "trust region: %" ITGFORMAT " rejected trial(s), %"
+                 ITGFORMAT " dogleg, %" ITGFORMAT " Cauchy, %" ITGFORMAT
+                 " iteration(s) that accepted nothing; stays armed%s",
+                 iinc,strej,stdog,stcau,stfail,"\n");
+        }else{
+          printf("[DAMAGE TR] STICKY ends at inc=%" ITGFORMAT ": the trust "
+                 "region switched itself off inside the increment (budget "
+                 "or refusal)%s",iinc,"\n");
+          damage_dl_sticky=0;
+        }
+        fflush(stdout);
+      }
       damage_rec_used_in_inc=0;
 
       if(damage_rescue_bt_on==1){
@@ -6178,7 +6214,42 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                  damage_dl_nfact,"\n");
           fflush(stdout);
         }
+        /* CCX_DAMAGE_TR_STICKY.  Measured on seed 5 at Fn=0 (all plates
+           tangential, forum 2026-09-27): from inc 438 on every increment
+           fails three times on plain Newton and converges on the dogleg in
+           two iterations, at the same dtheta; four such rescues in a row
+           blow the recovery window and the run stops at 90 percent of
+           peak.  The force residual is 1e-5 against a tolerance of 2e-3
+           from the first iteration; what is refused is the displacement
+           criterion, on node 4309, inside a hydride fragment whose three
+           remaining elements sit at D 0.70-0.96.  Their softening makes the
+           tangent there nearly singular: the full Newton step raises |R|
+           forty-fold, BK3 contracts to lambda 0.05, and the correction
+           creeps down 5 percent per iteration until the attempt runs out.
+           The trust region takes the Newton step when the model predicts
+           it (rho ~ 1) and a short dogleg when it does not - the case BK3
+           handles by crawling.  Switching it OFF after a converged rescue
+           hands the next increment back to the method that just failed.
+
+           With the switch on the trust region stays armed for the
+           following increments, as the first attempt, and switches off
+           by itself after an increment in which it changed nothing: every
+           iteration kept the full Newton step, no trial was rejected.  A
+           wall while it is armed ends it and goes to the unchanged rescue
+           ladder.  Convergence is decided exactly as for the rescue
+           attempt, by checkconvergence on the unmodified residual.
+           Default OFF. */
+        if((damage_dl_on==1)&&(damage_dl_sticky_mode==1)){
+          damage_dl_sticky=1;
+          damage_dl_lasthelp=iinc;
+          printf("[DAMAGE TR] STICKY inc=%" ITGFORMAT ": the trust region "
+                 "stays armed for the next increment as its first attempt, "
+                 "until an increment in which it changes nothing%s",
+                 iinc,"\n");
+          fflush(stdout);
+        }else{
         damage_dl_on=0;
+        }
         damage_dl_delta=0.;
         if((damage_reg_on==1)&&(damage_corr_mode==1)&&
            (damage_corr_on==0)){
@@ -6594,6 +6665,11 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
          so a cutback that never reaches a solve cannot dilute the
          denominator. */
       glob_attempt_end(&damage_glob);
+      if((damage_dl_sticky==1)&&(damage_dl_on==1)){
+        damage_dl_have=0;damage_dl_delta=0.;damage_dl_banner=0;
+        damage_dl_st_rej0=damage_dl_nrej;damage_dl_st_cau0=damage_dl_ncau;
+        damage_dl_st_dog0=damage_dl_ndog;damage_dl_st_fail0=damage_dl_nfail;
+      }
       printf(" increment %" ITGFORMAT " attempt %" ITGFORMAT " \n",iinc,icutb+1);
       printf(" increment size= %e\n",dtheta**tper);
       printf(" sum of previous increments=%e\n",theta**tper);
@@ -13725,6 +13801,13 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           damage_dl_lasthelp=iinc;
           damage_dl_selfrec=0;
           damage_dl_on=0;
+          if(damage_dl_sticky==1){
+            printf("[DAMAGE TR] STICKY ends at inc=%" ITGFORMAT ": a wall "
+                   "while armed; the unchanged rescue ladder takes over%s",
+                   iinc,"\n");
+            fflush(stdout);
+            damage_dl_sticky=0;
+          }
           if((damage_dl_mode==1)&&(damage_rescue_used>=3)&&
              (damage_rec_disarmed==0)){
             if(damage_dl_have<0){
