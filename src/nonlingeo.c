@@ -1524,6 +1524,72 @@ static ITG damage_de13_mark_deadall(const double *dam,const double *visc,
  *
  * NOT covered: s5, whose stalled hydride node hangs on a SOUND matrix, and s4,
  * a whole plate detached behind dead facets.  Default OFF. */
+/* CCX_DAMAGE_BARE_MASK=Dmin: a node with no live bulk element, held only by
+ * cohesive facets that have all softened to D >= Dmin at every integration
+ * point, joins the AUTOSPC mask - out of the displacement norm, and out of
+ * the force norm when CCX_DAMAGE_AUTOSPC_FORCE is on.  It is still assembled,
+ * solved and moved; the excluded residual is printed as for any masked node.
+ *
+ * Measured on s3regen (D + GRADUAL_DELETE=8, forum 2026-09-26): node 7733 has
+ * lost its six bulk elements; four of its six facets have failed, two sit at
+ * D 0.975-0.9999 with one point not yet flagged.  The force residual is
+ * 8e-6 against a tolerance of 2e-3, and the increment is refused on the
+ * DISPLACEMENT criterion alone: the correction on 7733, 3.5e-4, stays equal
+ * to its increment, 4.2e-4, for six cutbacks.  The AUTOSPC diagonal test
+ * does not take it (the softening facets still add to its diagonal), and
+ * neither does FACET_DEBRIS (the node across is sound).  The failed-flag
+ * alone would not take it either, hence a threshold on D (xstate slot 2).
+ *
+ * Returns the number of nodes added. */
+static ITG damage_bare_mask(damstate *st,const ITG *ipkon,const char *lakon,
+                            const ITG *kon,ITG ne,ITG ne0,ITG nk,
+                            const double *xstate,ITG nstate,ITG mi0,
+                            double dmin)
+{
+  ITG i,j,n,nope,nip,nadd=0,*nbulk=NULL,*nfac=NULL,*nlivef=NULL;
+  double d;
+
+  if((st==NULL)||(st->dead==NULL)||(xstate==NULL)||(nstate<2)) return 0;
+  NNEW(nbulk,ITG,nk);NNEW(nfac,ITG,nk);NNEW(nlivef,ITG,nk);
+  for(i=0;i<ne;i++){
+    if(ipkon[i]<0) continue;
+    if(strcmp1(&lakon[8*i],"C3D4")==0){
+      for(j=0;j<4;j++){
+        n=kon[ipkon[i]+j]-1;
+        if((n>=0)&&(n<nk)) nbulk[n]++;
+      }
+      continue;
+    }
+    if(lakon[8*i]!='U') continue;
+    if(i>=ne0) continue;
+    nope=(ITG)((unsigned char)lakon[8*i+7]);
+    if((nope<1)||(nope>20)) continue;
+    nip=3;
+    if(nip>mi0) nip=mi0;
+    d=1.;
+    for(j=0;j<nip;j++){
+      double dj=xstate[1+nstate*(j+mi0*i)];
+      if(dj<d) d=dj;
+    }
+    for(j=0;j<nope;j++){
+      n=kon[ipkon[i]+j]-1;
+      if((n<0)||(n>=nk)) continue;
+      nfac[n]++;
+      if(d<dmin) nlivef[n]++;
+    }
+  }
+  for(n=0;(n<nk)&&(n<st->nk);n++){
+    if(nbulk[n]!=0) continue;
+    if(nfac[n]==0) continue;
+    if(nlivef[n]!=0) continue;
+    if(st->ok[n]==0) continue;
+    if(st->dead[n]!=0) continue;
+    st->dead[n]=1;st->ndead++;nadd++;
+  }
+  SFREE(nbulk);SFREE(nfac);SFREE(nlivef);
+  return nadd;
+}
+
 static ITG damage_mark_facet_debris(const double *dam,ITG *ipkon,
                                     const char *lakon,const ITG *kon,ITG nk,
                                     ITG ne0,ITG mi0,double ddelete,
@@ -2242,6 +2308,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
   ITG damage_nl_mode=0;
   double damage_qam_floor=0.;
   converge damage_cvg;
+  ITG damage_deadsole_law=0,damage_bare_rep_mask=0;
+  double damage_bare_d=0.;
   double damage_stab_alpha=0.,damage_deadsole_g=0.,damage_deadall_g=0.,
     damage_spc_g=0.;
   char *damage_stab_env=NULL,*damage_deadsole_env=NULL,
@@ -4129,6 +4197,36 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         if(damage_deadsole_g>0.){
           printf("[DAMAGE DEADSOLE] a dead element (g < %.1e) that is the sole "
                  "support of a node is deleted\n",damage_deadsole_g);
+        }
+      }
+      /* CCX_DAMAGE_DEADSOLE_LAW: DEADSOLE judges "dead" by the law's
+         rate-independent D instead of the viscous Dvis the terminal
+         trigger reads.  Measured on s5 (D + GRADUAL_DELETE=8, forum
+         2026-09-26): node 573 hangs on ONE element, 20581, at D=1.0 whose
+         Dvis has not yet reached the trigger, every facet at the node is
+         dead, and an ordinary increment stagnates at a 0.048 residual for
+         six cutbacks.  The element carries nothing by its own law; only
+         the regularisation keeps it.  The rule stays as narrow as DEADSOLE
+         itself: the element must be the SOLE bulk support of a node. */
+      if(ccxopt_getenv("CCX_DAMAGE_DEADSOLE_LAW")!=NULL){
+        damage_deadsole_law=(strcmp(ccxopt_getenv("CCX_DAMAGE_DEADSOLE_LAW"),
+                                    "0")==0)?0:1;
+        if(damage_deadsole_law){
+          printf("[DAMAGE DEADSOLE] the sole-support rule reads the law's "
+                 "damage D, not the viscous Dvis%s",
+                 (damage_deadsole_g>0.)?"\n":
+                 " - but CCX_DAMAGE_DEADSOLE is not set, so it never runs\n");
+        }
+      }
+      /* CCX_DAMAGE_BARE_MASK=Dmin: see damage_bare_mask(). */
+      if(ccxopt_getenv("CCX_DAMAGE_BARE_MASK")!=NULL){
+        damage_bare_d=atof(ccxopt_getenv("CCX_DAMAGE_BARE_MASK"));
+        if(damage_bare_d<0.) damage_bare_d=0.;
+        if(damage_bare_d>1.) damage_bare_d=1.;
+        if(damage_bare_d>0.){
+          printf("[DAMAGE BARE MASK] a node with no live bulk element whose "
+                 "every cohesive facet has D >= %.3f at every point joins the "
+                 "AUTOSPC mask (needs CCX_DAMAGE_AUTOSPC > 0)\n",damage_bare_d);
         }
       }
       {
@@ -8246,6 +8344,17 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	  if(damage_dstate.nk==0)
 	    damstate_init(&damage_dstate,*nk,damage_spc_g,damage_spc_neg);
 	  damstate_update(&damage_dstate,ad,nactdof,mt);
+	  if((damage_bare_d>0.)&&(damage_spc_g>0.)){
+	    ITG nbm=damage_bare_mask(&damage_dstate,ipkon,lakon,kon,*ne,ne0,
+	                             *nk,xstate,*nstate_,mi[0],damage_bare_d);
+	    if(nbm>damage_bare_rep_mask){
+	      damage_bare_rep_mask=nbm;
+	      printf("[DAMAGE BARE MASK] inc=%" ITGFORMAT " %" ITGFORMAT
+	             " node(s) with no live bulk and only softened facets "
+	             "masked (new maximum)\n",iinc,nbm);
+	      fflush(stdout);
+	    }
+	  }
 	  damage_addiag=damage_dstate.diag;
 	  damage_addiag0=damage_dstate.diag0;
 	  damage_addok=damage_dstate.ok;
@@ -13533,7 +13642,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         }
         if((damage_deadsole_g>0.)&&(damage_de13_new<DAMAGE_DE13_BATCH_MAX)){
           ITG nds=damage_de13_mark_deadsole(
-              dam,damage_damvisc,damage_delete_visc,ipkon,lakon,kon,*nk,
+              dam,damage_damvisc,
+              damage_deadsole_law?0:damage_delete_visc,ipkon,lakon,kon,*nk,
               ne0,mi[0],damage_deadsole_g,
               DAMAGE_DE13_BATCH_MAX-damage_de13_new);
           if(nds>0){
@@ -14974,7 +15084,8 @@ damage_controller_done:
       }
       if((damage_deadsole_g>0.)&&(damage_de13_new<DAMAGE_DE13_BATCH_MAX)){
         ITG nds=damage_de13_mark_deadsole(
-            dam,damage_damvisc,damage_delete_visc,ipkon,lakon,kon,*nk,
+            dam,damage_damvisc,
+            damage_deadsole_law?0:damage_delete_visc,ipkon,lakon,kon,*nk,
             ne0,mi[0],damage_deadsole_g,
             DAMAGE_DE13_BATCH_MAX-damage_de13_new);
         if(nds>0){
