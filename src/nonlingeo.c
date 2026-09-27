@@ -1700,7 +1700,8 @@ static ITG damage_mark_cluster(ITG *ipkon,const char *lakon,const ITG *kon,
 static ITG damage_mark_hinge(ITG *ipkon,const char *lakon,const ITG *kon,
                              ITG ne,ITG ne0,ITG nk,const ITG *nactdof,ITG mt,
                              const double *xstate,ITG nstate,ITG mi0,
-                             double dmin,ITG batchmax,ITG pendant)
+                             double dmin,ITG batchmax,ITG pendant,
+                             const double *dam)
 {
   ITG i,j,n,nope,nip,nnew=0,nanch,*nbulk=NULL,*nfac=NULL,*nlivef=NULL,
     *cand=NULL,ncand=0,*nbulk0=NULL;
@@ -1771,6 +1772,27 @@ static ITG damage_mark_hinge(ITG *ipkon,const char *lakon,const ITG *kon,
         if((n<0)||(n>=nk)){nanch++;continue;}
         for(k=1;k<4;k++) if(nactdof[mt*n+k]<=0) fixed=1;
         if(fixed||(nbulk[n]>=2)||(nlivef[n]>0)||(nbulk0[n]<=1)) nanch++;
+      }
+      /* CCX_DAMAGE_HINGE_PENDANT=2: the spike must itself be dead by the
+         law (D >= Dmin at some point).  A tetrahedron resting on a face
+         with a free tip is not a mechanism - its three edges hold the tip -
+         unless the element has lost its stiffness.  Measured on seed 5 at
+         Fn=0 (forum 2026-09-27): value 1 peeled two INTACT spikes in a row
+         at inc 648 (40625, then 40761 exposed by it, both D=0); the second
+         removal left the plate fragment at 4375/4379/4433 without support
+         and the same-load solve diverged to 1e11 - the run stopped at 72
+         percent of peak.  Across the series value 1 removed 3-16 intact
+         bulk elements per run. */
+      if((nanch==3)&&(pendant==2)&&(dam!=NULL)){
+        ITG nipe=topo_element_nip(&lakon[8*i],mi0),jj;
+        double dmx=0.;
+        if(nipe<1) nipe=1;
+        if(nipe>mi0) nipe=mi0;
+        for(jj=0;jj<nipe;jj++){
+          double dd=dam[mi0*i+jj]-1.;   /* dam holds 1+D once damage evolves */
+          if(dd>dmx) dmx=dd;
+        }
+        if(dmx<dmin) nanch=-1;
       }
       if(nanch==3) cand[ncand++]=i;
     }
@@ -4541,9 +4563,13 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
       if(ccxopt_getenv("CCX_DAMAGE_HINGE_PENDANT")!=NULL){
         damage_hinge_pendant=(strcmp(ccxopt_getenv("CCX_DAMAGE_HINGE_PENDANT"),
                                      "0")==0)?0:1;
+        if(strcmp(ccxopt_getenv("CCX_DAMAGE_HINGE_PENDANT"),"2")==0)
+          damage_hinge_pendant=2;
         if(damage_hinge_pendant){
           printf("[DAMAGE HINGE] spikes too: a live bulk element whose one "
-                 "free node is held only by it and by dead facets%s",
+                 "free node is held only by it and by dead facets%s%s",
+                 (damage_hinge_pendant==2)?", and only if the element itself "
+                 "is dead by the law (D >= the HINGE Dmin)":"",
                  (damage_hinge_d>0.)?"\n":
                  " - but CCX_DAMAGE_HINGE is not set, so it never runs\n");
         }
@@ -14090,7 +14116,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           ITG nhg=damage_mark_hinge(ipkon,lakon,kon,*ne,ne0,*nk,nactdof,mt,
               xstate,*nstate_,mi[0],damage_hinge_d,
               DAMAGE_DE13_BATCH_MAX-damage_de13_new,
-              damage_hinge_pendant);
+              damage_hinge_pendant,dam);
           if(nhg>0){
             damage_de13_new+=nhg;
             damage_hinge_total+=nhg;
@@ -15560,7 +15586,7 @@ damage_controller_done:
         ITG nhg=damage_mark_hinge(ipkon,lakon,kon,*ne,ne0,*nk,nactdof,mt,
             xstate,*nstate_,mi[0],damage_hinge_d,
             DAMAGE_DE13_BATCH_MAX-damage_de13_new,
-            damage_hinge_pendant);
+            damage_hinge_pendant,dam);
         if(nhg>0){
           damage_de13_new+=nhg;
           damage_hinge_total+=nhg;
