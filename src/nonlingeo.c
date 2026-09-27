@@ -1524,6 +1524,94 @@ static ITG damage_de13_mark_deadall(const double *dam,const double *visc,
  *
  * NOT covered: s5, whose stalled hydride node hangs on a SOUND matrix, and s4,
  * a whole plate detached behind dead facets.  Default OFF. */
+/* CCX_DAMAGE_HINGE=Dmin: a live bulk element hinged on an edge or a vertex.
+ *
+ * Measured on s5 (D + GRADUAL_DELETE=8 + DEADSOLE_LAW + BARE_MASK, forum
+ * 2026-09-27): DEADSOLE_LAW removed element 20581 as intended and the run
+ * stopped at the same theta, 0.2475, one layer further in.  Tetrahedron 8286,
+ * at D=0.28, joins the rest of the bulk only through its edge 19-6667; its
+ * other two nodes, 574 and 2082, have lost every other bulk element and are
+ * held by nothing but facets at D >= 0.98.  It can turn about that edge: a
+ * mechanism, and the residual falls from 0.18 to 0.017 too slowly to beat
+ * tmin.  DEADSOLE does not take it (it is not dead) and damfloat does not
+ * (it is connected).
+ *
+ * A node is ANCHORED if it has another live bulk element, a constrained dof,
+ * a live facet (D < Dmin at some point), or no facet at all - the last so
+ * that a mesh corner owned by one tetrahedron from the start is never read
+ * as debris.  An element with at most two anchored nodes, every other node
+ * being held by it alone and by dead facets, carries nothing through the
+ * free nodes and is deleted.  Its free nodes then fall to BARE_MASK / BK4.
+ *
+ * Returns the number of elements marked. */
+static ITG damage_mark_hinge(ITG *ipkon,const char *lakon,const ITG *kon,
+                             ITG ne,ITG ne0,ITG nk,const ITG *nactdof,ITG mt,
+                             const double *xstate,ITG nstate,ITG mi0,
+                             double dmin,ITG batchmax)
+{
+  ITG i,j,n,nope,nip,nnew=0,nanch,*nbulk=NULL,*nfac=NULL,*nlivef=NULL;
+  double d;
+
+  if((xstate==NULL)||(nstate<2)||(batchmax<=0)||(nk<=0)) return 0;
+  NNEW(nbulk,ITG,nk);NNEW(nfac,ITG,nk);NNEW(nlivef,ITG,nk);
+  for(i=0;i<ne;i++){
+    if(ipkon[i]<0) continue;
+    if(strcmp1(&lakon[8*i],"C3D4")==0){
+      for(j=0;j<4;j++){
+        n=kon[ipkon[i]+j]-1;
+        if((n>=0)&&(n<nk)) nbulk[n]++;
+      }
+      continue;
+    }
+    if((lakon[8*i]!='U')||(i>=ne0)) continue;
+    nope=(ITG)((unsigned char)lakon[8*i+7]);
+    if((nope<1)||(nope>20)) continue;
+    nip=(mi0<3)?mi0:3;
+    d=1.;
+    for(j=0;j<nip;j++){
+      double dj=xstate[1+nstate*(j+mi0*i)];
+      if(dj<d) d=dj;
+    }
+    for(j=0;j<nope;j++){
+      n=kon[ipkon[i]+j]-1;
+      if((n<0)||(n>=nk)) continue;
+      nfac[n]++;
+      if(d<dmin) nlivef[n]++;
+    }
+  }
+  for(i=0;i<ne0;i++){
+    if(nnew>=batchmax) break;
+    if(ipkon[i]<0) continue;
+    if(strcmp1(&lakon[8*i],"C3D4")!=0) continue;
+    nanch=0;
+    for(j=0;j<4;j++){
+      ITG k,fixed=0;
+      n=kon[ipkon[i]+j]-1;
+      if((n<0)||(n>=nk)){nanch++;continue;}
+      for(k=1;k<4;k++) if(nactdof[mt*n+k]<=0) fixed=1;
+      if(fixed||(nbulk[n]>=2)||(nlivef[n]>0)||(nfac[n]==0)) nanch++;
+    }
+    if(nanch>2) continue;
+    printf("[DAMAGE HINGE]   element %" ITGFORMAT " joined to the bulk by %"
+           ITGFORMAT " node(s):",i+1,nanch);
+    for(j=0;j<4;j++){
+      n=kon[ipkon[i]+j]-1;
+      if((n>=0)&&(n<nk)) printf(" %" ITGFORMAT "(b%" ITGFORMAT ",f%"
+                                ITGFORMAT "/%" ITGFORMAT ")",n+1,nbulk[n],
+                                nlivef[n],nfac[n]);
+    }
+    printf("\n");
+    for(j=0;j<4;j++){
+      n=kon[ipkon[i]+j]-1;
+      if((n>=0)&&(n<nk)) nbulk[n]--;
+    }
+    ipkon[i]=-ipkon[i]-2;
+    nnew++;
+  }
+  SFREE(nbulk);SFREE(nfac);SFREE(nlivef);
+  return nnew;
+}
+
 /* CCX_DAMAGE_BARE_MASK=Dmin: a node with no live bulk element, held only by
  * cohesive facets that have all softened to D >= Dmin at every integration
  * point, joins the AUTOSPC mask - out of the displacement norm, and out of
@@ -2308,7 +2396,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
   ITG damage_nl_mode=0;
   double damage_qam_floor=0.;
   converge damage_cvg;
-  ITG damage_deadsole_law=0,damage_bare_rep_mask=0;
+  ITG damage_deadsole_law=0,damage_bare_rep_mask=0,damage_hinge_total=0;
+  double damage_hinge_d=0.;
   double damage_bare_d=0.;
   double damage_stab_alpha=0.,damage_deadsole_g=0.,damage_deadall_g=0.,
     damage_spc_g=0.;
@@ -4216,6 +4305,17 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                  "damage D, not the viscous Dvis%s",
                  (damage_deadsole_g>0.)?"\n":
                  " - but CCX_DAMAGE_DEADSOLE is not set, so it never runs\n");
+        }
+      }
+      /* CCX_DAMAGE_HINGE=Dmin: see damage_mark_hinge(). */
+      if(ccxopt_getenv("CCX_DAMAGE_HINGE")!=NULL){
+        damage_hinge_d=atof(ccxopt_getenv("CCX_DAMAGE_HINGE"));
+        if(damage_hinge_d<0.) damage_hinge_d=0.;
+        if(damage_hinge_d>1.) damage_hinge_d=1.;
+        if(damage_hinge_d>0.){
+          printf("[DAMAGE HINGE] a live bulk element joined to the bulk by at "
+                 "most two nodes, its other nodes held only by it and by "
+                 "facets at D >= %.3f, is deleted\n",damage_hinge_d);
         }
       }
       /* CCX_DAMAGE_BARE_MASK=Dmin: see damage_bare_mask(). */
@@ -13655,6 +13755,19 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
             fflush(stdout);
           }
         }
+        if((damage_hinge_d>0.)&&(damage_de13_new<DAMAGE_DE13_BATCH_MAX)){
+          ITG nhg=damage_mark_hinge(ipkon,lakon,kon,*ne,ne0,*nk,nactdof,mt,
+              xstate,*nstate_,mi[0],damage_hinge_d,
+              DAMAGE_DE13_BATCH_MAX-damage_de13_new);
+          if(nhg>0){
+            damage_de13_new+=nhg;
+            damage_hinge_total+=nhg;
+            printf("[DAMAGE HINGE] inc=%" ITGFORMAT " time=%.12e "
+                   "deleted=%" ITGFORMAT " total=%" ITGFORMAT "\n",
+                   iinc,theta**tper,nhg,damage_hinge_total);
+            fflush(stdout);
+          }
+        }
         if(damage_facetdebris&&(damage_de13_new<DAMAGE_DE13_BATCH_MAX)){
           ITG nfd=damage_mark_facet_debris(
               dam,ipkon,lakon,kon,*nk,ne0,mi[0],damage_de13_delete_d,
@@ -15094,6 +15207,19 @@ damage_controller_done:
           printf("[DAMAGE DEADSOLE] inc=%" ITGFORMAT " time=%.12e "
                  "deleted=%" ITGFORMAT " total=%" ITGFORMAT "\n",
                  iinc,theta**tper,nds,damage_deadsole_total);
+          fflush(stdout);
+        }
+      }
+      if((damage_hinge_d>0.)&&(damage_de13_new<DAMAGE_DE13_BATCH_MAX)){
+        ITG nhg=damage_mark_hinge(ipkon,lakon,kon,*ne,ne0,*nk,nactdof,mt,
+            xstate,*nstate_,mi[0],damage_hinge_d,
+            DAMAGE_DE13_BATCH_MAX-damage_de13_new);
+        if(nhg>0){
+          damage_de13_new+=nhg;
+          damage_hinge_total+=nhg;
+          printf("[DAMAGE HINGE] inc=%" ITGFORMAT " time=%.12e "
+                 "deleted=%" ITGFORMAT " total=%" ITGFORMAT "\n",
+                 iinc,theta**tper,nhg,damage_hinge_total);
           fflush(stdout);
         }
       }
