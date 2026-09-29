@@ -1497,6 +1497,109 @@ static ITG damage_de13_mark_deadall(const double *dam,const double *visc,
   return nnew;
 }
 
+/* CCX_DAMAGE_DEADALL_LAW=Dmin: DEADALL judged by the law, facets included.
+ *
+ * Measured on the sensitivity deck of seed 5 at Fn=0 (interface 500/433 MPa,
+ * Gc 0.3, ZrH u_f 0.0004; forum 2026-09-29): the run stops rc=201 at theta
+ * 0.3824 with the grip force at 75 percent of peak.  The force residual sits
+ * on node 912 at 1.12 x the tolerance and the trust region creeps.  The node
+ * keeps four live C3D4, every one at the law's D=1 and still assembled only
+ * because the trigger reads the viscous Dvis; its six cohesive facets are
+ * dead at every point.  Nothing holds the node but the regularisation.
+ *
+ * DEADALL is the rule for "every live element at the node is dead", but it
+ * reads Dvis and it skips any node that carries a facet, dead or not.  This
+ * variant reads the law's D (as DEADSOLE_LAW and the separation test of S1
+ * do) and lets the node qualify when each of its facets has D >= Dmin at every
+ * integration point (xstate slot 2, the reading of BARE_MASK).  A node with
+ * one facet still below Dmin is tied across the interface and is left alone.
+ * Every element removed is dead by its own law, so nothing load-bearing goes.
+ * Uses the DEADALL threshold on g.  Default OFF.  Returns the deletions. */
+static ITG damage_de13_mark_deadall_law(const double *dam,const double *xstate,
+                                        ITG nstate,ITG *ipkon,const char *lakon,
+                                        const ITG *kon,ITG nk,ITG ne,ITG ne0,
+                                        ITG mi0,double gdead,double dmin,
+                                        ITG batchmax,ITG *nnodes)
+{
+  ITG i,j,n,nip,nope,nnew=0;
+  ITG *nlive=NULL,*ndead=NULL,*nlivef=NULL,*take=NULL;
+  double dmx,d,g;
+
+  if(nnodes!=NULL) *nnodes=0;
+  if((nk<=0)||(batchmax<=0)||(xstate==NULL)||(nstate<2)) return 0;
+  NNEW(nlive,ITG,nk);NNEW(ndead,ITG,nk);NNEW(nlivef,ITG,nk);
+
+  for(i=0;i<ne0;i++){
+    if(ipkon[i]<0) continue;
+    if(strcmp1(&lakon[8*i],"C3D4")==0){
+      nip=topo_element_nip(&lakon[8*i],mi0);
+      if(nip<1) nip=1;
+      if(nip>mi0) nip=mi0;
+      dmx=0.;
+      for(j=0;j<nip;j++){
+        /* dam holds 1+D */
+        double dd=dam[mi0*i+j]-1.;
+        if(dd<0.) dd=0.;
+        if(dd>1.) dd=1.;
+        if(dd>dmx) dmx=dd;
+      }
+      g=1.-dmx;
+      for(j=0;j<4;j++){
+        n=kon[ipkon[i]+j]-1;
+        if((n<0)||(n>=nk)) continue;
+        nlive[n]++;
+        if(g<gdead) ndead[n]++;
+      }
+      continue;
+    }
+    if(lakon[8*i]!='U') continue;
+    nope=(ITG)((unsigned char)lakon[8*i+7]);
+    if((nope<1)||(nope>20)) continue;
+    nip=3;
+    if(nip>mi0) nip=mi0;
+    d=1.;
+    for(j=0;j<nip;j++){
+      double dj=xstate[1+nstate*(j+mi0*i)];
+      if(dj<d) d=dj;
+    }
+    if(d>=dmin) continue;
+    for(j=0;j<nope;j++){
+      n=kon[ipkon[i]+j]-1;
+      if((n>=0)&&(n<nk)) nlivef[n]++;
+    }
+  }
+
+  NNEW(take,ITG,nk);
+  for(n=0;n<nk;n++){
+    if(nlive[n]<1) continue;
+    if(ndead[n]!=nlive[n]) continue;
+    if(nlivef[n]!=0) continue;
+    take[n]=1;
+    if(nnodes!=NULL) (*nnodes)++;
+  }
+
+  /* A snapshot, as in damage_de13_mark_deadall. */
+  for(i=0;i<ne0;i++){
+    if(nnew>=batchmax) break;
+    if(ipkon[i]<0) continue;
+    if(strcmp1(&lakon[8*i],"C3D4")!=0) continue;
+    for(j=0;j<4;j++){
+      n=kon[ipkon[i]+j]-1;
+      if((n<0)||(n>=nk)) continue;
+      if(take[n]==0) continue;
+      printf("[DAMAGE DEADALL LAW]   element %" ITGFORMAT " deleted: node %"
+             ITGFORMAT " has %" ITGFORMAT " live element(s), all dead by "
+             "the law, and no facet below D=%.3f\n",i+1,n+1,nlive[n],dmin);
+      ipkon[i]=-ipkon[i]-2;
+      nnew++;
+      break;
+    }
+  }
+
+  SFREE(take);SFREE(nlivef);SFREE(ndead);SFREE(nlive);
+  return nnew;
+}
+
 /* CCX_DAMAGE_FACET_DEBRIS: a cohesive facet that ties debris to debris.
  *
  * Measured on the seed decks built by test/s3rad/mkseeddeck.py (forum,
@@ -2637,6 +2740,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     damage_hinge_pendant=0,damage_hinge_cluster=0;
   double damage_hinge_d=0.;
   double damage_bare_d=0.;
+  double damage_deadall_law_d=0.;
+  ITG damage_deadall_law_total=0,damage_deadall_law_nodes=0;
   double damage_stab_alpha=0.,damage_deadsole_g=0.,damage_deadall_g=0.,
     damage_spc_g=0.;
   char *damage_stab_env=NULL,*damage_deadsole_env=NULL,
@@ -4583,6 +4688,20 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                  "through live facets%s",
                  (damage_hinge_d>0.)?"\n":
                  " - but CCX_DAMAGE_HINGE is not set, so it never runs\n");
+        }
+      }
+      /* CCX_DAMAGE_DEADALL_LAW=Dmin: see damage_de13_mark_deadall_law(). */
+      if(ccxopt_getenv("CCX_DAMAGE_DEADALL_LAW")!=NULL){
+        damage_deadall_law_d=atof(ccxopt_getenv("CCX_DAMAGE_DEADALL_LAW"));
+        if(damage_deadall_law_d<0.) damage_deadall_law_d=0.;
+        if(damage_deadall_law_d>1.) damage_deadall_law_d=1.;
+        if(damage_deadall_law_d>0.){
+          printf("[DAMAGE DEADALL LAW] a node whose every live C3D4 is dead by "
+                 "the law's D (g below the CCX_DAMAGE_DEADALL value) and whose "
+                 "every cohesive facet has D >= %.3f at every point loses those "
+                 "elements%s\n",damage_deadall_law_d,
+                 (damage_deadall_g>0.)?"":
+                 " - *WARNING: CCX_DAMAGE_DEADALL is not set, so it never fires");
         }
       }
       /* CCX_DAMAGE_BARE_MASK=Dmin: see damage_bare_mask(). */
@@ -14083,6 +14202,22 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
             fflush(stdout);
           }
         }
+        if((damage_deadall_law_d>0.)&&(damage_deadall_g>0.)&&
+           (damage_de13_new<DAMAGE_DE13_BATCH_MAX)){
+          ITG ndl=damage_de13_mark_deadall_law(
+              dam,xstate,*nstate_,ipkon,lakon,kon,*nk,*ne,ne0,mi[0],
+              damage_deadall_g,damage_deadall_law_d,
+              DAMAGE_DE13_BATCH_MAX-damage_de13_new,&damage_deadall_law_nodes);
+          if(ndl>0){
+            damage_de13_new+=ndl;
+            damage_deadall_law_total+=ndl;
+            printf("[DAMAGE DEADALL LAW] inc=%" ITGFORMAT " time=%.12e "
+                   "nodes=%" ITGFORMAT " deleted=%" ITGFORMAT " total=%"
+                   ITGFORMAT "\n",iinc,theta**tper,damage_deadall_law_nodes,
+                   ndl,damage_deadall_law_total);
+            fflush(stdout);
+          }
+        }
         if((damage_deadsole_g>0.)&&(damage_de13_new<DAMAGE_DE13_BATCH_MAX)){
           ITG nds=damage_de13_mark_deadsole(
               dam,damage_damvisc,
@@ -15550,6 +15685,22 @@ damage_controller_done:
                  "nodes=%" ITGFORMAT " deleted=%" ITGFORMAT " total=%"
                  ITGFORMAT "\n",iinc,theta**tper,damage_deadall_nodes,
                  nda,damage_deadall_total);
+          fflush(stdout);
+        }
+      }
+      if((damage_deadall_law_d>0.)&&(damage_deadall_g>0.)&&
+         (damage_de13_new<DAMAGE_DE13_BATCH_MAX)){
+        ITG ndl=damage_de13_mark_deadall_law(
+            dam,xstate,*nstate_,ipkon,lakon,kon,*nk,*ne,ne0,mi[0],
+            damage_deadall_g,damage_deadall_law_d,
+            DAMAGE_DE13_BATCH_MAX-damage_de13_new,&damage_deadall_law_nodes);
+        if(ndl>0){
+          damage_de13_new+=ndl;
+          damage_deadall_law_total+=ndl;
+          printf("[DAMAGE DEADALL LAW] inc=%" ITGFORMAT " time=%.12e "
+                 "nodes=%" ITGFORMAT " deleted=%" ITGFORMAT " total=%"
+                 ITGFORMAT "\n",iinc,theta**tper,damage_deadall_law_nodes,
+                 ndl,damage_deadall_law_total);
           fflush(stdout);
         }
       }
