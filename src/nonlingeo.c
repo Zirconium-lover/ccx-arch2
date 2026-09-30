@@ -1659,7 +1659,7 @@ static ITG damage_de13_mark_deadall_law(const double *dam,const double *xstate,
 static ITG damage_mark_cluster(ITG *ipkon,const char *lakon,const ITG *kon,
                                ITG ne,ITG ne0,ITG nk,const ITG *nactdof,
                                ITG mt,const double *xstate,ITG nstate,
-                               ITG mi0,double dmin,ITG batchmax)
+                               ITG mi0,double dmin,ITG batchmax,ITG big)
 {
   ITG i,j,k,n,a,b,nope,nip,nnew=0,ngrp=0,nfree=0,ntaken=0,nrep=0,
     *par=NULL,*hasb=NULL,*grp=NULL,*gsize=NULL,*gfix=NULL,*ganch=NULL,
@@ -1732,7 +1732,18 @@ static ITG damage_mark_cluster(ITG *ipkon,const char *lakon,const ITG *kon,
     if(gfix[k]) continue;
     nfree++;
     if(ganch[k]>2) continue;
-    if(nnew+gsize[k]>batchmax){
+    /* CCX_DAMAGE_HINGE_CLUSTER_BIG: a cluster with NO anchored node at all -
+       every facet round it dead, no boundary condition - is a free body and
+       carries nothing; it may exceed the batch, one per call.  Measured on
+       the sensitivity decks of seed 5 (forum 2026-09-30): whole debonded
+       plates of 739-1075 elements were left here every batch, and both runs
+       stopped with the residual stuck on a plate node (Fn=0, node 8199) or
+       on the matrix node facing one (Fn=100, node 347). */
+    if((nnew+gsize[k]>batchmax)&&big&&(ganch[k]==0)&&(nnew==0)){
+      printf("[DAMAGE HINGE]   free cluster of %" ITGFORMAT " element(s) "
+             "exceeds the batch (%" ITGFORMAT " left) and is taken whole\n",
+             gsize[k],batchmax);
+    }else if(nnew+gsize[k]>batchmax){
       printf("[DAMAGE HINGE]   cluster of %" ITGFORMAT " element(s), %"
              ITGFORMAT " anchored node(s): left, does not fit the batch (%"
              ITGFORMAT " left)\n",gsize[k],ganch[k],batchmax-nnew);
@@ -2751,7 +2762,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
   double damage_qam_floor=0.;
   converge damage_cvg;
   ITG damage_deadsole_law=0,damage_bare_rep_mask=0,damage_hinge_total=0,
-    damage_hinge_pendant=0,damage_hinge_cluster=0;
+    damage_hinge_pendant=0,damage_hinge_cluster=0,damage_hinge_big=0;
   double damage_hinge_d=0.;
   double damage_bare_d=0.;
   double damage_deadall_law_d=0.;
@@ -4703,6 +4714,17 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                  "through live facets%s",
                  (damage_hinge_d>0.)?"\n":
                  " - but CCX_DAMAGE_HINGE is not set, so it never runs\n");
+        }
+      }
+      /* CCX_DAMAGE_HINGE_CLUSTER_BIG: see damage_mark_cluster(). */
+      if(ccxopt_getenv("CCX_DAMAGE_HINGE_CLUSTER_BIG")!=NULL){
+        damage_hinge_big=(strcmp(ccxopt_getenv("CCX_DAMAGE_HINGE_CLUSTER_BIG"),
+                                 "0")==0)?0:1;
+        if(damage_hinge_big){
+          printf("[DAMAGE HINGE] a cluster with no anchored node at all may "
+                 "exceed the deletion batch and is taken whole, one per batch%s",
+                 (damage_hinge_cluster&&(damage_hinge_d>0.))?"\n":
+                 " - but CCX_DAMAGE_HINGE and CCX_DAMAGE_HINGE_CLUSTER must be set\n");
         }
       }
       /* CCX_DAMAGE_DEADALL_LAW=Dmin: see damage_de13_mark_deadall_law(). */
@@ -14270,7 +14292,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
            (damage_de13_new<DAMAGE_DE13_BATCH_MAX)){
           ITG ncl=damage_mark_cluster(ipkon,lakon,kon,*ne,ne0,*nk,nactdof,mt,
               xstate,*nstate_,mi[0],damage_hinge_d,
-              DAMAGE_DE13_BATCH_MAX-damage_de13_new);
+              DAMAGE_DE13_BATCH_MAX-damage_de13_new,damage_hinge_big);
           if(ncl>0){
             damage_de13_new+=ncl;
             damage_hinge_total+=ncl;
@@ -15756,7 +15778,7 @@ damage_controller_done:
          (damage_de13_new<DAMAGE_DE13_BATCH_MAX)){
         ITG ncl=damage_mark_cluster(ipkon,lakon,kon,*ne,ne0,*nk,nactdof,mt,
             xstate,*nstate_,mi[0],damage_hinge_d,
-            DAMAGE_DE13_BATCH_MAX-damage_de13_new);
+            DAMAGE_DE13_BATCH_MAX-damage_de13_new,damage_hinge_big);
         if(ncl>0){
           damage_de13_new+=ncl;
           damage_hinge_total+=ncl;
