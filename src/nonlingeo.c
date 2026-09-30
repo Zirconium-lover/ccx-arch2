@@ -1969,7 +1969,7 @@ static ITG damage_mark_hinge(ITG *ipkon,const char *lakon,const ITG *kon,
 static ITG damage_bare_mask(damstate *st,const ITG *ipkon,const char *lakon,
                             const ITG *kon,ITG ne,ITG ne0,ITG nk,
                             const double *xstate,ITG nstate,ITG mi0,
-                            double dmin)
+                            double dmin,const double *dam,double dlaw)
 {
   ITG i,j,n,nope,nip,nadd=0,*nbulk=NULL,*nfac=NULL,*nlivef=NULL;
   double d;
@@ -1979,6 +1979,20 @@ static ITG damage_bare_mask(damstate *st,const ITG *ipkon,const char *lakon,
   for(i=0;i<ne;i++){
     if(ipkon[i]<0) continue;
     if(strcmp1(&lakon[8*i],"C3D4")==0){
+      /* CCX_DAMAGE_BARE_MASK_LAW: a C3D4 the law has broken (D >= dlaw at
+         some point) does not count as support - it is assembled only
+         because the deletion trigger reads the lagging Dvis. */
+      if((dam!=NULL)&&(dlaw>0.)&&(i<ne0)){
+        ITG jl,nipl=topo_element_nip(&lakon[8*i],mi0);
+        double dl=0.;
+        if(nipl<1) nipl=1;
+        if(nipl>mi0) nipl=mi0;
+        for(jl=0;jl<nipl;jl++){
+          double dd=dam[mi0*i+jl]-1.;
+          if(dd>dl) dl=dd;
+        }
+        if(dl>=dlaw) continue;
+      }
       for(j=0;j<4;j++){
         n=kon[ipkon[i]+j]-1;
         if((n>=0)&&(n<nk)) nbulk[n]++;
@@ -2741,6 +2755,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
   double damage_hinge_d=0.;
   double damage_bare_d=0.;
   double damage_deadall_law_d=0.;
+  ITG damage_bare_law=0;
   ITG damage_deadall_law_total=0,damage_deadall_law_nodes=0;
   double damage_stab_alpha=0.,damage_deadsole_g=0.,damage_deadall_g=0.,
     damage_spc_g=0.;
@@ -4702,6 +4717,22 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                  "elements%s\n",damage_deadall_law_d,
                  (damage_deadall_g>0.)?"":
                  " - *WARNING: CCX_DAMAGE_DEADALL is not set, so it never fires");
+        }
+      }
+      /* CCX_DAMAGE_BARE_MASK_LAW: see damage_bare_mask().  Measured on the
+         sensitivity deck of seed 5 (Fn=0, forum 2026-09-30): node 912 keeps
+         four C3D4 at the law's D=1 and six dead facets and holds the force
+         residual at 1.12 x tolerance.  DEADALL_LAW deletes such elements and
+         the next increment diverges on the redistribution (Fn=0 at theta
+         0.3905, Fn=100 at 0.1455); masking the node changes no equation. */
+      if(ccxopt_getenv("CCX_DAMAGE_BARE_MASK_LAW")!=NULL){
+        damage_bare_law=(strcmp(ccxopt_getenv("CCX_DAMAGE_BARE_MASK_LAW"),
+                                "0")!=0);
+        if(damage_bare_law){
+          printf("[DAMAGE BARE MASK] LAW: a C3D4 at the law's D >= the deletion "
+                 "threshold does not count as bulk support%s\n",
+                 (ccxopt_getenv("CCX_DAMAGE_BARE_MASK")!=NULL)?"":
+                 " - *WARNING: CCX_DAMAGE_BARE_MASK is not set, so it never fires");
         }
       }
       /* CCX_DAMAGE_BARE_MASK=Dmin: see damage_bare_mask(). */
@@ -8901,7 +8932,9 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	  damstate_update(&damage_dstate,ad,nactdof,mt);
 	  if((damage_bare_d>0.)&&(damage_spc_g>0.)){
 	    ITG nbm=damage_bare_mask(&damage_dstate,ipkon,lakon,kon,*ne,ne0,
-	                             *nk,xstate,*nstate_,mi[0],damage_bare_d);
+	                             *nk,xstate,*nstate_,mi[0],damage_bare_d,
+	                             damage_bare_law?dam:NULL,
+	                             damage_bare_law?damage_de13_delete_d:0.);
 	    if(nbm>damage_bare_rep_mask){
 	      damage_bare_rep_mask=nbm;
 	      printf("[DAMAGE BARE MASK] inc=%" ITGFORMAT " %" ITGFORMAT
