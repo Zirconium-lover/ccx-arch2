@@ -1,400 +1,237 @@
- number of threads = 1
 
- Using up to 1 cpu(s) for the stress calculation.
-
- average force= 0.341132
- time avg. forc= 0.271962
- largest residual force= 0.000261 in node 9257 and dof 1
- largest increment of disp= 1.962498e-03
- largest correction to disp= 3.283732e-06 in node 8136 and dof 1
-
- convergence; the increment size is increased to 1.500000e-03
-
- the increment size exceeds the maximum allowed and is decreased to 1.000000e-03
-
-[DAMAGE DE1.2 COMMIT] inc=56 time=4.175000000000e-02 active=2 D>0.1=0 D>0.5=0 D>0.9=0 Dfull=0 Dmax=4.609126e-02 max_dD_inc=7.499899e-03
- increment 57 attempt 1 
- increment size= 1.000000e-03
- sum of previous increments=4.175000e-02
- actual step time=4.275000e-02
- actual total time=4.275000e-02
-
- iteration 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
-
- Factoring the system of equations using the symmetric pardiso solver
- number of threads = 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- average force= 0.342963
- time avg. forc= 0.273207
- largest residual force= 0.000763 in node 2303 and dof 1
- largest increment of disp= 1.962796e-03
- largest correction to disp= 1.450417e-05 in node 7450 and dof 1
-
- no convergence
-
- iteration 2
-
- Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
-
- Factoring the system of equations using the symmetric pardiso solver
- number of threads = 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- average force= 0.342963
- time avg. forc= 0.273207
- largest residual force= 0.000001 in node 2303 and dof 1
- largest increment of disp= 1.962796e-03
- largest correction to disp= 1.190869e-07 in node 2303 and dof 1
-
- convergence; the increment size is increased to 1.500000e-03
-
- the increment size exceeds the maximum allowed and is decreased to 1.000000e-03
-
-[DAMAGE DE1.2 COMMIT] inc=57 time=4.275000000000e-02 active=2 D>0.1=0 D>0.5=0 D>0.9=0 Dfull=0 Dmax=5.362876e-02 max_dD_inc=7.567540e-03
- increment 58 attempt 1 
- increment size= 1.000000e-03
- sum of previous increments=4.275000e-02
- actual step time=4.375000e-02
- actual total time=4.375000e-02
-
- iteration 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
-
- Factoring the system of equations using the symmetric pardiso solver
- number of threads = 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- average force= 0.344808
- time avg. forc= 0.274442
- largest residual force= 0.000201 in node 8247 and dof 1
- largest increment of disp= 1.963050e-03
- largest correction to disp= 1.973500e-05 in node 9477 and dof 1
-
- no convergence
-
- iteration 2
-
- Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
-
- Factoring the system of equations using the symmetric pardiso solver
- number of threads = 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- average force= 0.344808
- time avg. forc= 0.274442
- largest residual force= 0.000000 in node 1811 and dof 1
- largest increment of disp= 1.963050e-03
- largest correction to disp= 1.423958e-07 in node 8247 and dof 1
-
- convergence; the increment size is increased to 1.500000e-03
-
- the increment size exceeds the maximum allowed and is decreased to 1.000000e-03
-
-[DAMAGE DE1.2 COMMIT] inc=58 time=4.375000000000e-02 active=2 D>0.1=0 D>0.5=0 D>0.9=0 Dfull=0 Dmax=6.120703e-02 max_dD_inc=7.608026e-03
- increment 59 attempt 1 
- increment size= 1.000000e-03
- sum of previous increments=4.375000e-02
- actual step time=4.475000e-02
- actual total time=4.475000e-02
-
- iteration 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
-
- Factoring the system of equations using the symmetric pardiso solver
- number of threads = 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- average force= 0.346666
- time avg. forc= 0.275666
- largest residual force= 0.000376 in node 8299 and dof 1
- largest increment of disp= 1.963309e-03
- largest correction to disp= 1.219177e-05 in node 8092 and dof 1
-
- no convergence
-
- iteration 2
-
- Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
-
- Factoring the system of equations using the symmetric pardiso solver
- number of threads = 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- average force= 0.346666
- time avg. forc= 0.275666
- largest residual force= 0.000009 in node 8151 and dof 1
- largest increment of disp= 1.963309e-03
- largest correction to disp= 2.684806e-07 in node 8121 and dof 1
-
- convergence; the increment size is increased to 1.500000e-03
-
- the increment size exceeds the maximum allowed and is decreased to 1.000000e-03
-
-[DAMAGE DE1.2 COMMIT] inc=59 time=4.475000000000e-02 active=2 D>0.1=0 D>0.5=0 D>0.9=0 Dfull=0 Dmax=6.881249e-02 max_dD_inc=7.634859e-03
- increment 60 attempt 1 
- increment size= 1.000000e-03
- sum of previous increments=4.475000e-02
- actual step time=4.575000e-02
- actual total time=4.575000e-02
-
- iteration 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
-
- Factoring the system of equations using the symmetric pardiso solver
- number of threads = 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- average force= 0.348536
- time avg. forc= 0.276880
- largest residual force= 0.000409 in node 8151 and dof 1
- largest increment of disp= 1.963590e-03
- largest correction to disp= 8.087306e-06 in node 9470 and dof 1
-
- no convergence
-
- iteration 2
-
- Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
-
- Factoring the system of equations using the symmetric pardiso solver
- number of threads = 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- average force= 0.348536
- time avg. forc= 0.276880
- largest residual force= 0.000000 in node 1811 and dof 1
- largest increment of disp= 1.963590e-03
- largest correction to disp= 2.636048e-07 in node 8151 and dof 1
-
- convergence; the increment size is increased to 1.500000e-03
-
- the increment size exceeds the maximum allowed and is decreased to 1.000000e-03
-
-[DAMAGE DE1.2 COMMIT] inc=60 time=4.575000000000e-02 active=2 D>0.1=0 D>0.5=0 D>0.9=0 Dfull=0 Dmax=7.644901e-02 max_dD_inc=7.665631e-03
- Using up to 1 cpu(s) for the stress calculation.
-
- increment 61 attempt 1 
- increment size= 1.000000e-03
- sum of previous increments=4.575000e-02
- actual step time=4.675000e-02
- actual total time=4.675000e-02
-
- iteration 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
-
- Factoring the system of equations using the symmetric pardiso solver
- number of threads = 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- average force= 0.350416
- time avg. forc= 0.278086
- largest residual force= 0.000659 in node 9361 and dof 1
- largest increment of disp= 1.963904e-03
- largest correction to disp= 1.361096e-05 in node 9243 and dof 1
-
- no convergence
-
- iteration 2
-
- Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
-
- Factoring the system of equations using the symmetric pardiso solver
- number of threads = 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- average force= 0.350416
- time avg. forc= 0.278086
- largest residual force= 0.000002 in node 1308 and dof 1
- largest increment of disp= 1.963904e-03
- largest correction to disp= 7.089172e-07 in node 9364 and dof 1
-
- convergence; the increment size is increased to 1.500000e-03
-
- the increment size exceeds the maximum allowed and is decreased to 1.000000e-03
-
-[DAMAGE DE1.2 COMMIT] inc=61 time=4.675000000000e-02 active=2 D>0.1=0 D>0.5=0 D>0.9=0 Dfull=0 Dmax=8.411491e-02 max_dD_inc=7.695021e-03
- increment 62 attempt 1 
- increment size= 1.000000e-03
- sum of previous increments=4.675000e-02
- actual step time=4.775000e-02
- actual total time=4.775000e-02
-
- iteration 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
-
- Factoring the system of equations using the symmetric pardiso solver
- number of threads = 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- average force= 0.352302
- time avg. forc= 0.279283
- largest residual force= 0.000296 in node 1537 and dof 1
- largest increment of disp= 1.964215e-03
- largest correction to disp= 1.214469e-05 in node 8134 and dof 1
-
- no convergence
-
- iteration 2
-
- Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
-
- Factoring the system of equations using the symmetric pardiso solver
- number of threads = 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- average force= 0.352302
- time avg. forc= 0.279283
- largest residual force= 0.000000 in node 1811 and dof 1
- largest increment of disp= 1.964215e-03
- largest correction to disp= 2.077246e-07 in node 8018 and dof 1
-
- convergence; the increment size is increased to 1.500000e-03
-
- the increment size exceeds the maximum allowed and is decreased to 1.000000e-03
-
-[DAMAGE DE1.2 COMMIT] inc=62 time=4.775000000000e-02 active=2 D>0.1=0 D>0.5=0 D>0.9=0 Dfull=0 Dmax=9.181324e-02 max_dD_inc=7.727987e-03
- increment 63 attempt 1 
- increment size= 1.000000e-03
- sum of previous increments=4.775000e-02
- actual step time=4.875000e-02
- actual total time=4.875000e-02
-
- iteration 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
-
- Factoring the system of equations using the symmetric pardiso solver
- number of threads = 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- average force= 0.354194
- time avg. forc= 0.280472
- largest residual force= 0.000575 in node 9335 and dof 1
- largest increment of disp= 1.964505e-03
- largest correction to disp= 1.510741e-05 in node 9478 and dof 1
-
- no convergence
-
- iteration 2
-
- Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
-
- Factoring the system of equations using the symmetric pardiso solver
- number of threads = 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- average force= 0.354194
- time avg. forc= 0.280472
- largest residual force= 0.000001 in node 413 and dof 3
- largest increment of disp= 1.964505e-03
- largest correction to disp= 2.710883e-07 in node 9271 and dof 1
-
- convergence; the increment size is increased to 1.500000e-03
-
- the increment size exceeds the maximum allowed and is decreased to 1.000000e-03
-
-[DAMAGE DE1.2 COMMIT] inc=63 time=4.875000000000e-02 active=3 D>0.1=0 D>0.5=0 D>0.9=0 Dfull=0 Dmax=9.955345e-02 max_dD_inc=7.769832e-03
- increment 64 attempt 1 
- increment size= 1.000000e-03
- sum of previous increments=4.875000e-02
- actual step time=4.975000e-02
- actual total time=4.975000e-02
-
- iteration 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
-
- Factoring the system of equations using the symmetric pardiso solver
- number of threads = 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- average force= 0.356090
- time avg. forc= 0.281654
- largest residual force= 0.000554 in node 7838 and dof 1
- largest increment of disp= 1.964849e-03
- largest correction to disp= 1.614424e-05 in node 9255 and dof 1
-
- no convergence
-
- iteration 2
-
- Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
-
- Factoring the system of equations using the symmetric pardiso solver
- number of threads = 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- average force= 0.356090
- time avg. forc= 0.281654
- largest residual force= 0.000000 in node 413 and dof 3
- largest increment of disp= 1.964849e-03
- largest correction to disp= 2.017801e-07 in node 7701 and dof 1
-
- convergence; the increment size is increased to 1.500000e-03
-
- the increment size exceeds the maximum allowed and is decreased to 1.000000e-03
-
-[DAMAGE DE1.2 COMMIT] inc=64 time=4.975000000000e-02 active=3 D>0.1=1 D>0.5=0 D>0.9=0 Dfull=0 Dmax=1.073353e-01 max_dD_inc=1.046012e-02
- increment 65 attempt 1 
- increment size= 1.000000e-03
- sum of previous increments=4.975000e-02
- actual step time=5.075000e-02
- actual total time=5.075000e-02
-
- iteration 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
-
- Factoring the system of equations using the symmetric pardiso solver
- number of threads = 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- average force= 0.357987
- time avg. forc= 0.282828
- largest residual force= 0.001055 in node 7599 and dof 1
- largest increment of disp= 1.965201e-03
- largest correction to disp= 1.352823e-05 in node 7673 and dof 1
-
+************************************************************
+
+CalculiX Version 2.23, Copyright(C) 1998-2025 Guido Dhondt
+CalculiX comes with ABSOLUTELY NO WARRANTY. This is free
+software, and you are welcome to redistribute it under
+certain conditions, see gpl.htm
+
+************************************************************
+
+You are using an executable made on Thu Aug 20 17:18:08 MSK 2026
+ Decascading the MPC's
+
+ Determining the structure of the matrix:
+ Using up to 1 cpu(s) for setting up the structure of the matrix.
+ number of equations
+ 30008
+ number of nonzero lower triangular matrix elements
+ 696709
+
+[SWITCHES] this binary reads 171 CCX_* names, 52 of them declared with a type, a default, a range and a line of documentation.  In force now:
+[SWITCHES]   CCX_DAMAGE_VISCOSITY = 1.e-4   [real, default 0 (off)]
+[SWITCHES]   CCX_DAMAGE_LINESEARCH = ADAPTIVE   [one of ADAPTIVE|adaptive|1, default off]
+[SWITCHES]   CCX_DAMAGE_HINGE_PENDANT = 2   [UNDECLARED: no type, no range, no documented default]
+[SWITCHES]   CCX_DAMAGE_DEADSOLE_LAW = 1   [UNDECLARED: no type, no range, no documented default]
+[SWITCHES]   CCX_DAMAGE_DELETE_MAT = ALL   [text, default unset (no filter)]
+[SWITCHES]   CCX_DAMAGE_TR_MAXFACT = 100000   [UNDECLARED: no type, no range, no documented default]
+[SWITCHES]   CCX_DAMAGE_FACET_DEBRIS = 1   [flag, default unset (off)]
+[SWITCHES]   CCX_FRACTURE_TERMINATION = FACE_X0_NSET:FACE_XL_NSET   [text, default unset (never terminates)]
+[SWITCHES]   CCX_DAMAGE_VISCOUS_DAMPING = 2e-4   [real, default unset (off)]
+[SWITCHES]   CCX_DAMAGE_AUTOSPC = 1.e-3   [real, default unset (no mask)]
+[SWITCHES]   CCX_DAMAGE_AUTOSPC_FORCE = 1   [flag, default unset (off)]
+[SWITCHES]   CCX_PARDISO_REUSE_SYMBOLIC = 1   [one of 1|ON|on|YES|yes, default off]
+[SWITCHES]   CCX_DAMAGE_BARE_MASK = 0.95   [UNDECLARED: no type, no range, no documented default]
+[SWITCHES]   CCX_DAMAGE_TR_STICKY = 1   [UNDECLARED: no type, no range, no documented default]
+[SWITCHES]   CCX_FRACTURE_CUT = 1e-4   [real, default unset (off)]
+[SWITCHES]   CCX_DAMAGE_BARE_MASK_LAW = 1   [UNDECLARED: no type, no range, no documented default]
+[SWITCHES]   CCX_DAMAGE_REEQ_RESCUE2 = 1   [flag, default unset (off)]
+[SWITCHES]   CCX_DAMAGE_TR_DOGLEG = 1   [flag, default unset (off)]
+[SWITCHES]   CCX_DAMAGE_TR_MAXARM = 1000   [UNDECLARED: no type, no range, no documented default]
+[SWITCHES]   CCX_DAMAGE_REEQ_SCALE = PHYSICAL   [one of PHYSICAL|physical|1, default off]
+[SWITCHES]   CCX_DAMAGE_TR_MAXEVAL = 100000   [UNDECLARED: no type, no range, no documented default]
+[SWITCHES]   CCX_DAMAGE_TOPOLOGY = DEFERRED   [one of DEFERRED|deferred|1, default immediate]
+[SWITCHES]   CCX_DAMAGE_DEADSOLE = 1e-3   [UNDECLARED: no type, no range, no documented default]
+[SWITCHES]   CCX_DAMAGE_HINGE = 0.95   [UNDECLARED: no type, no range, no documented default]
+[SWITCHES]   CCX_DAMAGE_DEADALL = 1.e-2   [real, default unset (off)]
+[SWITCHES]   CCX_DAMAGE_GRADUAL_DELETE = 8   [UNDECLARED: no type, no range, no documented default]
+[SWITCHES]   CCX_DAMAGE_RESCUE_CUTBACKS = 1   [UNDECLARED: no type, no range, no documented default]
+[SWITCHES]   CCX_DAMAGE_HINGE_CLUSTER_BIG = 1   [UNDECLARED: no type, no range, no documented default]
+[SWITCHES]   CCX_DAMAGE_HINGE_CLUSTER = 1   [UNDECLARED: no type, no range, no documented default]
+[DAMAGE RESCUE] bounded recovery window: a rescue counts as RECOVERED only after 5 consecutive increments converge with no intervention; after 3 consecutive un-recovered rescues the mechanism DISARMS itself and the wall goes to the original stock stop.  This exists because a run that needs rescuing at nearly every increment is crawling, not passing a wall: measured, 92 regularized rescues bought 2.2e-4 of step time on s3rad.
+[DAMAGE RESCUE] emergency rescue backtracking ENABLED.  The trajectory, the stock Newton and every stock cutback are unchanged.  Only where the next stock cutback would put dtheta below tmin and the run would stop, the increment is rolled back by the STANDARD cutback path and retried ONCE at the last admissible dtheta with transactional BT active for that attempt alone.  One attempt per wall; re-armed after any increment that converges.
+[DAMAGE RESCUE2] second level ARMED.  A wall now gets two attempts.  The first is the accepted level-one behaviour, unchanged.  Only if it fails does the second run, and there the single branch "nothing accepted -> restore the full step" is replaced by an EVENT STEP: the smallest ladder alpha at which the set of UC6 points in compression differs from alpha=0, read from sign(stx(1)) over every live UC6 point.  e_c3d_uc6.f:45 assembles the stiffness from vold, so the next assembly picks up ctan(1,1)=kn on the crossed facet by itself.  No constitutive law, no kn, no g and no material parameter is touched, and no element, ip or increment is named.  If no ladder alpha changes the set, this level does nothing.
+[DAMAGE TR SELFTEST] closed-form case: |p_N|=1.004987562112e+00 |p_C|=1.014935944139e-01
+[DAMAGE TR SELFTEST] Delta=2 -> kind=1 (want 1 NEWTON) pa=0.000000e+00 pb=1.000000e+00 |p|=1.004987562112e+00 (want 1.004987562112e+00) pred=1.000000000000e+00 PASS
+[DAMAGE TR SELFTEST] Delta=0.05 -> kind=2 (want 2 CAUCHY) pa=4.975186e-03 pb=0.000000e+00 |p|=5.000000000000e-02 (want 5.0e-02) pred=3.787190285808e-01 PASS
+[DAMAGE TR SELFTEST] Delta=0.5 -> kind=3 (want 3 DOGLEG) pa=5.205137e-03 pb=4.845884e-01 |p|=5.000000000000e-01 (want 5.0e-01) pred=8.698316615594e-01 PASS
+[DAMAGE TR SELFTEST] pred(full Newton)=1.000000000000e+00 (want 1.000000000000e+00, i.e. the linear model predicts phi=0) PASS
+[DAMAGE TR SELFTEST] pred(Cauchy point)=5.099990001000e-01 (want 5.099990001000e-01 = |d|^4/(2|Jd|^2)) PASS
+[DAMAGE TR SELFTEST] refusals: Delta=0 -> 0, |Jd|^2=0 -> 0, Delta=NaN -> 0, dot(d,p_N)=NaN -> 0 (all want 0) PASS
+[DAMAGE TR SELFTEST] 0 failure(s)
+[DAMAGE TR] trust-region DOGLEG armed as rescue LEVEL 3.  Levels 1 and 2 are the unchanged Rescue2 behaviour and run first; only when BOTH have failed on the same wall does the increment get one more attempt, and in that attempt every Newton correction is chosen by a dogleg trust region on phi=1/2|R|^2 instead of by BK3.  No matrix entry, no material constant and no deletion rule is touched, and convergence is still judged by checkconvergence on the UNMODIFIED residual.  Budget: <=6 trial steps per iteration, <=100000 residual evaluations, <=100000 armed factorisations, <=1000 armed attempts in the whole run; on exhaustion the state is restored and the ORIGINAL stock stop runs.  Initial radius = 1.000 * |p_Newton| at the first armed iteration.
+  ok   two tets on one face: the cut is that face's area      got 0.500000000 want 0.500000000
+  ok   a neighbour at D=0.6 scales the cut by g=0.4           got 0.200000000 want 0.200000000
+  ok   a fully damaged neighbour leaves gmin, not zero        got 0.000050000 want 0.000050000
+  ok   with the far element deleted the cut is zero           got 0.000000000 want 0.000000000
+  ok   two bridges in parallel: the cut is their sum          got 0.500500000 want 0.500500000
+  ok   with only the sliver left the cut collapses 99.9 percent got 0.000500000 want 0.000500000
+  ok   and a boolean sweep still calls this CONNECTED - which is
+       the whole reason this file exists
+  ok   a target above the true cut reports BELOW              below=1
+  ok   a target below the true cut reports NOT below          below=0
+  ..   the next line is the refusal this check provokes
+[LOADCUT] refusing: 1 live element(s) are neither C3D4 nor UC6.  A measurement that is absent can be recovered; one that is wrong cannot.
+  ok   an unsupported live element makes it refuse (-1)       got -1.000000000 want -1.000000000
+  ok   an undamaged cohesive facet conducts at full area      got 0.500000000 want 0.500000000
+  ok   a facet at D=0.75 conducts at a quarter                got 0.125000000 want 0.125000000
+  ok   a fully failed facet drops to gmin, not to full strength got 0.000050000 want 0.000050000
+  ..   the next line is the refusal this check provokes
+[LOADCUT] refusing: at least one element touches BOTH termination sets, so no finite cut separates them.  The sets have to be disjoint in the mesh, not only in the deck.
+  ok   grips sharing an element make it refuse, not report infinity got -1.000000000 want -1.000000000
+  ok   400 thin paths beside one thick: scaling keeps the count low 401 augmentations
+  ok   a set name resolves, lower case, with the range expanded 5 nodes
+  ok   a missing set is reported, not invented               
+[LOADCUT SELFTEST] PASSED
+[LOADCUT] residual-stiffness floor in the weighting: 1.000000e-04
+[LOADCUT] armed: the run stops when the minimum cut between the termination sets falls below 0.0001 of its value at the first committed batch.
+[LOADCUT] the cut is the smallest total (face area x residual stiffness) that would have to break to separate them - a width, not a yes/no.
+[FRACTURE TERMINATION] the run stops as soon as no surviving element links FACE_X0_NSET to FACE_XL_NSET, elements conducting through a shared node
+[DAMSTATE] self test
+   A intact: none dead                got=0    want=0    ok
+   A node 3 not judged (dof held)     got=0    want=0    ok
+   A intact reference captured        got=1    want=1    ok
+   B collapsed node is dead           got=1    want=1    ok
+   B only that one                    got=1    want=1    ok
+   B healthy node still alive         got=0    want=0    ok
+   C exactly at threshold is alive    got=0    want=0    ok
+   D reference unchanged              got=1    want=1    ok
+   E negative diagonal not dead by default got=0    want=0    ok
+   E negative diagonal dead when asked got=1    want=1    ok
+   F min over dofs is the smallest    got=1    want=1    ok
+   G threshold 0 judges nobody        got=0    want=0    ok
+   H all points failed -> dead        got=1    want=1    ok
+   H one point alive -> not dead      got=0    want=0    ok
+   I two facets counted               got=2    want=2    ok
+   I shared node holds twice          got=2    want=2    ok
+   I private node holds once          got=1    want=1    ok
+   I bulk element is not a facet      got=1    want=1    ok
+   I deleted facet is not counted     got=1    want=1    ok
+   I deleted facet holds nothing      got=0    want=0    ok
+   I its shared node keeps the live one got=1    want=1    ok
+[DAMSTATE] self test PASSED (0 failure(s))
+[DAMAGE AUTOSPC] a node whose assembled diagonal has fallen below 1.0e-03 of its own intact value is excluded from the DISPLACEMENT convergence norm; the force residual is untouched and nothing is deleted
+[DAMAGE DEADALL] a node whose ENTIRE live support is dead (g < 1.0e-02) and which no cohesive facet holds has that support deleted; only dead elements can be taken
+[DAMAGE FACET DEBRIS] a cohesive facet with a corner at which NEITHER node keeps a live bulk element below the deletion threshold (law damage D) is removed: it ties debris to debris
+[DAMAGE DEADSOLE] a dead element (g < 1.0e-03) that is the sole support of a node is deleted
+[DAMAGE DEADSOLE] the sole-support rule reads the law's damage D, not the viscous Dvis
+[DAMAGE HINGE] a live bulk element joined to the bulk by at most two nodes, its other nodes held only by it and by facets at D >= 0.950, is deleted
+[DAMAGE HINGE] spikes too: a live bulk element whose one free node is held only by it and by dead facets, and only if the element itself is dead by the law (D >= the HINGE Dmin)
+[DAMAGE HINGE] clusters too: a group of live bulk elements sharing no node with the rest, held by at most two nodes through live facets
+[DAMAGE HINGE] a cluster with no anchored node at all may exceed the deletion batch and is taken whole, one per batch
+[DAMAGE BARE MASK] LAW: a C3D4 at the law's D >= the deletion threshold does not count as bulk support
+[DAMAGE BARE MASK] a node with no live bulk element whose every cohesive facet has D >= 0.950 at every point joins the AUTOSPC mask (needs CCX_DAMAGE_AUTOSPC > 0)
+[DAMAGE VISCOUS DAMPING] nodal dashpot c=2.000e-04 in the static residual and tangent: force -c*m*du/dt, m = the node's share of the reference volume (unit density); 10101 nodes, volume 2.304000e+01
+[DAMAGE GRADUAL] the forces of a deleted batch are released over 8 same-load steps (beta 1 -> 0), a failed step is halved up to 6 times before the stock rollback
+[DAMAGE AUTOSPC-FORCE] armed: a node already masked by AUTOSPC is excluded from the FORCE residual ram[0] as well as from cam[0].  Its dof is still solved and still moved; the largest excluded residual is reported on every increment.
+[GLOBALIZE] self test
+   all six mechanisms named, no duplicates got=1        want=1        ok
+   a fresh census has counted nothing     got=1        want=1        ok
+   first attempt cannot repeat anything   got=0        want=0        ok
+     the ladder is NOT credited on attempt 1 got=0        want=0        ok
+     it is recorded unknown instead       got=1        want=1        ok
+   an identical correction is a repeat    got=1        want=1        ok
+     and the mechanism is recorded inert  got=1        want=1        ok
+     and NOT credited as effective        got=0        want=0        ok
+   two mechanisms in one attempt are both credited got=1        want=1        ok
+   an attempt with no mechanism is counted apart got=1        want=1        ok
+   total attempts                         got=4        want=4        ok
+   a mechanism is not credited twice      got=1        want=1        ok
+   an identical SEQUENCE is a repeat      got=1        want=1        ok
+     and the mechanism is inert           got=1        want=1        ok
+   a sequence differing in ONE iteration is not a repeat got=1        want=1        ok
+     and the mechanism is effective       got=1        want=1        ok
+     with attempt 1 still unknown, not effective got=1        want=1        ok
+   an attempt with no iteration is not counted got=3        want=3        ok
+   three firings in one attempt count as three got=3        want=3        ok
+     but as ONE attempt                   got=1        want=1        ok
+[GLOBALIZE] self test PASSED (0 failure(s))
+[TOPOLOGY] self test
+   element nip map, all 12 forms        got=1          want=1          ok
+   a fresh transaction holds nothing    got=1          want=1          ok
+   discard of an empty transaction is safe got=1          want=1          ok
+   an opened transaction holds its marks got=1          want=1          ok
+   discard releases every array         got=1          want=1          ok
+   discard zeroes the count             got=0          want=0          ok
+   discard leaves the stamp alone       got=1          want=1          ok
+   discard is idempotent                got=1          want=1          ok
+   collect finds both newly dead elements got=2          want=2          ok
+     and not the one dead at the baseline got=1          want=1          ok
+     worst integration point of element 1 is 2 got=1          want=1          ok
+     worst integration point of element 3 is 1 got=1          want=1          ok
+     and the stamp is the one it was given got=1          want=1          ok
+   DE1.3 override replaces value and point got=1          want=1          ok
+     and leaves the element it did not flag alone got=1          want=1          ok
+   collect replaces, it does not append got=2          want=2          ok
+   history: one row per marked element  got=2          want=2          ok
+   history: nine fields, in the order ccxdiff reads got=1          want=1          ok
+[TOPOLOGY] self test PASSED (0 failure(s))
+[CONVERGE] self test
+   A largest residual                   got=7                      want=7                      ok
+   A found at equation 4                got=4.5                    want=4.5                    ok
+   A uam takes the correction           got=0.5                    want=0.5                    ok
+   A qam running average                got=7                      want=7                      ok
+   A nothing excluded                   got=0                      want=0                      ok
+   B masked node does not veto          got=3                      want=3                      ok
+   B excluded peak reported             got=7                      want=7                      ok
+   B excluded node is 1-based           got=3                      want=3                      ok
+   B excluded dof count                 got=2                      want=2                      ok
+   C mask off: full residual            got=7                      want=7                      ok
+   D ram1 is the previous ram           got=3                      want=3                      ok
+   D ram2 is the one before             got=7                      want=7                      ok
+   E tiny residual is cut to zero       got=0                      want=0                      ok
+   E mortar pair used the UNCUT value   got=5.0000001000000003     want=5.0000001000000003     ok
+   E mortar element count               got=2.5                    want=2.5                    ok
+   F qam floored at 0.25 of its peak    got=25                     want=25                     ok
+   all six reasons named and distinct   got=1                      want=1                      ok
+   diverged reasons are negative        got=1                      want=1                      ok
+   iterating is zero                    got=1                      want=1                      ok
+   converged is positive                got=1                      want=1                      ok
+   after-convergence stop names convergence got=yes                    want=yes                    ok
+   tol.ran from ctrl[18]                got=0.0050000000000000001  want=0.0050000000000000001  ok
+   tol.ral from ctrl[25]                got=0.0001                 want=0.0001                 ok
+   mech converged                       got=1                      want=1                      ok
+   mech iit=1 blocked                   got=0                      want=0                      ok
+     blocker                            got=IterationsAtLeast2     want=IterationsAtLeast2     ok
+   mech residual blocked                got=0                      want=0                      ok
+     blocker                            got=ForceResidual          want=ForceResidual          ok
+   mech contact-change blocked          got=0                      want=0                      ok
+     blocker                            got=ContactSetStable       want=ContactSetStable       ok
+   mech OR-branch converged             got=1                      want=1                      ok
+   mech OR-branch + gas network         got=0                      want=0                      ok
+     blocker                            got=SolutionChange         want=SolutionChange         ok
+   mech correction floor                got=1                      want=1                      ok
+   all leaves evaluated at iit=1        got=10                     want=10                     ok
+   c1 at iit<=ip is ran                 got=0.0050000000000000001  want=0.0050000000000000001  ok
+   c2 at iit<=ip is can                 got=0.01                   want=0.01                   ok
+   c1 past ip is rap                    got=0.02                   want=0.02                   ok
+   c1 at small increment is ea          got=1.0000000000000001e-05 want=1.0000000000000001e-05 ok
+   c2 at small increment is cae         got=0.001                  want=0.001                  ok
+   ram2 ratchets down to ram1           got=3                      want=3                      ok
+   ram2 does not ratchet up             got=3                      want=3                      ok
+   thermomech ignores iflagact          got=1                      want=1                      ok
+     mech with same numbers blocked     got=0                      want=0                      ok
+   thermal ral leaf gated on iit>1      got=0                      want=0                      ok
+     same numbers at iit=2 converge     got=1                      want=1                      ok
+[CONVERGE] self test PASSED (0 failure(s))
+[DAMAGE PATCH A3] adaptive-fast transactional damage enabled (batch_max=24 floor=0.25 direct_alpha=0.35)
+[DAMAGE DE1.2] Newton-integrated trial damage enabled (2 material(s)); BK1 one-pass local update / one global Newton solve; exact cell VTK enabled
+[DAMAGE DM2.0] tabulated ductile initiation enabled (2 material(s)); eps_f(eta) linear interpolation
+[DAMAGE DE1.3.1] terminal failure enabled (Ddelete=0.9990 batch_max=64); transactional A3 topology backend
+[DAMAGE SOLVER NC1] adaptive slow-Newton controller enabled (stock_ic=16 cap=40 max_extra=20); final stock convergence criteria unchanged
+[DAMAGE CRACK-BAND] max L*sigma_y/(u_f*E) = 0.5002 in element 34787
+[DAMAGE TANGENT BK2] secant g(D)*Cep baseline enabled - this is the DEFAULT and the measured best on both fast decks; set CCX_DAMAGE_TANGENT=UNSYM for the consistent tangent, which buys 0.2% of iterations for 37% of runtime
+[DAMAGE SOLVER NC2] terminal same-load correction scale uses the converged physical-increment displacement norm; stock residual/correction tolerances retained
+[DAMAGE SOLVER BK3] adaptive line search enabled (growth=1.10 lambda=[0.10,0.80] trials=3); full Newton retained while residual contracts
+[LSLADDER] self test
+   A legacy rungs                 1.0000 0.5000 0.1000  ok
+   B legacy takes the last        best=0.5000 taken=0.1000  ok (reproduces the defect)
+   C fixed takes the best         best=0.5000 taken=0.5000  ok
+   D fixed ladder depth           rungs 0.8 0.4 0.2 0.1 0.05 0.025 0.0125 0.001  ok
+   E contraction accepted         return=1 alpha=1.0000  ok
+   F monotone, respects the floor ok
+   G alpha0 is honoured           first two rungs 0.548186 0.274093  ok
+[LSLADDER] self test PASSED (0 failure(s))
+[DAMAGE LINESEARCH] ladder: floor 1.0000e-03, up to 8 trials, and the BEST alpha measured is taken when none contracts.
+[DAMAGE LINESEARCH] floor 1.0000e-03 (default 0.10), max trials 8 (default 3)
+[DAMAGE TOPOLOGY BK4] deferred sparse-structure compaction enabled; terminal elements leave the assembly immediately, remastruct is deferred until an active node becomes orphaned
