@@ -1,0 +1,13 @@
+Animations for the presentation (Manim Community 0.19.1, manim-slides 5.7)
+
+  fn_loop.gif        Fn 0 -> 100 -> 0 %, the 12 plates of the series (seed 5)
+  deck_of_cards.gif  delta platelets on the alpha basal plane stack into a
+                     mesoscale hydride at 14.7 deg, (10-17) (Motta 2019)
+  texture.gif        basal poles R -> T turn the hydrides tangential -> radial;
+                     (0001) pole figure, Fn(phi) by the 45 deg rule, f_R
+  reorient.gif       stress reorientation: dissolve at 400 C, cool with and
+                     without hoop stress (sigma_th ~ 45 MPa, Plyasov 2023)
+
+Each GIF loops without a seam, 1280x720, 25 fps, black background.
+Render:  manim -r 1280,720 --fps 25 <scene>.py <Class>;  mkgif.sh in.mp4 out.gif
+demo_fn.py + make_decks.py: click-stepped decks (video / GIF / PDF).
