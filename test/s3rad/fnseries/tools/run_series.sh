@@ -6,5 +6,5 @@ DECKS=${*:-"fn0 fn100 fn25 fn40 fn20 fn33 fn60 fn80"}
 mkdir -p "$OUT"
 for d in $DECKS; do echo "$d"; done |
   xargs -P "${JOBS:-4}" -I{} bash /home/user/fn-series/tools/run_one.sh \
-    /home/user/fn-series/v1/{}.inp "$OUT/{}"
+    ${DECKDIR:-/home/user/fn-series/v1}/{}.inp "$OUT/{}"
 echo "SERIES DONE" >> "$OUT/summary.txt"

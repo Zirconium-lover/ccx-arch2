@@ -41,3 +41,14 @@ Results (results_v1/, refreshed while the series runs; tools/saver.sh)
 
 rings_E635_Egorochkin_2023.csv: ring tension of hydrided E635 tubes,
   elongation delta and fracture-area reduction against Fn (thesis tab. 3.1).
+
+Outcome of v1 (2026-10-10) and the rollback
+  v1 stopped rc=201 at the load peak: Fn 100 % at eps 5.0 % (568 MPa) and
+  Fn 25 % at eps 6.6 % (588 MPa); Fn 0 and 42 % were on rescue steps.  Every
+  deleted bulk element was hydride (material 2): with eps_f = 1 % the ZrH
+  plates shatter into small debris held by interface facets, and Newton does
+  not converge on it.  Partial v1 results are in results_v1/.
+  Rolled back to the properties of the presentation series (decks_base/:
+  mkseeddeck.py --seed 5 --fn P --kn 1e6 --gmin 2e-6, unchanged materials of
+  m12_s3rad_gc24_w.inp; only the field/facet output frequency 5 -> 10).
+  Results in results_base/.
