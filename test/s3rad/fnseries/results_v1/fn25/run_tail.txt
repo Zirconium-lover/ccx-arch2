@@ -1,0 +1,400 @@
+ largest correction to disp= 1.584284e-05 in node 8862 and dof 1
+
+ convergence; the increment size is increased to 1.500000e-03
+
+ the increment size exceeds the maximum allowed and is decreased to 1.000000e-03
+
+ increment 58 attempt 1 
+ increment size= 1.000000e-03
+ sum of previous increments=4.075000e-02
+ actual step time=4.175000e-02
+ actual total time=4.175000e-02
+
+ iteration 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
+
+ Factoring the system of equations using the symmetric pardiso solver
+ number of threads = 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ average force= 0.316990
+ time avg. forc= 0.258635
+ largest residual force= 0.001830 in node 2125 and dof 1
+ largest increment of disp= 1.962684e-03
+ largest correction to disp= 7.686400e-05 in node 4238 and dof 1
+
+ no convergence
+
+ iteration 2
+
+ Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
+
+ Factoring the system of equations using the symmetric pardiso solver
+ number of threads = 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ average force= 0.316990
+ time avg. forc= 0.258635
+ largest residual force= 0.000003 in node 5632 and dof 2
+ largest increment of disp= 1.962684e-03
+ largest correction to disp= 7.352400e-07 in node 8831 and dof 1
+
+ convergence; the increment size is increased to 1.500000e-03
+
+ the increment size exceeds the maximum allowed and is decreased to 1.000000e-03
+
+ increment 59 attempt 1 
+ increment size= 1.000000e-03
+ sum of previous increments=4.175000e-02
+ actual step time=4.275000e-02
+ actual total time=4.275000e-02
+
+ iteration 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
+
+ Factoring the system of equations using the symmetric pardiso solver
+ number of threads = 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ average force= 0.318561
+ time avg. forc= 0.259650
+ largest residual force= 0.002304 in node 9308 and dof 1
+ largest increment of disp= 1.962673e-03
+ largest correction to disp= 2.187934e-05 in node 9500 and dof 1
+
+ no convergence
+
+ iteration 2
+
+ Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
+
+ Factoring the system of equations using the symmetric pardiso solver
+ number of threads = 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ average force= 0.318561
+ time avg. forc= 0.259650
+ largest residual force= 0.000003 in node 366 and dof 1
+ largest increment of disp= 1.962673e-03
+ largest correction to disp= 1.049222e-06 in node 9280 and dof 1
+
+ convergence; the increment size is increased to 1.500000e-03
+
+ the increment size exceeds the maximum allowed and is decreased to 1.000000e-03
+
+ increment 60 attempt 1 
+ increment size= 1.000000e-03
+ sum of previous increments=4.275000e-02
+ actual step time=4.375000e-02
+ actual total time=4.375000e-02
+
+ iteration 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
+
+ Factoring the system of equations using the symmetric pardiso solver
+ number of threads = 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ average force= 0.320151
+ time avg. forc= 0.260659
+ largest residual force= 0.000894 in node 2374 and dof 1
+ largest increment of disp= 1.962777e-03
+ largest correction to disp= 1.375076e-05 in node 7475 and dof 1
+
+ no convergence
+
+ iteration 2
+
+ Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
+
+ Factoring the system of equations using the symmetric pardiso solver
+ number of threads = 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ average force= 0.320151
+ time avg. forc= 0.260659
+ largest residual force= 0.000039 in node 9280 and dof 1
+ largest increment of disp= 1.962777e-03
+ largest correction to disp= 3.991206e-07 in node 9394 and dof 1
+
+ convergence; the increment size is increased to 1.500000e-03
+
+ the increment size exceeds the maximum allowed and is decreased to 1.000000e-03
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ increment 61 attempt 1 
+ increment size= 1.000000e-03
+ sum of previous increments=4.375000e-02
+ actual step time=4.475000e-02
+ actual total time=4.475000e-02
+
+ iteration 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
+
+ Factoring the system of equations using the symmetric pardiso solver
+ number of threads = 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ average force= 0.321757
+ time avg. forc= 0.261660
+ largest residual force= 0.000825 in node 9026 and dof 1
+ largest increment of disp= 1.963048e-03
+ largest correction to disp= 1.070414e-05 in node 8149 and dof 1
+
+ no convergence
+
+ iteration 2
+
+ Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
+
+ Factoring the system of equations using the symmetric pardiso solver
+ number of threads = 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ average force= 0.321757
+ time avg. forc= 0.261660
+ largest residual force= 0.000011 in node 226 and dof 1
+ largest increment of disp= 1.963048e-03
+ largest correction to disp= 4.534085e-07 in node 9026 and dof 1
+
+ convergence; the increment size is increased to 1.500000e-03
+
+ the increment size exceeds the maximum allowed and is decreased to 1.000000e-03
+
+ increment 62 attempt 1 
+ increment size= 1.000000e-03
+ sum of previous increments=4.475000e-02
+ actual step time=4.575000e-02
+ actual total time=4.575000e-02
+
+ iteration 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
+
+ Factoring the system of equations using the symmetric pardiso solver
+ number of threads = 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ average force= 0.323380
+ time avg. forc= 0.262656
+ largest residual force= 0.001120 in node 9011 and dof 1
+ largest increment of disp= 1.963388e-03
+ largest correction to disp= 1.436531e-05 in node 9047 and dof 3
+
+ no convergence
+
+ iteration 2
+
+ Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
+
+ Factoring the system of equations using the symmetric pardiso solver
+ number of threads = 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ average force= 0.323380
+ time avg. forc= 0.262656
+ largest residual force= 0.000039 in node 2272 and dof 1
+ largest increment of disp= 1.963388e-03
+ largest correction to disp= 1.342889e-06 in node 9011 and dof 1
+
+ convergence; the increment size is increased to 1.500000e-03
+
+ the increment size exceeds the maximum allowed and is decreased to 1.000000e-03
+
+ increment 63 attempt 1 
+ increment size= 1.000000e-03
+ sum of previous increments=4.575000e-02
+ actual step time=4.675000e-02
+ actual total time=4.675000e-02
+
+ iteration 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
+
+ Factoring the system of equations using the symmetric pardiso solver
+ number of threads = 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ average force= 0.325023
+ time avg. forc= 0.263646
+ largest residual force= 0.000772 in node 1781 and dof 1
+ largest increment of disp= 1.963777e-03
+ largest correction to disp= 1.544377e-05 in node 9501 and dof 1
+
+ no convergence
+
+ iteration 2
+
+ Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
+
+ Factoring the system of equations using the symmetric pardiso solver
+ number of threads = 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ average force= 0.325023
+ time avg. forc= 0.263646
+ largest residual force= 0.000001 in node 1781 and dof 1
+ largest increment of disp= 1.963777e-03
+ largest correction to disp= 4.595588e-07 in node 7486 and dof 1
+
+ convergence; the increment size is increased to 1.500000e-03
+
+ the increment size exceeds the maximum allowed and is decreased to 1.000000e-03
+
+ increment 64 attempt 1 
+ increment size= 1.000000e-03
+ sum of previous increments=4.675000e-02
+ actual step time=4.775000e-02
+ actual total time=4.775000e-02
+
+ iteration 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
+
+ Factoring the system of equations using the symmetric pardiso solver
+ number of threads = 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ average force= 0.326684
+ time avg. forc= 0.264631
+ largest residual force= 0.002436 in node 9140 and dof 1
+ largest increment of disp= 1.964316e-03
+ largest correction to disp= 2.060132e-05 in node 9069 and dof 1
+
+ no convergence
+
+ iteration 2
+
+ Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
+
+ Factoring the system of equations using the symmetric pardiso solver
+ number of threads = 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ average force= 0.326684
+ time avg. forc= 0.264631
+ largest residual force= 0.000220 in node 2291 and dof 1
+ largest increment of disp= 1.964316e-03
+ largest correction to disp= 3.370336e-06 in node 9011 and dof 1
+
+ convergence; the increment size is increased to 1.500000e-03
+
+ the increment size exceeds the maximum allowed and is decreased to 1.000000e-03
+
+ increment 65 attempt 1 
+ increment size= 1.000000e-03
+ sum of previous increments=4.775000e-02
+ actual step time=4.875000e-02
+ actual total time=4.875000e-02
+
+ iteration 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
+
+ Factoring the system of equations using the symmetric pardiso solver
+ number of threads = 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ average force= 0.328359
+ time avg. forc= 0.265611
+ largest residual force= 0.000971 in node 7488 and dof 1
+ largest increment of disp= 1.964899e-03
+ largest correction to disp= 1.150071e-05 in node 8149 and dof 1
+
+ no convergence
+
+ iteration 2
+
+ Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
+
+ Factoring the system of equations using the symmetric pardiso solver
+ number of threads = 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ average force= 0.328358
+ time avg. forc= 0.265611
+ largest residual force= 0.000001 in node 57 and dof 1
+ largest increment of disp= 1.964899e-03
+ largest correction to disp= 8.590927e-07 in node 7488 and dof 1
+
+ convergence; the increment size is increased to 1.500000e-03
+
+ the increment size exceeds the maximum allowed and is decreased to 1.000000e-03
+
+ increment 66 attempt 1 
+ increment size= 1.000000e-03
+ sum of previous increments=4.875000e-02
+ actual step time=4.975000e-02
+ actual total time=4.975000e-02
+
+ iteration 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
+
+ Factoring the system of equations using the symmetric pardiso solver
+ number of threads = 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ average force= 0.330042
+ time avg. forc= 0.266587
+ largest residual force= 0.001556 in node 8119 and dof 1
+ largest increment of disp= 1.965372e-03
+ largest correction to disp= 1.632260e-05 in node 8148 and dof 1
+
+ no convergence
+
+ iteration 2
+
+ Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
+
+ Factoring the system of equations using the symmetric pardiso solver
+ number of threads = 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ average force= 0.330042
+ time avg. forc= 0.266587
+ largest residual force= 0.000005 in node 367 and dof 1
+ largest increment of disp= 1.965372e-03
+ largest correction to disp= 1.311074e-06 in node 8119 and dof 1
+

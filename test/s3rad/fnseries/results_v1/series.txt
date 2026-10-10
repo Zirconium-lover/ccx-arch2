@@ -1,0 +1,12 @@
+fn0                          peak 570 MPa at eps 4.44 %  last eps 4.44 % sigma 570 (100 % of peak)  eps_f10 -  W 21.3 MJ/m3
+Traceback (most recent call last):
+  File "/home/user/fn-series/tools/curve.py", line 51, in <module>
+    main()
+    ~~~~^^
+  File "/home/user/fn-series/tools/curve.py", line 37, in main
+    eps, sig = read(d + '/m.dat')
+               ~~~~^^^^^^^^^^^^^^
+  File "/home/user/fn-series/tools/curve.py", line 20, in read
+    for l in open(dat, errors='replace'):
+             ~~~~^^^^^^^^^^^^^^^^^^^^^^^
+NotADirectoryError: [Errno 20] Not a directory: '/home/user/fn-series/runs_v1/fn0.out/m.dat'
