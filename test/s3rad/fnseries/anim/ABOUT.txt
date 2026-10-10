@@ -1,18 +1,32 @@
 Animations for the presentation (Manim Community 0.19.1, manim-slides 5.7)
 
-  fn_loop.gif        Fn 0 -> 100 -> 0 %, the 12 plates of the series (seed 5)
+  fn_loop.gif        the 12 plates of the series turn radial one by one and
+                     back; the formula F_n = k/12 = ... follows (seed 5)
   deck_of_cards.gif  delta platelets on the alpha basal plane stack into a
                      mesoscale hydride at 14.7 deg, (10-17) (Motta 2019)
   texture.gif        basal poles R -> T turn the hydrides tangential -> radial;
-                     (0001) pole figure, Fn(phi) by the 45 deg rule, f_R
-  reorient.gif       stress reorientation: dissolve at 400 C, cool with and
-                     without hoop stress (sigma_th ~ 45 MPa, Plyasov 2023)
+                     (0001) pole figure, R at the centre
+  reorient.gif       stress reorientation, qualitative: heat (hydrides
+                     dissolve), load, cool under load, unload - radial
+                     hydrides stay
 
 Each GIF loops without a seam, 1600x900, 25 fps, black background; one GIF
-per slide, the top ~12 % left empty for the slide title, Noto Serif (the
-deck's font), labels sized for the back of a hall (style.py).
+per slide, the top band (y > 2.85) left empty for the slide title, Noto Serif
+(the deck's font).  No numbers beyond F_n and 14.7 deg: the GIFs show the
+meaning, the slide text gives the data.
+
+Layout (style.py): every element is placed from measured bounding boxes in a
+grid inside CONTENT (x -6.71..6.71, y -3.65..2.85); report() prints overlaps
+and anything outside, checkframes.py checks rendered frames for ink in the
+title band and the margins.  The 3D cell in deck_of_cards.py is sized and
+centred from the camera projection of its vertices over the whole turn.
+Type scale at 1600x900: L1 MathTex 64 (cap 51 px), L2 Text 30 / MathTex 44,
+L3 Text 26 / MathTex 38 - nothing smaller.
+
 reorient.gif shows one stress cycle only and returns to the start by an
 explicit, labelled cross-fade (no claim about stress-free re-cooling, where
 the memory effect can keep hydrides radial).
+
 Render:  manim -r 1600,900 --fps 25 <scene>.py <Class>;  mkgif.sh in.mp4 out.gif 1600
-demo_fn.py + make_decks.py: click-stepped decks (video / GIF / PDF).
+         python3 checkframes.py media/videos/<scene>/900p25/<scene>.mp4
+demo_fn.py + make_decks.py: click-stepped decks (video / GIF / PDF), older.

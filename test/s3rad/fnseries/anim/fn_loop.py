@@ -1,72 +1,71 @@
 """Looping GIF: the 12 plates of the series turn radial one by one
-(Fn 0 -> 100 %), hold, and turn back (100 -> 0 %).  First frame = last frame.
+(Fn 0 -> 1), hold, and turn back.  First frame = last frame.
+
+Layout from measurement: the right column is exactly as wide as the widest
+state of the formula (L1) or the legend (L2); the specimen gets the rest and
+is fitted into its cell.
 
     manim -r 1600,900 --fps 25 fn_loop.py FnLoop
 """
 import sys
-import numpy as np
 from style import *
 
 sys.path.insert(0, '/home/user/ccx-fn/test/s3rad')
 import mkseeddeck as gen  # noqa: E402
 
 LX, LY = 4.0, 3.6
-S = 1.55                       # scene units per mm
 C = gen.place_any(5)
 ORDER = list(np.random.default_rng(10000 + 5).permutation(12))
 STEP, HOLD0, HOLD1 = 0.42, 1.2, 1.6
 
 
+def fn_tex(k):
+    v = '0' if k == 0 else '1' if k == 12 else ('%.2f' % (k / 12)).replace('.', '{,}')
+    return r'F_n = {%d \over 12} = %s' % (k, v)
+
+
 class FnLoop(Scene):
     def construct(self):
         self.camera.background_color = BG
-        centre = np.array([-3.0, -0.45, 0.])
 
-        def at(x, y):
-            return centre + np.array([(x - LX / 2) * S, (y - LY / 2) * S, 0.])
+        # ---- measure the right column ----
+        widest = max((tex(fn_tex(k), L1) for k in range(13)), key=lambda m: m.width)
+        leg = legend(L2)
+        col_w = max(widest.width, leg.width) + 0.1
+        gap = 0.6
+        left = Box(CONTENT.x0, CONTENT.x1 - col_w - gap, CONTENT.y0, CONTENT.y1)
+        right = Box(CONTENT.x1 - col_w, CONTENT.x1, CONTENT.y0, CONTENT.y1)
 
-        box = Rectangle(width=LX * S, height=LY * S, stroke_color=GREY_B,
-                        stroke_width=3).move_to(centre)
+        # ---- specimen, built in mm and fitted into the left cell ----
+        box = Rectangle(width=LX, height=LY, stroke_color=GREY_B, stroke_width=3)
         arrows = VGroup()
-        for dy in (-1.9, 0., 1.9):
-            arrows.add(Arrow(box.get_left() + UP * dy, box.get_left() + UP * dy + LEFT * 0.75,
-                             buff=0, color=WHITE, stroke_width=8),
-                       Arrow(box.get_right() + UP * dy, box.get_right() + UP * dy + RIGHT * 0.75,
-                             buff=0, color=WHITE, stroke_width=8))
-        sig = tex(r'\sigma_{\theta}', FS).next_to(arrows[5], UP, buff=0.15)
-        r_ax = VGroup(Arrow(ORIGIN, UP * 1.1, buff=0, color=GREY_A, stroke_width=7),
-                      tex('r', FS_SM, GREY_A))
-        r_ax[1].next_to(r_ax[0], RIGHT, buff=0.1)
-        r_ax.next_to(box.get_corner(UL), DR, buff=0.2)
-
+        for dy in (-1.15, 0., 1.15):
+            for side, d in ((box.get_left(), LEFT), (box.get_right(), RIGHT)):
+                arrows.add(Arrow(side + UP * dy, side + UP * dy + d * 0.5, buff=0, color=WHITE,
+                                 stroke_width=7, max_tip_length_to_length_ratio=0.4))
         plates = VGroup(*[
-            RoundedRectangle(width=0.6 * S, height=0.12 * S, corner_radius=0.06 * S,
-                             stroke_width=0, fill_color=TAN, fill_opacity=1).move_to(at(c[0], c[1]))
-            for c in C])
+            RoundedRectangle(width=0.6, height=0.12, corner_radius=0.06, stroke_width=0,
+                             fill_color=TAN, fill_opacity=1).move_to(
+                np.array([c[0] - LX / 2, c[1] - LY / 2, 0.])) for c in C])
+        r_ax = VGroup(Arrow(ORIGIN, UP * 0.7, buff=0, color=GREY_A, stroke_width=6,
+                            max_tip_length_to_length_ratio=0.3))
+        r_ax.next_to(box.get_corner(UL), DR, buff=0.12)
+        spec = VGroup(box, arrows, plates, r_ax)
+        fit(spec, left)
+        # labels at their final size (not scaled with the specimen)
+        r_l = tex('r', L2M, GREY_A).next_to(r_ax, RIGHT, buff=0.12).align_to(r_ax, UP)
+        sig = tex(r"\sigma_\theta", L2M).next_to(arrows[5], UP, buff=0.12)
 
+        # ---- right column: formula over legend, centred as a block ----
         k = ValueTracker(0)
-        x0 = 2.0
-        lab = tex(r'F_n =', FS_BIG).move_to(np.array([x0 + 0.9, 1.75, 0.]))
-        frac = always_redraw(lambda: tex(r'{%d \over 12}' % round(k.get_value()), FS_BIG)
-                             .next_to(lab, RIGHT, buff=0.25))
-        pct = always_redraw(lambda: Integer(
-            round(100 * round(k.get_value()) / 12), unit=r'\,\%', font_size=FS_HUGE + 8,
-            color=ACC).move_to(np.array([x0 + 2.45, -0.2, 0.])))
-        bar_bg = Rectangle(width=4.6, height=0.28, stroke_color=GREY_B, stroke_width=2)
-        bar_bg.move_to(np.array([x0 + 2.45, -1.55, 0.]))
-        bar = always_redraw(lambda: Rectangle(
-            width=max(1e-3, 4.6 * k.get_value() / 12), height=0.28, stroke_width=0,
-            fill_color=ACC, fill_opacity=1).align_to(bar_bg, LEFT).align_to(bar_bg, DOWN))
-        legend = VGroup(
-            VGroup(RoundedRectangle(width=0.16, height=0.75, corner_radius=0.06, stroke_width=0,
-                                    fill_color=RAD, fill_opacity=1),
-                   txt('радиальные', TX, RAD)).arrange(RIGHT, buff=0.3),
-            VGroup(RoundedRectangle(width=0.75, height=0.16, corner_radius=0.06, stroke_width=0,
-                                    fill_color=TAN, fill_opacity=1),
-                   txt('тангенциальные', TX, TAN)).arrange(RIGHT, buff=0.3),
-        ).arrange(DOWN, aligned_edge=LEFT, buff=0.35).move_to(np.array([x0 + 2.45, -2.9, 0.]))
+        block = VGroup(widest.copy(), leg).arrange(DOWN, buff=1.1, aligned_edge=LEFT)
+        place(block, right, ORIGIN)
+        anchor = block[0].get_left()
+        formula = always_redraw(lambda: tex(fn_tex(round(k.get_value())), L1)
+                                .move_to(anchor, aligned_edge=LEFT))
+        report({'spec': spec, 'formula': block[0], 'legend': leg, 'sig': sig, 'r': r_l})
 
-        self.add(box, arrows, sig, r_ax, plates, lab, frac, pct, bar_bg, bar, legend)
+        self.add(spec, r_l, sig, formula, leg)
         self.wait(HOLD0)
 
         def turn(i, j, to_radial):
