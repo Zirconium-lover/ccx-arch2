@@ -1,4 +1,4 @@
-fn0                          peak 582 MPa at eps 10.44 %  last eps 11.89 % sigma 563 (97 % of peak)  eps_f10 -  W 64.1 MJ/m3
+fn0                          peak 582 MPa at eps 10.44 %  last eps 11.98 % sigma 557 (96 % of peak)  eps_f10 -  W 64.6 MJ/m3
 Traceback (most recent call last):
   File "/home/user/fn-series/tools/curve.py", line 65, in <module>
     main()

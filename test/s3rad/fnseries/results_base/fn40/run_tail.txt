@@ -1,7 +1,3 @@
- no convergence
-
- iteration 2
-
  Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
 
  Factoring the system of equations using the symmetric pardiso solver
@@ -9,104 +5,12 @@
 
  Using up to 1 cpu(s) for the stress calculation.
 
- average force= 0.412913
- time avg. forc= 0.415506
-[DAMAGE AUTOSPC-FORCE] excluded 36 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 5.287071e-12 at node 2230 (ram[0]=2.869013e-04, tolerance 2.077528e-03 = 0.005 x qam; excluded peak = 1.272e-11 x qam)
- largest residual force= 0.000287 in node 431 and dof 2
- largest increment of disp= 1.251633e-05
- largest correction to disp= 2.921235e-07 in node 509 and dof 1
-
- convergence; the increment size is increased to 3.427734e-04
-
-[DAMAGE GRADUAL] inc=142 step 5 converged at beta=0.375000 -> beta=0.250000
- increment 142 attempt 1 
- increment size= 2.285156e-04
- sum of previous increments=2.110430e-01
- actual step time=2.112715e-01
- actual total time=2.112715e-01
-
- iteration 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
-
- Factoring the system of equations using the symmetric pardiso solver
- number of threads = 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- average force= 0.412912
- time avg. forc= 0.415487
-[DAMAGE AUTOSPC-FORCE] excluded 36 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 1.583113e-07 at node 2230 (ram[0]=9.747445e-04, tolerance 2.077436e-03 = 0.005 x qam; excluded peak = 3.81e-07 x qam)
- largest residual force= 0.000975 in node 7233 and dof 3
- largest increment of disp= 1.256385e-05
- largest correction to disp= 1.256385e-05 in node 716 and dof 1
-
-[DAMAGE REEQ NC2] inc=142 actual_uam=1.256385e-05 physical_ref=2.465487e-03
- no convergence
-
- iteration 2
-
- Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
-
- Factoring the system of equations using the symmetric pardiso solver
- number of threads = 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- average force= 0.412912
- time avg. forc= 0.415487
-[DAMAGE AUTOSPC-FORCE] excluded 36 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 5.263564e-12 at node 2230 (ram[0]=2.927659e-04, tolerance 2.077436e-03 = 0.005 x qam; excluded peak = 1.267e-11 x qam)
- largest residual force= 0.000293 in node 431 and dof 2
- largest increment of disp= 1.256385e-05
- largest correction to disp= 2.931821e-07 in node 509 and dof 1
-
- convergence; the increment size is increased to 3.427734e-04
-
-[DAMAGE GRADUAL] inc=142 step 6 converged at beta=0.250000 -> beta=0.125000
- increment 142 attempt 1 
- increment size= 2.285156e-04
- sum of previous increments=2.110430e-01
- actual step time=2.112715e-01
- actual total time=2.112715e-01
-
- iteration 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
-
- Factoring the system of equations using the symmetric pardiso solver
- number of threads = 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- average force= 0.412912
- time avg. forc= 0.415469
-[DAMAGE AUTOSPC-FORCE] excluded 36 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 9.456556e-02 at node 2230 (ram[0]=9.456542e-02, tolerance 2.077346e-03 = 0.005 x qam; excluded peak = 0.2276 x qam)
- largest residual force= 0.094565 in node 9146 and dof 2
- largest increment of disp= 1.261041e-05
- largest correction to disp= 1.261041e-05 in node 716 and dof 1
-
-[DAMAGE REEQ NC2] inc=142 actual_uam=1.261041e-05 physical_ref=2.465487e-03
- no convergence
-
- iteration 2
-
- Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
-
- Factoring the system of equations using the symmetric pardiso solver
- number of threads = 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- average force= 0.412911
- time avg. forc= 0.415469
-[DAMAGE AUTOSPC-FORCE] excluded 36 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 2.325440e-02 at node 2230 (ram[0]=2.325444e-02, tolerance 2.077346e-03 = 0.005 x qam; excluded peak = 0.05597 x qam)
- largest residual force= 0.023254 in node 9146 and dof 2
- largest increment of disp= 1.261041e-05
- largest correction to disp= 5.721330e-06 in node 9026 and dof 1
+ average force= 0.409140
+ time avg. forc= 0.412186
+[DAMAGE AUTOSPC-FORCE] excluded 42 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 9.247703e-10 at node 716 (ram[0]=8.979153e-02, tolerance 2.060928e-03 = 0.005 x qam; excluded peak = 2.244e-09 x qam)
+ largest residual force= 0.089792 in node 8039 and dof 1
+ largest increment of disp= 8.767895e-04
+ largest correction to disp= 5.039284e-05 in node 521 and dof 1
 
  no convergence
 
@@ -119,144 +23,12 @@
 
  Using up to 1 cpu(s) for the stress calculation.
 
- average force= 0.412911
- time avg. forc= 0.415469
-[DAMAGE AUTOSPC-FORCE] excluded 36 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 6.895731e-08 at node 2230 (ram[0]=2.160373e-04, tolerance 2.077346e-03 = 0.005 x qam; excluded peak = 1.66e-07 x qam)
- largest residual force= 0.000216 in node 431 and dof 2
- largest increment of disp= 1.261041e-05
- largest correction to disp= 5.506540e-06 in node 9026 and dof 1
-
- convergence; the increment size is increased to 3.427734e-04
-
-[DAMAGE GRADUAL] inc=142 step 7 converged at beta=0.125000 -> beta=0.000000
- increment 142 attempt 1 
- increment size= 2.285156e-04
- sum of previous increments=2.110430e-01
- actual step time=2.112715e-01
- actual total time=2.112715e-01
-
- iteration 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
-
- Factoring the system of equations using the symmetric pardiso solver
- number of threads = 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- average force= 0.412910
- time avg. forc= 0.415451
-[DAMAGE AUTOSPC-FORCE] excluded 36 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 1.864374e-08 at node 2230 (ram[0]=9.600289e-04, tolerance 2.077256e-03 = 0.005 x qam; excluded peak = 4.488e-08 x qam)
- largest residual force= 0.000960 in node 7233 and dof 3
- largest increment of disp= 1.265453e-05
- largest correction to disp= 1.265453e-05 in node 716 and dof 1
-
-[DAMAGE REEQ NC2] inc=142 actual_uam=1.265453e-05 physical_ref=2.465487e-03
- no convergence
-
- iteration 2
-
- Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
-
- Factoring the system of equations using the symmetric pardiso solver
- number of threads = 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- average force= 0.412910
- time avg. forc= 0.415451
-[DAMAGE AUTOSPC-FORCE] excluded 36 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 3.793139e-12 at node 2230 (ram[0]=2.543417e-04, tolerance 2.077256e-03 = 0.005 x qam; excluded peak = 9.13e-12 x qam)
- largest residual force= 0.000254 in node 431 and dof 2
- largest increment of disp= 1.265453e-05
- largest correction to disp= 2.899589e-07 in node 509 and dof 1
-
- convergence; the increment size is increased to 3.427734e-04
-
-[DAMAGE GRADUAL] inc=142 batch fully released after 8 converged step(s)
-[DAMAGE COMMIT] batch=57 inc=142 time=2.112714843750e-01 deleted=10 active_passes=1
-[DAMAGE DE1.3 COMMIT] inc=142 time=2.112714843750e-01 terminal_deleted=10 active_passes=1
-[LOADCUT] inc=142 cut>=4.910619e-04 ratio>=1.000000e-04 conn=1
-[DAMAGE DE1.2 COMMIT] inc=142 time=2.112714843750e-01 active=6477 D>0.1=4300 D>0.5=1046 D>0.9=107 Dfull=24 Dmax=1.000000e+00 max_dD_inc=1.129387e-01
- Local damage substepping: next increment is clipped to 2.285156e-04 to reach saved goal 2.115000e-01.
-
- increment 143 attempt 1 
- increment size= 2.285156e-04
- sum of previous increments=2.112715e-01
- actual step time=2.115000e-01
- actual total time=2.115000e-01
-
- iteration 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
-
- Factoring the system of equations using the symmetric pardiso solver
- number of threads = 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- average force= 0.412702
- time avg. forc= 0.415432
-[DAMAGE AUTOSPC-FORCE] excluded 36 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 2.806757e-02 at node 2233 (ram[0]=2.437407e-01, tolerance 2.077159e-03 = 0.005 x qam; excluded peak = 0.06756 x qam)
- largest residual force= 0.243741 in node 9024 and dof 2
- largest increment of disp= 1.364903e-02
- largest correction to disp= 1.364903e-02 in node 2230 and dof 2
-
- no convergence
-
- iteration 2
-
- Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
-
- Factoring the system of equations using the symmetric pardiso solver
- number of threads = 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- average force= 0.412680
- time avg. forc= 0.415432
-[DAMAGE AUTOSPC-FORCE] excluded 39 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 2.036608e-02 at node 2230 (ram[0]=1.798543e-01, tolerance 2.077159e-03 = 0.005 x qam; excluded peak = 0.04902 x qam)
- largest residual force= 0.179854 in node 431 and dof 2
- largest increment of disp= 1.364903e-02
- largest correction to disp= 2.550946e-04 in node 667 and dof 2
-
- no convergence
-
- iteration 3
-
- Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
-
- Factoring the system of equations using the symmetric pardiso solver
- number of threads = 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- Using up to 1 cpu(s) for the stress calculation.
-
- Using up to 1 cpu(s) for the stress calculation.
-
- Using up to 1 cpu(s) for the stress calculation.
-
- Using up to 1 cpu(s) for the stress calculation.
-
- Using up to 1 cpu(s) for the stress calculation.
-
- Using up to 1 cpu(s) for the stress calculation.
-
- Using up to 1 cpu(s) for the stress calculation.
-
- Using up to 1 cpu(s) for the stress calculation.
-
-[DAMAGE LINESEARCH BK3] inc=143 attempt=1 iter=3 soft_elements=4544 max_dD=7.994399e-02 res_old=1.798543e-01 res_full=2.016747e-01 lambda=0.001000 trials=8 contracted=0 res_damped=1.798675e-01
- average force= 0.412680
- time avg. forc= 0.415432
-[DAMAGE AUTOSPC-FORCE] excluded 39 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 2.034615e-02 at node 2230 (ram[0]=1.798675e-01, tolerance 2.077159e-03 = 0.005 x qam; excluded peak = 0.04898 x qam)
- largest residual force= 0.179868 in node 431 and dof 2
- largest increment of disp= 1.364903e-02
- largest correction to disp= 1.774148e-04 in node 662 and dof 1
+ average force= 0.409134
+ time avg. forc= 0.412186
+[DAMAGE AUTOSPC-FORCE] excluded 42 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 2.428418e-10 at node 2086 (ram[0]=8.167979e-02, tolerance 2.060928e-03 = 0.005 x qam; excluded peak = 5.892e-10 x qam)
+ largest residual force= 0.081680 in node 8039 and dof 1
+ largest increment of disp= 8.767895e-04
+ largest correction to disp= 3.837557e-05 in node 8037 and dof 1
 
  no convergence
 
@@ -269,6 +41,40 @@
 
  Using up to 1 cpu(s) for the stress calculation.
 
+ average force= 0.409130
+ time avg. forc= 0.412186
+[DAMAGE AUTOSPC-FORCE] excluded 42 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 9.584869e-11 at node 943 (ram[0]=8.059844e-02, tolerance 2.060928e-03 = 0.005 x qam; excluded peak = 2.325e-10 x qam)
+ largest residual force= 0.080598 in node 8039 and dof 1
+ largest increment of disp= 8.767895e-04
+ largest correction to disp= 3.590763e-05 in node 8037 and dof 1
+
+ no convergence
+
+ iteration 5
+
+ Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
+
+ Factoring the system of equations using the symmetric pardiso solver
+ number of threads = 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ average force= 0.409126
+ time avg. forc= 0.412186
+[DAMAGE AUTOSPC-FORCE] excluded 42 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 8.200289e-11 at node 943 (ram[0]=8.499754e-02, tolerance 2.060928e-03 = 0.005 x qam; excluded peak = 1.989e-10 x qam)
+ largest residual force= 0.084998 in node 8039 and dof 1
+ largest increment of disp= 8.767895e-04
+ largest correction to disp= 3.633674e-05 in node 8037 and dof 1
+
+ no convergence
+
+ iteration 6
+
+ Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
+
+ Factoring the system of equations using the symmetric pardiso solver
+ number of threads = 1
+
  Using up to 1 cpu(s) for the stress calculation.
 
  Using up to 1 cpu(s) for the stress calculation.
@@ -285,22 +91,24 @@
 
  Using up to 1 cpu(s) for the stress calculation.
 
-[DAMAGE LINESEARCH BK3] inc=143 attempt=1 iter=4 soft_elements=4544 max_dD=7.995996e-02 res_old=1.798675e-01 res_full=2.017097e-01 lambda=0.001000 trials=8 contracted=0 res_damped=1.798807e-01
- average force= 0.412680
- time avg. forc= 0.415432
-[DAMAGE AUTOSPC-FORCE] excluded 39 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 2.032580e-02 at node 2230 (ram[0]=1.798807e-01, tolerance 2.077159e-03 = 0.005 x qam; excluded peak = 0.04893 x qam)
- largest residual force= 0.179881 in node 431 and dof 2
- largest increment of disp= 1.364903e-02
- largest correction to disp= 1.774715e-04 in node 662 and dof 1
+ Using up to 1 cpu(s) for the stress calculation.
 
- divergence; the increment size is decreased to 5.712891e-05
+[DAMAGE LINESEARCH BK3] inc=167 attempt=1 iter=6 soft_elements=4576 max_dD=1.565659e-01 res_old=8.499754e-02 res_full=9.646401e-02 lambda=0.001000 trials=8 contracted=0 res_damped=8.500491e-02
+ average force= 0.409126
+ time avg. forc= 0.412186
+[DAMAGE AUTOSPC-FORCE] excluded 42 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 1.273462e-12 at node 960 (ram[0]=8.500491e-02, tolerance 2.060928e-03 = 0.005 x qam; excluded peak = 3.09e-12 x qam)
+ largest residual force= 0.085005 in node 8039 and dof 1
+ largest increment of disp= 8.767895e-04
+ largest correction to disp= 3.959632e-05 in node 8037 and dof 1
+
+ divergence; the increment size is decreased to 7.910156e-05
  the increment is reattempted
 
- increment 143 attempt 2 
- increment size= 5.712891e-05
- sum of previous increments=2.112715e-01
- actual step time=2.113286e-01
- actual total time=2.113286e-01
+ increment 167 attempt 2 
+ increment size= 7.910156e-05
+ sum of previous increments=2.164766e-01
+ actual step time=2.165557e-01
+ actual total time=2.165557e-01
 
  iteration 1
 
@@ -313,12 +121,12 @@
 
  Using up to 1 cpu(s) for the stress calculation.
 
- average force= 0.412858
- time avg. forc= 0.415433
-[DAMAGE AUTOSPC-FORCE] excluded 36 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 1.704036e-02 at node 2230 (ram[0]=6.475653e-02, tolerance 2.077165e-03 = 0.005 x qam; excluded peak = 0.04102 x qam)
- largest residual force= 0.064757 in node 668 and dof 2
- largest increment of disp= 3.197548e-03
- largest correction to disp= 2.291547e-04 in node 716 and dof 1
+ average force= 0.409366
+ time avg. forc= 0.412187
+[DAMAGE AUTOSPC-FORCE] excluded 45 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 3.046890e-09 at node 2229 (ram[0]=1.066639e-02, tolerance 2.060935e-03 = 0.005 x qam; excluded peak = 7.392e-09 x qam)
+ largest residual force= 0.010666 in node 8039 and dof 1
+ largest increment of disp= 2.191974e-04
+ largest correction to disp= 1.229304e-04 in node 682 and dof 1
 
  no convergence
 
@@ -331,12 +139,12 @@
 
  Using up to 1 cpu(s) for the stress calculation.
 
- average force= 0.412856
- time avg. forc= 0.415433
-[DAMAGE AUTOSPC-FORCE] excluded 36 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 8.272437e-04 at node 2230 (ram[0]=3.974082e-03, tolerance 2.077165e-03 = 0.005 x qam; excluded peak = 0.001991 x qam)
- largest residual force= 0.003974 in node 431 and dof 2
- largest increment of disp= 3.197548e-03
- largest correction to disp= 1.733435e-05 in node 716 and dof 1
+ average force= 0.409365
+ time avg. forc= 0.412187
+[DAMAGE AUTOSPC-FORCE] excluded 45 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 4.564060e-10 at node 2086 (ram[0]=4.728138e-03, tolerance 2.060935e-03 = 0.005 x qam; excluded peak = 1.107e-09 x qam)
+ largest residual force= 0.004728 in node 8039 and dof 1
+ largest increment of disp= 2.191974e-04
+ largest correction to disp= 4.794963e-06 in node 7940 and dof 1
 
  no convergence
 
@@ -349,34 +157,42 @@
 
  Using up to 1 cpu(s) for the stress calculation.
 
- average force= 0.412856
- time avg. forc= 0.415433
-[DAMAGE AUTOSPC-FORCE] excluded 36 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 1.882693e-09 at node 2230 (ram[0]=1.421015e-03, tolerance 2.077165e-03 = 0.005 x qam; excluded peak = 4.532e-09 x qam)
- largest residual force= 0.001421 in node 431 and dof 2
- largest increment of disp= 3.197548e-03
- largest correction to disp= 2.476260e-06 in node 431 and dof 2
+ average force= 0.409365
+ time avg. forc= 0.412187
+[DAMAGE AUTOSPC-FORCE] excluded 45 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 1.047552e-10 at node 2086 (ram[0]=2.193929e-03, tolerance 2.060935e-03 = 0.005 x qam; excluded peak = 2.541e-10 x qam)
+ largest residual force= 0.002194 in node 8039 and dof 1
+ largest increment of disp= 2.191974e-04
+ largest correction to disp= 2.125315e-06 in node 7940 and dof 1
+
+ no convergence
+
+ iteration 4
+
+ Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
+
+ Factoring the system of equations using the symmetric pardiso solver
+ number of threads = 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ average force= 0.409365
+ time avg. forc= 0.412187
+[DAMAGE AUTOSPC-FORCE] excluded 45 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 2.455669e-11 at node 2086 (ram[0]=9.857730e-04, tolerance 2.060935e-03 = 0.005 x qam; excluded peak = 5.958e-11 x qam)
+ largest residual force= 0.000986 in node 8039 and dof 1
+ largest increment of disp= 2.191974e-04
+ largest correction to disp= 9.405029e-07 in node 7940 and dof 1
 
  convergence
 
-[DAMAGE DEADSOLE]   element 222 g=0.000000e+00 sole support of node 2229
-[DAMAGE DEADSOLE] inc=143 time=2.113286132813e-01 deleted=1 total=13
-[DAMAGE GRADUAL] inc=143 time=2.113286132813e-01 batch released over 8 same-load steps, beta=0.875000
-[DAMAGE STIFFNESS] inc=143 time=2.113286132813e-01 below_1e-3=12 below_1e-2=25 below_1e-1=77 nonpositive=0 worst=node_2081_at_4.9288e-05
-[MON] {"kind":"stiffness","inc":143,"time":2.113286132813e-01,"below_1e-3":12,"below_1e-2":25,"below_1e-1":77,"nonpositive":0,"nodes":9809,"worst_node":2081,"worst_ratio":4.928815e-05}
-[DAMAGE DE1.3 TERMINAL] inc=143 time=2.113286132813e-01 new_terminal=9 tentative=9 batch_Dmax=1.000000e+00 batch_Dvis=9.991127e-01 orphan_nodes=1 action=remastruct+same-load-Newton
- Determining the structure of the matrix:
-
- Using up to 1 cpu(s) for setting up the structure of the matrix.
- number of equations
- 30008
- number of nonzero lower triangular matrix elements
- 693856
-
- increment 143 attempt 1 
- increment size= 5.712891e-05
- sum of previous increments=2.112715e-01
- actual step time=2.113286e-01
- actual total time=2.113286e-01
+[DAMAGE GRADUAL] inc=167 time=2.165556640625e-01 batch released over 8 same-load steps, beta=0.875000
+[DAMAGE STIFFNESS] inc=167 time=2.165556640625e-01 below_1e-3=15 below_1e-2=32 below_1e-1=89 nonpositive=0 worst=node_2081_at_4.9288e-05
+[MON] {"kind":"stiffness","inc":167,"time":2.165556640625e-01,"below_1e-3":15,"below_1e-2":32,"below_1e-1":89,"nonpositive":0,"nodes":9809,"worst_node":2081,"worst_ratio":4.928815e-05}
+[DAMAGE DE1.3 TERMINAL] inc=167 time=2.165556640625e-01 new_terminal=4 tentative=4 batch_Dmax=1.000000e+00 batch_Dvis=9.991892e-01 orphan_nodes=0 action=reuse-sparse-graph+same-load-Newton
+ increment 167 attempt 1 
+ increment size= 7.910156e-05
+ sum of previous increments=2.164766e-01
+ actual step time=2.165557e-01
+ actual total time=2.165557e-01
 
  iteration 1
 
@@ -387,14 +203,198 @@
  Factoring the system of equations using the symmetric pardiso solver
  number of threads = 1
 
-[PARDISO CACHE] symbolic analysis retained (neq=30008 nzs=693856)
  Using up to 1 cpu(s) for the stress calculation.
 
- average force= 0.412934
- time avg. forc= 0.415415
-[DAMAGE AUTOSPC-FORCE] excluded 42 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 3.507240e-05 at node 716 (ram[0]=4.842745e-04, tolerance 2.077077e-03 = 0.005 x qam; excluded peak = 8.443e-05 x qam)
- largest residual force= 0.000484 in node 7233 and dof 3
- largest increment of disp= 1.881720e-06
- largest correction to disp= 1.881720e-06 in node 8988 and dof 1
+ average force= 0.409400
+ time avg. forc= 0.412170
+[DAMAGE AUTOSPC-FORCE] excluded 45 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 2.055833e-11 at node 407 (ram[0]=2.325419e-04, tolerance 2.060852e-03 = 0.005 x qam; excluded peak = 4.988e-11 x qam)
+ largest residual force= 0.000233 in node 5091 and dof 1
+ largest increment of disp= 1.501032e-06
+ largest correction to disp= 1.501032e-06 in node 6996 and dof 2
 
-[DAMAGE REEQ NC2] inc=143 actual_uam=1.881720e-06 physical_ref=3.197548e-03
+[DAMAGE REEQ NC2] inc=167 actual_uam=1.501032e-06 physical_ref=2.191974e-04
+ no convergence
+
+ iteration 2
+
+ Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
+
+ Factoring the system of equations using the symmetric pardiso solver
+ number of threads = 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ average force= 0.409400
+ time avg. forc= 0.412170
+[DAMAGE AUTOSPC-FORCE] excluded 45 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 1.780824e-12 at node 943 (ram[0]=5.494025e-05, tolerance 2.060852e-03 = 0.005 x qam; excluded peak = 4.321e-12 x qam)
+ largest residual force= 0.000055 in node 5091 and dof 1
+ largest increment of disp= 1.501032e-06
+ largest correction to disp= 1.351914e-07 in node 6996 and dof 1
+
+ convergence; the increment size is increased to 1.186523e-04
+
+[DAMAGE GRADUAL] inc=167 released force: norm 4.472917e-02, largest 1.936579e-02 at node 6526
+[DAMAGE GRADUAL] inc=167 step 1 converged at beta=0.875000 -> beta=0.750000
+ increment 167 attempt 1 
+ increment size= 7.910156e-05
+ sum of previous increments=2.164766e-01
+ actual step time=2.165557e-01
+ actual total time=2.165557e-01
+
+ iteration 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
+
+ Factoring the system of equations using the symmetric pardiso solver
+ number of threads = 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ average force= 0.409400
+ time avg. forc= 0.412154
+[DAMAGE AUTOSPC-FORCE] excluded 45 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 1.999728e-11 at node 407 (ram[0]=2.449564e-04, tolerance 2.060769e-03 = 0.005 x qam; excluded peak = 4.852e-11 x qam)
+ largest residual force= 0.000245 in node 5091 and dof 1
+ largest increment of disp= 1.490801e-06
+ largest correction to disp= 1.490801e-06 in node 6996 and dof 2
+
+[DAMAGE REEQ NC2] inc=167 actual_uam=1.490801e-06 physical_ref=2.191974e-04
+ no convergence
+
+ iteration 2
+
+ Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
+
+ Factoring the system of equations using the symmetric pardiso solver
+ number of threads = 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ average force= 0.409400
+ time avg. forc= 0.412154
+[DAMAGE AUTOSPC-FORCE] excluded 45 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 1.836774e-12 at node 943 (ram[0]=5.763404e-05, tolerance 2.060769e-03 = 0.005 x qam; excluded peak = 4.457e-12 x qam)
+ largest residual force= 0.000058 in node 5091 and dof 1
+ largest increment of disp= 1.490801e-06
+ largest correction to disp= 1.380801e-07 in node 6996 and dof 1
+
+ convergence; the increment size is increased to 1.186523e-04
+
+[DAMAGE GRADUAL] inc=167 step 2 converged at beta=0.750000 -> beta=0.625000
+ increment 167 attempt 1 
+ increment size= 7.910156e-05
+ sum of previous increments=2.164766e-01
+ actual step time=2.165557e-01
+ actual total time=2.165557e-01
+
+ iteration 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
+
+ Factoring the system of equations using the symmetric pardiso solver
+ number of threads = 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ average force= 0.409399
+ time avg. forc= 0.412137
+[DAMAGE AUTOSPC-FORCE] excluded 45 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 1.997030e-11 at node 407 (ram[0]=2.298609e-04, tolerance 2.060686e-03 = 0.005 x qam; excluded peak = 4.846e-11 x qam)
+ largest residual force= 0.000230 in node 5091 and dof 1
+ largest increment of disp= 1.491132e-06
+ largest correction to disp= 1.491132e-06 in node 6996 and dof 2
+
+[DAMAGE REEQ NC2] inc=167 actual_uam=1.491132e-06 physical_ref=2.191974e-04
+ no convergence
+
+ iteration 2
+
+ Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
+
+ Factoring the system of equations using the symmetric pardiso solver
+ number of threads = 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ average force= 0.409399
+ time avg. forc= 0.412137
+[DAMAGE AUTOSPC-FORCE] excluded 45 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 1.860486e-12 at node 943 (ram[0]=5.425635e-05, tolerance 2.060686e-03 = 0.005 x qam; excluded peak = 4.514e-12 x qam)
+ largest residual force= 0.000054 in node 5091 and dof 1
+ largest increment of disp= 1.491132e-06
+ largest correction to disp= 1.385238e-07 in node 6996 and dof 1
+
+ convergence; the increment size is increased to 1.186523e-04
+
+[DAMAGE GRADUAL] inc=167 step 3 converged at beta=0.625000 -> beta=0.500000
+ increment 167 attempt 1 
+ increment size= 7.910156e-05
+ sum of previous increments=2.164766e-01
+ actual step time=2.165557e-01
+ actual total time=2.165557e-01
+
+ iteration 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
+
+ Factoring the system of equations using the symmetric pardiso solver
+ number of threads = 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ average force= 0.409399
+ time avg. forc= 0.412121
+[DAMAGE AUTOSPC-FORCE] excluded 45 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 1.993504e-11 at node 407 (ram[0]=2.410976e-04, tolerance 2.060604e-03 = 0.005 x qam; excluded peak = 4.837e-11 x qam)
+ largest residual force= 0.000241 in node 5091 and dof 1
+ largest increment of disp= 1.491675e-06
+ largest correction to disp= 1.491675e-06 in node 6996 and dof 2
+
+[DAMAGE REEQ NC2] inc=167 actual_uam=1.491675e-06 physical_ref=2.191974e-04
+ no convergence
+
+ iteration 2
+
+ Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
+
+ Factoring the system of equations using the symmetric pardiso solver
+ number of threads = 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ average force= 0.409399
+ time avg. forc= 0.412121
+[DAMAGE AUTOSPC-FORCE] excluded 45 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 1.850413e-12 at node 943 (ram[0]=5.596592e-05, tolerance 2.060604e-03 = 0.005 x qam; excluded peak = 4.49e-12 x qam)
+ largest residual force= 0.000056 in node 5091 and dof 1
+ largest increment of disp= 1.491675e-06
+ largest correction to disp= 1.389335e-07 in node 6996 and dof 1
+
+ convergence; the increment size is increased to 1.186523e-04
+
+[DAMAGE GRADUAL] inc=167 step 4 converged at beta=0.500000 -> beta=0.375000
+ increment 167 attempt 1 
+ increment size= 7.910156e-05
+ sum of previous increments=2.164766e-01
+ actual step time=2.165557e-01
+ actual total time=2.165557e-01
+
+ iteration 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
+
+ Factoring the system of equations using the symmetric pardiso solver
+ number of threads = 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ average force= 0.409399
+ time avg. forc= 0.412105
+[DAMAGE AUTOSPC-FORCE] excluded 45 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 1.995064e-11 at node 407 (ram[0]=2.415559e-04, tolerance 2.060523e-03 = 0.005 x qam; excluded peak = 4.841e-11 x qam)
+ largest residual force= 0.000242 in node 5091 and dof 1
+ largest increment of disp= 1.492119e-06
+ largest correction to disp= 1.492119e-06 in node 6996 and dof 2
+
+[DAMAGE REEQ NC2] inc=167 actual_uam=1.492119e-06 physical_ref=2.191974e-04
