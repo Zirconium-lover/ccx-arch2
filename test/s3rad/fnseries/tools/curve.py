@@ -8,7 +8,7 @@ eps = u_x(grip) / 4.0.  The fracture strain is read where the force has fallen
 to 10 % of its peak after the peak (eps_f10), so a run that stops before
 FRACTURE COMPLETE but past that point still gives the number.
 """
-import re, sys
+import os, re, sys
 
 A0, L0 = 3.6 * 1.6, 4.0
 
@@ -48,6 +48,8 @@ def read(dat, ux):
 
 def main():
     for d in sys.argv[1:]:
+        if not os.path.isdir(d):
+            continue
         eps, sig = read(d + '/m.dat', grip(d + '/m.inp'))
         if not eps:
             print(d, 'no data'); continue
