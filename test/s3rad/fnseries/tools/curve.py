@@ -13,7 +13,21 @@ import re, sys
 A0, L0 = 3.6 * 1.6, 4.0
 
 
-def read(dat):
+def grip(inp):
+    """Prescribed x displacement of FACE_XL_NSET in the run's deck."""
+    on = False
+    for l in open(inp, errors='replace'):
+        s = l.strip()
+        if s.startswith('*'):
+            on = s.lower().replace(' ', '').startswith('*boundary')
+            continue
+        v = [x.strip() for x in s.split(',')]
+        if on and v and v[0].upper() == 'FACE_XL_NSET' and len(v) >= 4:
+            return float(v[3])
+    raise SystemExit('no FACE_XL_NSET displacement in ' + inp)
+
+
+def read(dat, ux):
     eps, sig = [], []
     t_rf, rf = None, None
     mode = None
@@ -26,7 +40,7 @@ def read(dat):
             if len(v) >= 3:
                 try:
                     rf = float(v[0]); mode = None
-                    eps.append(t_rf * 2.0 / L0); sig.append(rf / A0)
+                    eps.append(t_rf * ux / L0); sig.append(rf / A0)
                 except ValueError:
                     pass
     return eps, sig
@@ -34,7 +48,7 @@ def read(dat):
 
 def main():
     for d in sys.argv[1:]:
-        eps, sig = read(d + '/m.dat')
+        eps, sig = read(d + '/m.dat', grip(d + '/m.inp'))
         if not eps:
             print(d, 'no data'); continue
         open(d + '/curve.csv', 'w').write('eps,sigma_MPa\n' + '\n'.join(
