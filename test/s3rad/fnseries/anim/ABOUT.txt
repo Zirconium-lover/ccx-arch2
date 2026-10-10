@@ -8,6 +8,11 @@ Animations for the presentation (Manim Community 0.19.1, manim-slides 5.7)
   reorient.gif       stress reorientation: dissolve at 400 C, cool with and
                      without hoop stress (sigma_th ~ 45 MPa, Plyasov 2023)
 
-Each GIF loops without a seam, 1280x720, 25 fps, black background.
-Render:  manim -r 1280,720 --fps 25 <scene>.py <Class>;  mkgif.sh in.mp4 out.gif
+Each GIF loops without a seam, 1600x900, 25 fps, black background; one GIF
+per slide, the top ~12 % left empty for the slide title, Noto Serif (the
+deck's font), labels sized for the back of a hall (style.py).
+reorient.gif shows one stress cycle only and returns to the start by an
+explicit, labelled cross-fade (no claim about stress-free re-cooling, where
+the memory effect can keep hydrides radial).
+Render:  manim -r 1600,900 --fps 25 <scene>.py <Class>;  mkgif.sh in.mp4 out.gif 1600
 demo_fn.py + make_decks.py: click-stepped decks (video / GIF / PDF).
