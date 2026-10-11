@@ -254,6 +254,24 @@ class Run:
                 pv += list(np.take_along_axis(vals[sel], order, 1))
         return polys, np.array(owners, int), pv
 
+    def best_section(self, axis='z', step=0.01, margin=0.05):
+        """Position of the material plane that cuts the most plates (a cut
+        counts above 0.01 mm^2), ties broken by the hydride area in the cut."""
+        a = AXIS.get(axis, axis)
+        hyd = self.phase > 0
+        best = (-1, -1., None)
+        for pos in np.arange(self.lo[a] + margin, self.hi[a] - margin, step):
+            polys, own, _ = self.slice(a, pos, None, None, hyd)
+            if not len(own):
+                continue
+            A = np.array([0.5 * abs(np.dot(q[:, 0], np.roll(q[:, 1], -1)) - np.dot(q[:, 1], np.roll(q[:, 0], -1)))
+                          if a == 2 else 0. for q in polys])
+            pl = self.plate[own]
+            cnt = sum(1 for k in np.unique(pl) if A[pl == k].sum() > 0.01)
+            if (cnt, A.sum()) > best[:2]:
+                best = (cnt, A.sum(), float(pos))
+        return best[2]
+
     def slice_facets(self, axis, pos, state=None):
         """Cut of the interface facets (their hydride-side triangle) by the
         material plane: segments (m,2,3) in current coordinates and the facet
