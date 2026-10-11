@@ -1071,3 +1071,51 @@
 [DAMAGE DE1.2 COMMIT] inc=645 time=3.225200141668e-01 active=11734 D>0.1=9158 D>0.5=2402 D>0.9=179 Dfull=13 Dmax=1.000000e+00 max_dD_inc=5.404688e-03
 [DAMAGE COMMIT] batch=449 inc=646 time=3.225516905189e-01 deleted=3 active_passes=1
 [DAMAGE DE1.2 COMMIT] inc=646 time=3.225516905189e-01 active=11731 D>0.1=9157 D>0.5=2403 D>0.9=176 Dfull=11 Dmax=1.000000e+00 max_dD_inc=9.823032e-03
+[DAMAGE COMMIT] batch=450 inc=647 time=3.225992050469e-01 deleted=4 active_passes=1
+[DAMAGE DE1.2 COMMIT] inc=647 time=3.225992050469e-01 active=11729 D>0.1=9154 D>0.5=2407 D>0.9=176 Dfull=10 Dmax=1.000000e+00 max_dD_inc=6.840293e-02
+[DAMAGE COMMIT] batch=451 inc=648 time=3.226704768389e-01 deleted=1 active_passes=1
+[DAMAGE DE1.2 COMMIT] inc=648 time=3.226704768389e-01 active=11729 D>0.1=9155 D>0.5=2410 D>0.9=177 Dfull=13 Dmax=1.000000e+00 max_dD_inc=2.339382e-01
+[DAMAGE COMMIT] batch=452 inc=649 time=3.227773845270e-01 deleted=3 active_passes=1
+[DAMAGE DE1.2 COMMIT] inc=649 time=3.227773845270e-01 active=11727 D>0.1=9152 D>0.5=2424 D>0.9=180 Dfull=12 Dmax=1.000000e+00 max_dD_inc=2.331401e-02
+[DAMAGE COMMIT] batch=453 inc=650 time=3.229377460591e-01 deleted=3 active_passes=1
+[DAMAGE DE1.2 COMMIT] inc=650 time=3.229377460591e-01 active=11728 D>0.1=9151 D>0.5=2433 D>0.9=185 Dfull=13 Dmax=1.000000e+00 max_dD_inc=3.404436e-02
+[DAMAGE COMMIT] batch=454 inc=651 time=3.231782883573e-01 deleted=9 active_passes=2
+[DAMAGE DE1.2 COMMIT] inc=651 time=3.231782883573e-01 active=11723 D>0.1=9147 D>0.5=2439 D>0.9=191 Dfull=10 Dmax=1.000000e+00 max_dD_inc=4.858026e-02
+[DAMAGE COMMIT] batch=455 inc=652 time=3.232587162680e-01 deleted=3 active_passes=1
+[DAMAGE DE1.2 COMMIT] inc=652 time=3.232587162680e-01 active=11722 D>0.1=9146 D>0.5=2436 D>0.9=193 Dfull=13 Dmax=1.000000e+00 max_dD_inc=2.455181e-02
+[DAMAGE COMMIT] batch=456 inc=653 time=3.233793581340e-01 deleted=3 active_passes=1
+[DAMAGE DE1.2 COMMIT] inc=653 time=3.233793581340e-01 active=11720 D>0.1=9147 D>0.5=2438 D>0.9=196 Dfull=18 Dmax=1.000000e+00 max_dD_inc=5.332130e-02
+[DAMAGE COMMIT] batch=457 inc=654 time=3.235000000000e-01 deleted=5 active_passes=1
+[DAMAGE DE1.2 COMMIT] inc=654 time=3.235000000000e-01 active=11719 D>0.1=9146 D>0.5=2442 D>0.9=202 Dfull=23 Dmax=1.000000e+00 max_dD_inc=2.157941e-01
+[DAMAGE COMMIT] batch=458 inc=655 time=3.237500000000e-01 deleted=10 active_passes=1
+[DAMAGE DE1.2 COMMIT] inc=655 time=3.237500000000e-01 active=11715 D>0.1=9143 D>0.5=2447 D>0.9=209 Dfull=37 Dmax=1.000000e+00 max_dD_inc=2.754169e-01
+[DAMAGE COMMIT] batch=459 inc=656 time=3.238437500000e-01 deleted=9 active_passes=2
+[DAMAGE DE1.2 COMMIT] inc=656 time=3.238437500000e-01 active=11707 D>0.1=9135 D>0.5=2443 D>0.9=206 Dfull=32 Dmax=1.000000e+00 max_dD_inc=1.747546e-01
+[DAMAGE COMMIT] batch=460 inc=657 time=3.239843750000e-01 deleted=5 active_passes=1
+[DAMAGE DE1.2 COMMIT] inc=657 time=3.239843750000e-01 active=11703 D>0.1=9135 D>0.5=2449 D>0.9=209 Dfull=43 Dmax=1.000000e+00 max_dD_inc=1.981652e-01
+[DAMAGE COMMIT] batch=461 inc=658 time=3.241953125000e-01 deleted=18 active_passes=1
+[DAMAGE DE1.2 COMMIT] inc=658 time=3.241953125000e-01 active=11688 D>0.1=9119 D>0.5=2444 D>0.9=202 Dfull=37 Dmax=1.000000e+00 max_dD_inc=3.511606e-01
+[DAMAGE COMMIT] batch=462 inc=659 time=3.245117187500e-01 deleted=20 active_passes=1
+[DAMAGE DE1.2 COMMIT] inc=659 time=3.245117187500e-01 active=11675 D>0.1=9110 D>0.5=2449 D>0.9=200 Dfull=33 Dmax=1.000000e+00 max_dD_inc=7.772385e-02
+[DAMAGE COMMIT] batch=463 inc=660 time=3.246303710938e-01 deleted=13 active_passes=1
+[DAMAGE DE1.2 COMMIT] inc=660 time=3.246303710938e-01 active=11665 D>0.1=9098 D>0.5=2446 D>0.9=190 Dfull=22 Dmax=1.000000e+00 max_dD_inc=2.192909e-02
+[DAMAGE COMMIT] batch=464 inc=661 time=3.248083496094e-01 deleted=9 active_passes=1
+[DAMAGE DE1.2 COMMIT] inc=661 time=3.248083496094e-01 active=11661 D>0.1=9091 D>0.5=2450 D>0.9=189 Dfull=21 Dmax=1.000000e+00 max_dD_inc=4.357023e-02
+[DAMAGE COMMIT] batch=465 inc=662 time=3.250753173828e-01 deleted=14 active_passes=1
+[DAMAGE DE1.2 COMMIT] inc=662 time=3.250753173828e-01 active=11653 D>0.1=9086 D>0.5=2459 D>0.9=190 Dfull=20 Dmax=1.000000e+00 max_dD_inc=1.170628e-01
+[DAMAGE COMMIT] batch=466 inc=663 time=3.254757690430e-01 deleted=14 active_passes=1
+[DAMAGE DE1.2 COMMIT] inc=663 time=3.254757690430e-01 active=11647 D>0.1=9077 D>0.5=2474 D>0.9=189 Dfull=29 Dmax=1.000000e+00 max_dD_inc=1.154012e-01
+[DAMAGE COMMIT] batch=467 inc=664 time=3.255000000000e-01 deleted=1 active_passes=1
+[DAMAGE DE1.2 COMMIT] inc=664 time=3.255000000000e-01 active=11646 D>0.1=9078 D>0.5=2476 D>0.9=190 Dfull=29 Dmax=1.000000e+00 max_dD_inc=8.175662e-03
+[DAMAGE COMMIT] batch=468 inc=665 time=3.260000000000e-01 deleted=28 active_passes=1
+[DAMAGE DE1.2 COMMIT] inc=665 time=3.260000000000e-01 active=11636 D>0.1=9064 D>0.5=2493 D>0.9=201 Dfull=27 Dmax=1.000000e+00 max_dD_inc=1.275357e-01
+[DAMAGE COMMIT] batch=469 inc=666 time=3.267500000000e-01 deleted=24 active_passes=1
+[DAMAGE DE1.2 COMMIT] inc=666 time=3.267500000000e-01 active=11623 D>0.1=9054 D>0.5=2505 D>0.9=209 Dfull=32 Dmax=1.000000e+00 max_dD_inc=1.767460e-01
+[DAMAGE COMMIT] batch=470 inc=667 time=3.269375000000e-01 deleted=10 active_passes=1
+[DAMAGE DE1.2 COMMIT] inc=667 time=3.269375000000e-01 active=11615 D>0.1=9046 D>0.5=2510 D>0.9=208 Dfull=35 Dmax=1.000000e+00 max_dD_inc=4.783284e-02
+[DAMAGE COMMIT] batch=471 inc=668 time=3.272187500000e-01 deleted=25 active_passes=1
+[DAMAGE DE1.2 COMMIT] inc=668 time=3.272187500000e-01 active=11592 D>0.1=9029 D>0.5=2506 D>0.9=191 Dfull=17 Dmax=1.000000e+00 max_dD_inc=6.271676e-02
+[DAMAGE COMMIT] batch=472 inc=669 time=3.275000000000e-01 deleted=13 active_passes=1
+[DAMAGE DE1.2 COMMIT] inc=669 time=3.275000000000e-01 active=11583 D>0.1=9026 D>0.5=2511 D>0.9=188 Dfull=19 Dmax=1.000000e+00 max_dD_inc=8.002356e-02
+[DAMAGE COMMIT] batch=473 inc=670 time=3.275312500000e-01 deleted=2 active_passes=1
+[DAMAGE DE1.2 COMMIT] inc=670 time=3.275312500000e-01 active=11582 D>0.1=9024 D>0.5=2510 D>0.9=189 Dfull=19 Dmax=1.000000e+00 max_dD_inc=1.040395e-02
