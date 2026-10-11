@@ -48,8 +48,15 @@ class _Base(Scene):
         return self.sh + np.array([x, y, 0.]) * self.sc
 
     def run(self, picture):
-        pic = always_redraw(picture)
-        blk_d = always_redraw(lambda: fade_all(self.blk.copy(), dip(self.clk.get_value())))
+        # swap the children every frame; always_redraw's become() pairs parts by
+        # index, and with a varying number of parts colours went to the wrong shapes
+        # (both start empty: play() keeps drawing the parts it saw at its start,
+        # so any initial child would stay on screen over the new ones)
+        pic = VGroup()
+        pic.add_updater(lambda m: m.set_submobjects(list(picture())))
+        blk_d = VGroup()
+        blk_d.add_updater(lambda m: m.set_submobjects(
+            [fade_all(self.blk.copy(), dip(self.clk.get_value()))]))
         self.add(blk_d, pic, self.arrows)
         if os.environ.get('STILL'):
             self.clk.set_value(float(os.environ['STILL']))
@@ -121,10 +128,13 @@ class Ductile(_Base):
                 r0 = 0.85 * (0.45 + 0.55 * load) * (1 - ramp(te, T_RUN[1] - 0.4, T_RUN[1] + 0.2))
                 if r0 > 0.02:
                     for kk, col in zip((1.0, 0.74, 0.5, 0.3), ZONE_COLS):
-                        pts = [self.P(fx + r0 * kk * r * np.sin(a), fy + sg * r0 * kk * r * np.cos(a))
+                        # clamp to the block instead of a boolean intersection: the zone's
+                        # pinch at the tip made the path ops drop whole bands on some frames
+                        pts = [self.P(np.clip(fx + r0 * kk * r * np.sin(a), -L, L),
+                                      np.clip(fy + sg * r0 * kk * r * np.cos(a), -L, L))
                                for a, r in zip(th, rb)]
-                        out.add(Intersection(Polygon(*pts), self.blk, stroke_width=0, fill_color=col,
-                                             fill_opacity=0.9 * min(1., 3 * load)))
+                        out.add(Polygon(*pts, stroke_width=0, fill_color=col,
+                                        fill_opacity=0.9 * min(1., 3 * load)))
                 # cloud pores: nucleate, grow (a little wider along the load)
                 for x, y, rm, tn in cloud:
                     a = ramp(te, tn, tn + 1.5)
@@ -160,7 +170,7 @@ class Cleave(_Base):
         self.setup_picture()
         rng = np.random.default_rng(5)
         CR = [(0.12, 3.0), (-0.86, 4.1)]            # (x, time) of the two cracks
-        GAP, NZ = 0.06, 6
+        GAP, NZ = 0.13, 6
         zig = {xc: np.r_[0., rng.uniform(-0.045, 0.045, NZ - 1), 0.] for xc, _ in CR}
         yz = np.linspace(PT / 2, -PT / 2, NZ + 1)
 
@@ -169,7 +179,8 @@ class Cleave(_Base):
             g, te = dip(t), te_of(t)
             e = 0.03 * ramp(te, 0.4, 6.0)
             run = {xc: ramp(te, tc, tc + 0.25) for xc, tc in CR}      # crack across the thickness
-            gap = {xc: GAP * ramp(te, tc + 0.25, tc + 1.8) for xc, tc in CR}
+            gap = {xc: GAP * (0.35 + 0.65 * ramp(te, tc + 0.25, tc + 1.8)) if te >= tc + 0.25 else 0.
+                   for xc, tc in CR}
 
             def X(x0):
                 return x0 * (1 + e) + sum(gp / 2 * np.sign(x0 - xc) for xc, gp in gap.items())
@@ -193,13 +204,19 @@ class Cleave(_Base):
                     xa = X(a + 1e-6)
                     lb = [self.P(xa + dz, y) for dz, y in zip(zig[a][::-1], yz[::-1])]
                 out.add(Polygon(*(rb + lb), stroke_width=0, fill_color=TAN, fill_opacity=1))
+            # the opened cracks are voids: black between the two matching zigzag faces
+            for xc in cut:
+                lf = [self.P(X(xc - 1e-6) + dz, y) for dz, y in zip(zig[xc], yz)]
+                rf = [self.P(X(xc + 1e-6) + dz, y) for dz, y in zip(zig[xc][::-1], yz[::-1])]
+                out.add(Polygon(*(lf + rf), stroke_color=BLACK, stroke_width=2, fill_color=BLACK,
+                                fill_opacity=1))
             # a crack still running across: a thin dark zigzag over the plate
             for xc, _ in CR:
                 f = run[xc]
                 if 0 < f < 1:
                     m = max(2, int(np.ceil(f * NZ)) + 1)
                     pts = [self.P(X(xc) + dz, y) for dz, y in zip(zig[xc][:m], yz[:m])]
-                    out.add(VMobject(stroke_color=BLACK, stroke_width=4).set_points_as_corners(pts))
+                    out.add(VMobject(stroke_color=BLACK, stroke_width=7).set_points_as_corners(pts))
             return fade_all(out, g) if g < 1 else out
         self.run(picture)
 
