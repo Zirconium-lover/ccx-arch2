@@ -14,6 +14,14 @@ Animations for the presentation (Manim Community 0.19.1, manim-slides 5.7)
                      radial / tangential, length bar, F_n ~ 0.4; the GIF and
                      the micrograph are not in this public repo, see
                      fnmeasure/SOURCE.txt
+  mech_ductile.gif   fracture mechanism 1, illustrative: the metal glows (omega)
+                     at the tips of a radial plate; at a marked point omega -> 1
+                     (damage starts, a void appears), then D -> 1 (element
+                     deleted, the void joins the crack) - as calcdamage.f DE1
+  mech_cleave.gif    mechanism 2: a tangential plate stretches with the metal,
+                     its omega reaches 1 first (lower ductility), it cleaves
+  mech_debond.gif    mechanism 3: cohesive bonds on the faces of a radial plate
+                     stretch and snap; the T - delta law with G_c filling in
   reorient.gif       stress reorientation, qualitative: heat (hydrides
                      dissolve), load, cool under load, unload - radial
                      hydrides stay
