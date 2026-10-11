@@ -26,6 +26,25 @@ Animations for the presentation (Manim Community 0.19.1, manim-slides 5.7)
                      dissolve), load, cool under load, unload - radial
                      hydrides stay
 
+From the computed model (data: ../animdata/*.npz via fndata.py)
+  res_section_fn0.gif, _fn40.gif, _fn100.gif
+                     section through the middle of the block while the grip
+                     strain grows: matrix coloured by omega (steel -> white,
+                     only the band near fracture lights up), hydrides in
+                     their colours, debonded interface green, deleted
+                     elements leave the crack black; right: the sigma - eps
+                     curve with the current point.  Same axes and scale for
+                     every Fn.  res_section_fn40_violet.gif: the same with a
+                     violet omega scale (RUN=fn40 PAL=violet).
+  res_curves.gif     the eight sigma - eps curves drawn together (blue Fn = 0
+                     -> red Fn = 1); each leaves its eps_f10 on the right
+                     panel, eps_f against Fn = k/12
+  res_mech.gif       what the new fracture surface is made of, against Fn:
+                     walls of the deleted matrix (ductile), of the deleted
+                     hydride (cleavage), faces of the debonded interface
+                     (Run.fracture_surface at eps_f10)
+Render these with --disable_caching (manim's cache cannot hash the updaters).
+
 Each GIF loops without a seam, 1600x900, 25 fps, black background; one GIF
 per slide, the top band (y > 2.85) left empty for the slide title, Noto Serif
 (the deck's font).  No numbers beyond F_n and 14.7 deg: the GIFs show the

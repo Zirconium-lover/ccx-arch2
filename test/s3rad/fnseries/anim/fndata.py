@@ -254,6 +254,28 @@ class Run:
                 pv += list(np.take_along_axis(vals[sel], order, 1))
         return polys, np.array(owners, int), pv
 
+    def slice_facets(self, axis, pos, state=None):
+        """Cut of the interface facets (their hydride-side triangle) by the
+        material plane: segments (m,2,3) in current coordinates and the facet
+        index of each."""
+        a = AXIS.get(axis, axis)
+        X = self.X0 if state is None else state.X
+        tri = self.coh[:, :3]
+        d = self.X0[tri][:, :, a] - pos
+        d[d == 0] = 1e-12
+        s = d > 0
+        n = s.sum(1)
+        sel = np.flatnonzero((n == 1) | (n == 2))
+        tri, d, s = tri[sel], d[sel], s[sel]
+        E = np.array([[0, 1], [0, 2], [1, 2]])
+        cross = s[:, E[:, 0]] != s[:, E[:, 1]]
+        with np.errstate(divide='ignore', invalid='ignore'):
+            f = np.where(cross, d[:, E[:, 0]] / (d[:, E[:, 0]] - d[:, E[:, 1]]), 0.)
+        pa, pb = X[tri[:, E[:, 0]]], X[tri[:, E[:, 1]]]
+        P = pa + (pb - pa) * f[..., None]
+        order = np.argsort(~cross, axis=1, kind='stable')[:, :2]
+        return np.take_along_axis(P, order[..., None], 1), sel
+
     # ---------------- what fails ----------------
     def mechanisms(self, eps):
         """Fractions at grip strain eps: deleted volume of the matrix and of the
@@ -271,6 +293,36 @@ class Run:
             f = self.plate_axis[self.coh_plate] == ax
             out[nm] = (self.coh_area[f] * (s.debond[f] >= 1)).sum() / self.coh_area[f].sum() if f.any() else np.nan
         return out
+
+    def _pairs(self):
+        """Interior faces as pairs of tets (a, b) and their areas."""
+        if getattr(self, '_pr', None) is None:
+            F = self.T[:, FACES].reshape(-1, 3)
+            key = np.sort(self.geo[F], axis=1)
+            o = np.lexsort(key.T[::-1])
+            ks = key[o]
+            same = np.all(ks[1:] == ks[:-1], axis=1)
+            i = np.flatnonzero(same)
+            a, b = o[i] // 4, o[i + 1] // 4
+            P = self.X0[F[o[i]]]
+            area = 0.5 * np.linalg.norm(np.cross(P[:, 1] - P[:, 0], P[:, 2] - P[:, 0]), axis=1)
+            self._pr = (a, b, area)
+        return self._pr
+
+    def fracture_surface(self, eps):
+        """New surface at grip strain eps (mm^2), by mechanism: walls left
+        by deleted matrix (ductile fracture), walls left by deleted hydride
+        (cleavage), and both faces of the debonded interface.  A wall is an
+        interior face with one tet deleted; it counts for the deleted one."""
+        tt = self.t_of(eps)
+        a, b, area = self._pairs()
+        da, db = self.tdel[a] <= tt, self.tdel[b] <= tt
+        wall = da != db
+        dead = np.where(da, a, b)
+        hyd = self.phase[dead] > 0
+        s = self.at(eps)
+        return dict(ductile=float(area[wall & ~hyd].sum()), cleavage=float(area[wall & hyd].sum()),
+                    debond=float(2 * (self.coh_area * (s.debond >= 1)).sum()))
 
     def check_omega(self):
         """Rebuilt omega + D against the solver's at the last state (tets

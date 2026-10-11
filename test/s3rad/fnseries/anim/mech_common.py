@@ -101,7 +101,7 @@ def glow(center, intensity, rx, ry, n=9, clip=None):
 def fade_all(g, k):
     """Scale every part's own fill and stroke opacity by k (set_opacity would
     give outline-only shapes a fill)."""
-    for m in g.family_members_with_points():
-        m.set_fill(opacity=m.get_fill_opacity() * k)
-        m.set_stroke(opacity=m.get_stroke_opacity() * k)
+    for m in g.family_members_with_points():          # each part once: an Arrow's own
+        m.set_fill(opacity=m.get_fill_opacity() * k, family=False)     # (empty) fill must
+        m.set_stroke(opacity=m.get_stroke_opacity() * k, family=False)  # not reach its tip
     return g
