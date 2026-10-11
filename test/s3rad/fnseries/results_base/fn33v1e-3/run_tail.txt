@@ -1,51 +1,44 @@
 
- Using up to 1 cpu(s) for the stress calculation.
-
- Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
-
  Factoring the system of equations using the symmetric pardiso solver
  number of threads = 1
 
  Using up to 1 cpu(s) for the stress calculation.
 
- average force= 0.365269
- time avg. forc= 0.309190
- largest residual force= 0.000788 in node 957 and dof 1
- largest increment of disp= 3.696203e-07
- largest correction to disp= 3.696203e-07 in node 5746 and dof 1
-
-[DAMAGE REEQ NC2] inc=95 actual_uam=3.696203e-07 physical_ref=1.986243e-03
- no convergence
-
- iteration 2
-
- Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
-
- Factoring the system of equations using the symmetric pardiso solver
- number of threads = 1
+ Using up to 1 cpu(s) for the stress calculation.
 
  Using up to 1 cpu(s) for the stress calculation.
 
- average force= 0.365270
- time avg. forc= 0.309190
- largest residual force= 0.000539 in node 957 and dof 1
- largest increment of disp= 3.696203e-07
- largest correction to disp= 2.527796e-07 in node 5746 and dof 1
+ Using up to 1 cpu(s) for the stress calculation.
 
- convergence; the increment size is increased to 3.000000e-03
+ Using up to 1 cpu(s) for the stress calculation.
 
- the increment size exceeds the maximum allowed and is decreased to 2.000000e-03
+ Using up to 1 cpu(s) for the stress calculation.
 
-[DAMAGE GRADUAL] inc=95 batch fully released after 8 converged step(s)
-[DAMAGE COMMIT] batch=4 inc=95 time=1.875000000000e-01 deleted=1 active_passes=1
-[DAMAGE DE1.3 COMMIT] inc=95 time=1.875000000000e-01 terminal_deleted=1 active_passes=1
-[LOADCUT] inc=95 cut>=5.263792e-04 ratio>=1.000000e-04 conn=1
-[DAMAGE DE1.2 COMMIT] inc=95 time=1.875000000000e-01 active=3461 D>0.1=1918 D>0.5=138 D>0.9=16 Dfull=5 Dmax=1.000000e+00 max_dD_inc=1.103648e-01
- increment 96 attempt 1 
- increment size= 2.000000e-03
- sum of previous increments=1.875000e-01
- actual step time=1.895000e-01
- actual total time=1.895000e-01
+ Using up to 1 cpu(s) for the stress calculation.
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+[DAMAGE LINESEARCH BK3] inc=125 attempt=1 iter=7 soft_elements=5505 max_dD=4.246938e-01 res_old=1.013332e+00 res_full=2.947058e+00 lambda=0.001000 trials=8 contracted=0 res_damped=1.013841e+00
+ average force= 0.416457
+ time avg. forc= 0.399967
+[DAMAGE AUTOSPC-FORCE] excluded 3 dof(s) on AUTOSPC-masked nodes from ram[0]; largest excluded residual 1.297778e-02 at node 2636 (ram[0]=1.013841e+00, tolerance 1.999833e-03 = 0.005 x qam; excluded peak = 0.03245 x qam)
+ largest residual force= 1.013841 in node 8391 and dof 1
+ largest increment of disp= 2.142836e-02
+ largest correction to disp= 5.659955e-03 in node 8391 and dof 1
+
+ divergence; the increment size is decreased to 5.000000e-04
+ the increment is reattempted
+
+ Local damage substepping activated after physical Newton divergence.
+ Saved interval: 2.195000e-01 -> 2.215000e-01; reduced retry increment: 5.000000e-04.
+
+ increment 125 attempt 2 
+ increment size= 5.000000e-04
+ sum of previous increments=2.195000e-01
+ actual step time=2.200000e-01
+ actual total time=2.200000e-01
 
  iteration 1
 
@@ -58,11 +51,14 @@
 
  Using up to 1 cpu(s) for the stress calculation.
 
- average force= 0.368528
- time avg. forc= 0.309809
- largest residual force= 0.662142 in node 930 and dof 1
- largest increment of disp= 2.042785e-03
- largest correction to disp= 2.908937e-04 in node 391 and dof 2
+ Using up to 1 cpu(s) for the stress calculation.
+
+[DAMAGE LINESEARCH BK3] inc=125 attempt=2 iter=1 soft_elements=5296 max_dD=1.702240e-01 res_old=1.820446e+00 res_full=2.019793e+00 lambda=0.526117 trials=1 contracted=1 res_damped=6.646265e-01
+ average force= 0.415522
+ time avg. forc= 0.399959
+ largest residual force= 0.664627 in node 8391 and dof 1
+ largest increment of disp= 3.659571e-03
+ largest correction to disp= 3.659571e-03 in node 427 and dof 2
 
  no convergence
 
@@ -75,11 +71,11 @@
 
  Using up to 1 cpu(s) for the stress calculation.
 
- average force= 0.368854
- time avg. forc= 0.309812
- largest residual force= 0.610938 in node 957 and dof 1
- largest increment of disp= 2.042785e-03
- largest correction to disp= 2.549358e-04 in node 957 and dof 1
+ average force= 0.415586
+ time avg. forc= 0.399960
+ largest residual force= 0.462400 in node 7121 and dof 2
+ largest increment of disp= 3.659571e-03
+ largest correction to disp= 7.258780e-04 in node 427 and dof 1
 
  no convergence
 
@@ -92,11 +88,11 @@
 
  Using up to 1 cpu(s) for the stress calculation.
 
- average force= 0.368978
- time avg. forc= 0.309813
- largest residual force= 0.499395 in node 957 and dof 1
- largest increment of disp= 2.042785e-03
- largest correction to disp= 1.660879e-04 in node 957 and dof 1
+ average force= 0.415594
+ time avg. forc= 0.399960
+ largest residual force= 0.073998 in node 5005 and dof 1
+ largest increment of disp= 3.659571e-03
+ largest correction to disp= 2.772361e-04 in node 427 and dof 2
 
  no convergence
 
@@ -109,11 +105,11 @@
 
  Using up to 1 cpu(s) for the stress calculation.
 
- average force= 0.369038
- time avg. forc= 0.309814
- largest residual force= 0.355972 in node 957 and dof 1
- largest increment of disp= 2.042785e-03
- largest correction to disp= 1.348488e-04 in node 957 and dof 1
+ average force= 0.415595
+ time avg. forc= 0.399960
+ largest residual force= 0.034174 in node 5263 and dof 1
+ largest increment of disp= 3.659571e-03
+ largest correction to disp= 2.548907e-05 in node 2638 and dof 1
 
  no convergence
 
@@ -126,11 +122,11 @@
 
  Using up to 1 cpu(s) for the stress calculation.
 
- average force= 0.369071
- time avg. forc= 0.309814
- largest residual force= 0.244836 in node 957 and dof 1
- largest increment of disp= 2.042785e-03
- largest correction to disp= 8.218740e-05 in node 957 and dof 1
+ average force= 0.415595
+ time avg. forc= 0.399960
+ largest residual force= 0.013958 in node 5263 and dof 1
+ largest increment of disp= 3.659571e-03
+ largest correction to disp= 1.686621e-05 in node 2638 and dof 1
 
  no convergence
 
@@ -143,11 +139,11 @@
 
  Using up to 1 cpu(s) for the stress calculation.
 
- average force= 0.369089
- time avg. forc= 0.309814
- largest residual force= 0.153620 in node 929 and dof 1
- largest increment of disp= 2.042785e-03
- largest correction to disp= 5.366511e-05 in node 957 and dof 1
+ average force= 0.415595
+ time avg. forc= 0.399960
+ largest residual force= 0.007513 in node 2638 and dof 1
+ largest increment of disp= 3.659571e-03
+ largest correction to disp= 1.137610e-05 in node 2638 and dof 1
 
  no convergence
 
@@ -160,11 +156,11 @@
 
  Using up to 1 cpu(s) for the stress calculation.
 
- average force= 0.369100
- time avg. forc= 0.309815
- largest residual force= 0.096812 in node 957 and dof 1
- largest increment of disp= 2.042785e-03
- largest correction to disp= 2.798879e-05 in node 930 and dof 1
+ average force= 0.415594
+ time avg. forc= 0.399960
+ largest residual force= 0.005151 in node 2638 and dof 1
+ largest increment of disp= 3.659571e-03
+ largest correction to disp= 7.756522e-06 in node 2638 and dof 1
 
  no convergence
 
@@ -177,14 +173,13 @@
 
  Using up to 1 cpu(s) for the stress calculation.
 
- average force= 0.369106
- time avg. forc= 0.309815
- largest residual force= 0.061249 in node 957 and dof 1
- largest increment of disp= 2.042785e-03
- largest correction to disp= 1.776146e-05 in node 957 and dof 1
+ average force= 0.415594
+ time avg. forc= 0.399960
+ largest residual force= 0.003551 in node 2638 and dof 1
+ largest increment of disp= 3.659571e-03
+ largest correction to disp= 5.326866e-06 in node 2638 and dof 1
 
-[DAMAGE NEWTON EXTEND] inc=96 attempt=1 iter=8 soft_elements=3535 max_dD=1.645559e-01 est_res=17 est_corr=8 est_total=17 cap=40 r_ratio=0.632656 c_ratio=0.634592
- estimated number of iterations till convergence = 17
+ estimated number of iterations till convergence = 10
  no convergence
 
  iteration 9
@@ -196,13 +191,13 @@
 
  Using up to 1 cpu(s) for the stress calculation.
 
- average force= 0.369109
- time avg. forc= 0.309815
- largest residual force= 0.038158 in node 957 and dof 1
- largest increment of disp= 2.042785e-03
- largest correction to disp= 1.102166e-05 in node 957 and dof 1
+ average force= 0.415594
+ time avg. forc= 0.399960
+ largest residual force= 0.002456 in node 2638 and dof 1
+ largest increment of disp= 3.659571e-03
+ largest correction to disp= 3.675513e-06 in node 2638 and dof 1
 
- estimated number of iterations till convergence = 16
+ estimated number of iterations till convergence = 10
  no convergence
 
  iteration 10
@@ -214,78 +209,23 @@
 
  Using up to 1 cpu(s) for the stress calculation.
 
- average force= 0.369112
- time avg. forc= 0.309815
- largest residual force= 0.023729 in node 957 and dof 1
- largest increment of disp= 2.042785e-03
- largest correction to disp= 6.808755e-06 in node 957 and dof 1
+ average force= 0.415594
+ time avg. forc= 0.399960
+ largest residual force= 0.001703 in node 2638 and dof 1
+ largest increment of disp= 3.659571e-03
+ largest correction to disp= 2.544340e-06 in node 2638 and dof 1
 
-[DAMAGE NEWTON EXTEND] inc=96 attempt=1 iter=10 soft_elements=3536 max_dD=1.664898e-01 est_res=13 est_corr=10 est_total=13 cap=40 r_ratio=0.621861 c_ratio=0.617761
- estimated number of iterations till convergence = 16
- no convergence
+ convergence
 
- iteration 11
-
- Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
-
- Factoring the system of equations using the symmetric pardiso solver
- number of threads = 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- average force= 0.369113
- time avg. forc= 0.309815
- largest residual force= 0.014733 in node 957 and dof 1
- largest increment of disp= 2.042785e-03
- largest correction to disp= 4.215817e-06 in node 957 and dof 1
-
- estimated number of iterations till convergence = 16
- no convergence
-
- iteration 12
-
- Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
-
- Factoring the system of equations using the symmetric pardiso solver
- number of threads = 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- average force= 0.369114
- time avg. forc= 0.309815
- largest residual force= 0.009120 in node 957 and dof 1
- largest increment of disp= 2.042785e-03
- largest correction to disp= 2.597797e-06 in node 957 and dof 1
-
- estimated number of iterations till convergence = 16
- no convergence
-
- iteration 13
-
- Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
-
- Factoring the system of equations using the symmetric pardiso solver
- number of threads = 1
-
- Using up to 1 cpu(s) for the stress calculation.
-
- average force= 0.369114
- time avg. forc= 0.309815
- largest residual force= 0.005640 in node 957 and dof 1
- largest increment of disp= 2.042785e-03
- largest correction to disp= 1.601299e-06 in node 957 and dof 1
-
-convergence
-
-[DAMAGE GRADUAL] inc=96 time=1.895000000000e-01 batch released over 8 same-load steps, beta=0.875000
-[DAMAGE STIFFNESS] inc=96 time=1.895000000000e-01 below_1e-3=0 below_1e-2=0 below_1e-1=1 nonpositive=0 worst=node_2640_at_8.4031e-02
-[MON] {"kind":"stiffness","inc":96,"time":1.895000000000e-01,"below_1e-3":0,"below_1e-2":0,"below_1e-1":1,"nonpositive":0,"nodes":9836,"worst_node":2640,"worst_ratio":8.403060e-02}
-[DAMAGE DE1.3 TERMINAL] inc=96 time=1.895000000000e-01 new_terminal=5 tentative=5 batch_Dmax=1.000000e+00 batch_Dvis=9.998266e-01 orphan_nodes=0 action=reuse-sparse-graph+same-load-Newton
- increment 96 attempt 1 
- increment size= 2.000000e-03
- sum of previous increments=1.875000e-01
- actual step time=1.895000e-01
- actual total time=1.895000e-01
+[DAMAGE GRADUAL] inc=125 time=2.200000000000e-01 batch released over 8 same-load steps, beta=0.875000
+[DAMAGE STIFFNESS] inc=125 time=2.200000000000e-01 below_1e-3=0 below_1e-2=1 below_1e-1=27 nonpositive=0 worst=node_2636_at_7.2394e-03
+[MON] {"kind":"stiffness","inc":125,"time":2.200000000000e-01,"below_1e-3":0,"below_1e-2":1,"below_1e-1":27,"nonpositive":0,"nodes":9836,"worst_node":2636,"worst_ratio":7.239397e-03}
+[DAMAGE DE1.3 TERMINAL] inc=125 time=2.200000000000e-01 new_terminal=10 tentative=10 batch_Dmax=1.000000e+00 batch_Dvis=9.991367e-01 orphan_nodes=0 action=reuse-sparse-graph+same-load-Newton
+ increment 125 attempt 1 
+ increment size= 5.000000e-04
+ sum of previous increments=2.195000e-01
+ actual step time=2.200000e-01
+ actual total time=2.200000e-01
 
  iteration 1
 
@@ -298,13 +238,13 @@ convergence
 
  Using up to 1 cpu(s) for the stress calculation.
 
- average force= 0.369153
- time avg. forc= 0.310433
- largest residual force= 0.000484 in node 957 and dof 1
- largest increment of disp= 1.716281e-07
- largest correction to disp= 1.716281e-07 in node 5746 and dof 1
+ average force= 0.415680
+ time avg. forc= 0.400085
+ largest residual force= 0.001460 in node 5263 and dof 1
+ largest increment of disp= 9.133975e-06
+ largest correction to disp= 9.133975e-06 in node 1814 and dof 1
 
-[DAMAGE REEQ NC2] inc=96 actual_uam=1.716281e-07 physical_ref=2.042785e-03
+[DAMAGE REEQ NC2] inc=125 actual_uam=9.133975e-06 physical_ref=3.659571e-03
  no convergence
 
  iteration 2
@@ -316,23 +256,21 @@ convergence
 
  Using up to 1 cpu(s) for the stress calculation.
 
- average force= 0.369153
- time avg. forc= 0.310433
- largest residual force= 0.000321 in node 957 and dof 1
- largest increment of disp= 1.716281e-07
- largest correction to disp= 9.089348e-08 in node 957 and dof 1
+ average force= 0.415680
+ time avg. forc= 0.400085
+ largest residual force= 0.000500 in node 6459 and dof 1
+ largest increment of disp= 9.133975e-06
+ largest correction to disp= 1.912458e-06 in node 1814 and dof 1
 
- convergence; the increment size is increased to 3.000000e-03
+ convergence
 
- the increment size exceeds the maximum allowed and is decreased to 2.000000e-03
-
-[DAMAGE GRADUAL] inc=96 released force: norm 1.824105e-02, largest 7.100576e-03 at node 957
-[DAMAGE GRADUAL] inc=96 step 1 converged at beta=0.875000 -> beta=0.750000
- increment 96 attempt 1 
- increment size= 2.000000e-03
- sum of previous increments=1.875000e-01
- actual step time=1.895000e-01
- actual total time=1.895000e-01
+[DAMAGE GRADUAL] inc=125 released force: norm 6.967390e-02, largest 3.204021e-02 at node 431
+[DAMAGE GRADUAL] inc=125 step 1 converged at beta=0.875000 -> beta=0.750000
+ increment 125 attempt 1 
+ increment size= 5.000000e-04
+ sum of previous increments=2.195000e-01
+ actual step time=2.200000e-01
+ actual total time=2.200000e-01
 
  iteration 1
 
@@ -345,13 +283,13 @@ convergence
 
  Using up to 1 cpu(s) for the stress calculation.
 
- average force= 0.369153
- time avg. forc= 0.311044
- largest residual force= 0.000688 in node 957 and dof 1
- largest increment of disp= 1.954051e-07
- largest correction to disp= 1.954051e-07 in node 957 and dof 1
+ average force= 0.415680
+ time avg. forc= 0.400210
+ largest residual force= 0.001706 in node 5263 and dof 1
+ largest increment of disp= 9.726317e-06
+ largest correction to disp= 9.726317e-06 in node 1814 and dof 1
 
-[DAMAGE REEQ NC2] inc=96 actual_uam=1.954051e-07 physical_ref=2.042785e-03
+[DAMAGE REEQ NC2] inc=125 actual_uam=9.726317e-06 physical_ref=3.659571e-03
  no convergence
 
  iteration 2
@@ -363,22 +301,20 @@ convergence
 
  Using up to 1 cpu(s) for the stress calculation.
 
- average force= 0.369153
- time avg. forc= 0.311044
- largest residual force= 0.000449 in node 957 and dof 1
- largest increment of disp= 1.954051e-07
- largest correction to disp= 1.274503e-07 in node 957 and dof 1
+ average force= 0.415680
+ time avg. forc= 0.400210
+ largest residual force= 0.000537 in node 6459 and dof 1
+ largest increment of disp= 9.726317e-06
+ largest correction to disp= 2.028317e-06 in node 1814 and dof 1
 
- convergence; the increment size is increased to 3.000000e-03
+ convergence; the increment size is increased to 7.500000e-04
 
- the increment size exceeds the maximum allowed and is decreased to 2.000000e-03
-
-[DAMAGE GRADUAL] inc=96 step 2 converged at beta=0.750000 -> beta=0.625000
- increment 96 attempt 1 
- increment size= 2.000000e-03
- sum of previous increments=1.875000e-01
- actual step time=1.895000e-01
- actual total time=1.895000e-01
+[DAMAGE GRADUAL] inc=125 step 2 converged at beta=0.750000 -> beta=0.625000
+ increment 125 attempt 1 
+ increment size= 5.000000e-04
+ sum of previous increments=2.195000e-01
+ actual step time=2.200000e-01
+ actual total time=2.200000e-01
 
  iteration 1
 
@@ -391,10 +327,74 @@ convergence
 
  Using up to 1 cpu(s) for the stress calculation.
 
- average force= 0.369153
- time avg. forc= 0.311650
- largest residual force= 0.000768 in node 957 and dof 1
- largest increment of disp= 2.181399e-07
- largest correction to disp= 2.181399e-07 in node 957 and dof 1
+ average force= 0.415679
+ time avg. forc= 0.400334
+ largest residual force= 0.001749 in node 5263 and dof 1
+ largest increment of disp= 9.827022e-06
+ largest correction to disp= 9.827022e-06 in node 1814 and dof 1
 
-[DAMAGE REEQ NC2] inc=96 actual_uam=2.181399e-07 physical_ref=2.042785e-03
+[DAMAGE REEQ NC2] inc=125 actual_uam=9.827022e-06 physical_ref=3.659571e-03
+ no convergence
+
+ iteration 2
+
+ Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
+
+ Factoring the system of equations using the symmetric pardiso solver
+ number of threads = 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ average force= 0.415679
+ time avg. forc= 0.400334
+ largest residual force= 0.000544 in node 6459 and dof 1
+ largest increment of disp= 9.827022e-06
+ largest correction to disp= 2.049317e-06 in node 1814 and dof 1
+
+ convergence; the increment size is increased to 7.500000e-04
+
+[DAMAGE GRADUAL] inc=125 step 3 converged at beta=0.625000 -> beta=0.500000
+ increment 125 attempt 1 
+ increment size= 5.000000e-04
+ sum of previous increments=2.195000e-01
+ actual step time=2.200000e-01
+ actual total time=2.200000e-01
+
+ iteration 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
+
+ Factoring the system of equations using the symmetric pardiso solver
+ number of threads = 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ average force= 0.415679
+ time avg. forc= 0.400457
+ largest residual force= 0.001758 in node 5263 and dof 1
+ largest increment of disp= 9.893617e-06
+ largest correction to disp= 9.893617e-06 in node 1814 and dof 1
+
+[DAMAGE REEQ NC2] inc=125 actual_uam=9.893617e-06 physical_ref=3.659571e-03
+ no convergence
+
+ iteration 2
+
+ Using up to 1 cpu(s) for the symmetric stiffness/mass contributions.
+
+ Factoring the system of equations using the symmetric pardiso solver
+ number of threads = 1
+
+ Using up to 1 cpu(s) for the stress calculation.
+
+ average force= 0.415679
+ time avg. forc= 0.400457
+ largest residual force= 0.000548 in node 6459 and dof 1
+ largest increment of disp= 9.893617e-06
+ largest correction to disp= 2.066336e-06 in node 1814 and dof 1
+
+ convergence; the increment size is increased to 7.500000e-04
+
+[DAMAGE GRADUAL] inc=125 step 4 converged at beta=0.500000 -> beta=0.375000
