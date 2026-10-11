@@ -53,13 +53,13 @@ From the computed model (data: ../animdata/*.npz via fndata.py)
   res_sections_seq.gif
                      the same sections loaded one run after another, Fn
                      growing (Fn = 0.33 left out: its cut shows the same
-                     plates as 0.42): the active section framed in the
-                     colour of its curve, finished ones stay broken, waiting
-                     ones intact and dimmed; Fn written as decimals
-  res_sections_seq_rainbow_steps.gif, _rainbow_smooth.gif
-                     the same without isolines: a rainbow laid at 50 % over
-                     a dark grey matrix (PAL=rb_bands_50 / rb_smooth_50),
-                     plates outlined
+                     plates as 0.42): omega as a rainbow mixed 50 % into dark
+                     grey (PAL=rb_smooth_50), plates outlined; the active
+                     section framed in the colour of its curve, finished ones
+                     stay broken, waiting ones intact and dimmed.  The graph
+                     has axis titles with units and numbers; the Fn of each
+                     finished curve appears in a row above it, with a dashed
+                     leader to the knee of the curve
 Render these with --disable_caching (manim's cache cannot hash the updaters).
 
 Each GIF loops without a seam, 1600x900, 25 fps, black background; one GIF
