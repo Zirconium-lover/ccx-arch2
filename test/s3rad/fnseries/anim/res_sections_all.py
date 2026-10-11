@@ -23,7 +23,8 @@ ST = STYLES[os.environ.get('PAL', 'bl_grey')]
 
 
 def frac_tex(k):
-    v = '0' if k == 0 else '1' if k == 12 else '%d/12' % k
+    """F_n = k/12 as a decimal with a comma: 0, 0,17, ... 1."""
+    v = '0' if k == 0 else '1' if k == 12 else ('%.2f' % (k / 12)).replace('.', '{,}')
     return r'F_n = ' + v
 
 

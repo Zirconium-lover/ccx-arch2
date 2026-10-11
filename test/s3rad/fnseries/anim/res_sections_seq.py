@@ -37,16 +37,17 @@ class ResSectionsSeq(Scene):
         labs = [tex(frac_tex(r.k_radial), L3M, fn_color(f)) for r, f in zip(runs, F)]
         hl = max(m.height for m in labs)
         GX, GY, GL = 0.3, 0.28, 0.1                     # gaps: columns, rows, label - section
-        ch = (CONTENT.h - 2 * GY) / 3 - hl - GL           # section height
+        CI = CONTENT.inset(0.08)                          # room for the frame of the active section
+        ch = (CI.h - 2 * GY) / 3 - hl - GL                # section height
         sc = ch / LY
         cw = (LX + U_MAX) * sc                            # cell width (room for the stretch)
         grid_w = 3 * cw + 2 * GX
-        cellR = Box(CONTENT.x0 + grid_w + 0.7, CONTENT.x1, CONTENT.y0, CONTENT.y1)
+        cellR = Box(CI.x0 + grid_w + 0.7, CONTENT.x1, CONTENT.y0, CONTENT.y1)
         origins = []                                      # lower-left of each section (scene)
         for i in range(9):
             c, rw = i % 3, i // 3
-            x0 = CONTENT.x0 + c * (cw + GX)
-            ytop = CONTENT.y1 - rw * (hl + GL + ch + GY)
+            x0 = CI.x0 + c * (cw + GX)
+            ytop = CI.y1 - rw * (hl + GL + ch + GY)
             origins.append(np.array([x0, ytop - hl - GL - ch, 0.]))
         for i, lab in enumerate(labs):
             o = origins[i]
@@ -193,8 +194,8 @@ class ResSectionsSeq(Scene):
             return f
         for i, lab in enumerate(labs):
             lab.add_updater(lab_up(i))
-        grid_rect = Rectangle(width=grid_w, height=CONTENT.h).move_to(
-            np.array([CONTENT.x0 + grid_w / 2, CONTENT.c[1], 0.]))
+        grid_rect = Rectangle(width=grid_w + 0.12, height=CI.h + 0.12).move_to(
+            np.array([CI.x0 + grid_w / 2, CI.c[1], 0.]))
         report({'grid': grid_rect, 'curves': VGroup(ax, ls, le)})
 
         self.add(pic, ax, ls, le, *labs, key)

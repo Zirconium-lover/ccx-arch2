@@ -74,7 +74,7 @@ DOT_DENS = 1300.                      # specks per mm^2 of section at full omega
 
 
 def fn_tex(k):
-    v = '0' if k == 0 else '1' if k == 12 else r'{%d \over 12}' % k
+    v = '0' if k == 0 else '1' if k == 12 else ('%.2f' % (k / 12)).replace('.', '{,}')
     return r'F_n = ' + v
 
 
