@@ -24,7 +24,7 @@ check), both with CCX_DAMAGE_TMIN = 1e-9:
   - before the original stop the curves agree with the stock runs within
     0.2 % of the peak (fn80: 1.15 MPa, fn25: 1.14 MPa);
   - 5x and 20x agree: fn80 eps_f10 5.64 / 5.61 %, W 22.3 / 22.3;
-    fn33 7.82 / 7.94 %, 33.2 / 33.2 (fn25v4e-3 still running at writing);
-  - the damping takes 5-25e-6 of the work (stock runs ~1e-6).
+    fn33 7.82 / 7.94 %, 33.2 / 33.2; fn25 8.45 / 8.44 %, 39.6 / 39.6;
+  - the damping takes 5-25e-6 of the work (stock runs ~1e-6); fn25v4e-3: 2.691e-05.
 (*) fn33v1e-3 stopped rc=201 at 6 % of the peak, after eps_f10; its step
 total is not printed; fn33v4e-3 (complete): 2.4e-05.
