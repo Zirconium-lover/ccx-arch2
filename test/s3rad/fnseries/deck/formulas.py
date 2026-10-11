@@ -13,7 +13,9 @@ FORMULAS = {
     'eta': r'\begin{gathered}\eta=\frac{\sigma_m}{\sigma_{eq}},\qquad\sigma_m=\frac{\sigma_1+\sigma_2+\sigma_3}{3},\\[4pt]'
            r'\sigma_{eq}=\sqrt{\tfrac12\left[(\sigma_1-\sigma_2)^2+(\sigma_2-\sigma_3)^2+(\sigma_3-\sigma_1)^2\right]}'
            r'\end{gathered}',
-    'sigma': r'\sigma=(1-D)\,\bar\sigma',
+    # after omega = 1: the plastic displacement u = L eps (Hillerborg), D linear in it, as in the solver
+    'damage': r'\begin{gathered}du^{pl}=L\,d\bar\varepsilon^{\,pl},\qquad D=\frac{u^{pl}}{u^{pl}_f},\\[4pt]'
+              r'\sigma=(1-D)\,\bar\sigma\end{gathered}',
     'gc': r'G_c=\int\limits_0^{\delta_f}T\,d\delta',
 }
 TEMPLATE = r'''\documentclass[border=2pt]{standalone}
