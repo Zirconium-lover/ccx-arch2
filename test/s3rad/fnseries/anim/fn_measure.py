@@ -34,9 +34,10 @@ class FnMeasure(Scene):
 
         # ---------------- measure the right column ----------------
         leg = legend(L2)
-        frm = tex(r'F_n = \frac{\sum L_{\text{рад}}}{\sum L}', L2M)
+        # the definition of F_n stays on screen the whole loop, at the key size
+        frm = tex(r'F_n = \frac{\sum L_{\text{рад}}}{\sum L}', L1)
         val = tex(r'\approx 0{,}4', L1, ACC)
-        col_w = max(leg.width, frm.width + 0.25 + val.width) + 0.05
+        col_w = max(leg.width, frm.width, 2.4 + 0.25 + val.width) + 0.05
         gap = 0.5
         img_w = CONTENT.w - gap - col_w - 0.03
         img_h = img_w * ch / cw
@@ -78,9 +79,9 @@ class FnMeasure(Scene):
         lab_R, lab_T = tex('R', L2M, GREY_A), tex('T', L2M, GREY_A)
         t45 = tex(r'45^\circ', L3M, GREY_A)
         bar_h = 0.34
-        rg = 0.28
-        key_h = cellR.h - leg.height - bar_h - frm.height - 3 * rg
-        rK, rLg, rB, rF = cellR.stack(key_h, leg.height, bar_h, frm.height, gap=rg)
+        rg = 0.26
+        key_h = cellR.h - frm.height - leg.height - val.height - 3 * rg
+        rF, rK, rLg, rB = cellR.stack(frm.height, key_h, leg.height, val.height, gap=rg)
         rad_k = min((rK.h - lab_R.height - 0.12) / 2, (rK.w - 2 * (lab_T.width + 0.15)) / 2)
         kc = np.array([rK.c[0], rK.y0 + rad_k, 0.])
         sectors = VGroup()
@@ -111,8 +112,9 @@ class FnMeasure(Scene):
         place(leg, rLg, LEFT)
         scan = ValueTracker(cellI.x0)
         bar_op = ValueTracker(1.)
-        bar_w = rB.w
-        bar_frame = Rectangle(width=bar_w, height=bar_h, stroke_color=GREY_B, stroke_width=2).move_to(rB.c)
+        bar_w = rB.w - val.width - 0.25
+        bar_frame = Rectangle(width=bar_w, height=bar_h, stroke_color=GREY_B, stroke_width=2).move_to(
+            np.array([rB.x0 + bar_w / 2, rB.c[1], 0.]))
 
         def bar():
             sel = xs_mid <= scan.get_value()
@@ -127,8 +129,7 @@ class FnMeasure(Scene):
             return g.set_opacity(bar_op.get_value())
         bars = always_redraw(bar)
         frm.move_to(np.array([rF.x0, rF.c[1], 0.]), aligned_edge=LEFT)
-        val.next_to(frm, RIGHT, buff=0.25)
-        form = VGroup(frm, val)
+        val.move_to(np.array([rB.x1, rB.c[1], 0.]), aligned_edge=RIGHT)
 
         lop = ValueTracker(1.)                     # overall opacity of the traced sticks
 
@@ -144,20 +145,21 @@ class FnMeasure(Scene):
             0.8 if cellI.x0 + 0.01 < scan.get_value() < cellI.x1 - 0.01 else 0.))
 
         report({'image': frame, 'key': VGroup(circ, lab_T), 'R': lab_R, '45': t45, 'legend': leg,
-                'bar': bar_frame, 'formula': form})
+                'bar': bar_frame, 'value': val, 'formula': frm})
 
         # ---------------- timeline (first frame = last frame) ----------------
-        self.add(img, dim, lines, clip, frame, sectors, bounds, circ, ang45, t45, lab_R, lab_T, ndl,
-                 leg, bar_frame, bars, scan_line)
+        self.add(img, dim, lines, clip, frame, frm, sectors, bounds, circ, ang45, t45, lab_R, lab_T,
+                 ndl, leg, bar_frame, bars, scan_line)
         self.wait(1.0)
         self.play(phi.animate.set_value(90.), run_time=1.8, rate_func=smooth)
         self.play(phi.animate.set_value(0.), run_time=1.8, rate_func=smooth)
         self.play(dim.animate.set_opacity(0.6), run_time=0.6)
         self.play(scan.animate.set_value(cellI.x1), run_time=6.0, rate_func=linear)
-        self.play(Write(frm), FadeIn(val, shift=LEFT * 0.2), run_time=1.0)
+        self.play(FadeIn(val, shift=LEFT * 0.2), Indicate(frm, scale_factor=1.06, color=ACC),
+                  run_time=1.0)
         self.wait(2.6)
         # the neon goes out first, on the dark micrograph; only then it brightens
-        self.play(FadeOut(form), lop.animate.set_value(0.), bar_op.animate.set_value(0.),
+        self.play(FadeOut(val), lop.animate.set_value(0.), bar_op.animate.set_value(0.),
                   run_time=0.8)
         self.play(dim.animate.set_opacity(0), run_time=0.6)
         scan.set_value(cellI.x0)
