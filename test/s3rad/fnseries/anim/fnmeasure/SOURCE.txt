@@ -1,0 +1,25 @@
+Micrograph used in fn_measure.gif
+
+  A. A. Plyasov, N. S. Saburov, S. A. Bekrenev, M. G. Isaenkova, M. I. Petrov,
+  P. S. Dzhumaev. Experiments on Reorientation of Hydrides in Unirradiated E635
+  Guide Tubes. Physics of Atomic Nuclei 86 (12) (2023) 2604-2617.
+  DOI 10.1134/S1063778823120062.  Fig. 4, panel "110 MPa" (R-T cross-section
+  of an E635 tube after the reorientation test, maximum hoop stress 110 MPa).
+
+  plyasov2023_fig4_110MPa.png is that panel as embedded in the PDF (389 x 292 px,
+  no rescaling); not open access (Pleiades Publishing) - cite it on the slide.
+
+Method (as in the paper, section 1.4): F_l = total length of the hydrides
+lying within 0-45 deg of the radial direction / total length of all hydrides.
+The paper measured it with SIAMS 800; Fig. 6 gives F_l = 0.28-0.44 at 110 MPa.
+
+trace.py redoes the measurement on this panel: tube boundaries fitted by
+circles (local radial direction), hydrides = pixels darker than the local
+median background, skeleton split at junctions into straight pieces
+(Douglas-Peucker, 1.3 px), each piece classified by its angle to the local
+radius.  Result: F_n = 0.43 (0.41-0.43 for darkness thresholds 18-28), the
+length histogram is bimodal (peaks at 0 and 85-90 deg) like Fig. 5.
+
+This repository is public, so the panel itself (plyasov2023_fig4_110MPa.png)
+and fn_measure.gif, which shows it, are NOT committed: extract the panel from
+the PDF (pdfimages, page 5, second strip, x 424-812) to re-render.
