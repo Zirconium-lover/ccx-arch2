@@ -155,8 +155,10 @@ class FnMeasure(Scene):
         self.play(scan.animate.set_value(cellI.x1), run_time=6.0, rate_func=linear)
         self.play(Write(frm), FadeIn(val, shift=LEFT * 0.2), run_time=1.0)
         self.wait(2.6)
-        self.play(FadeOut(form), lop.animate.set_value(0.), dim.animate.set_opacity(0),
-                  bar_op.animate.set_value(0.), run_time=1.0)
+        # the neon goes out first, on the dark micrograph; only then it brightens
+        self.play(FadeOut(form), lop.animate.set_value(0.), bar_op.animate.set_value(0.),
+                  run_time=0.8)
+        self.play(dim.animate.set_opacity(0), run_time=0.6)
         scan.set_value(cellI.x0)
         bar_op.set_value(1.)
         lop.set_value(1.)
