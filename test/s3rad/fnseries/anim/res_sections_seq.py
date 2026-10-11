@@ -1,0 +1,206 @@
+"""Looping GIF from the computed model: the sections of all eight runs
+(z = 0.61 mm, one plane and one scale), loaded one after another, Fn growing:
+the active section is framed in the colour of its curve and its curve runs
+on the right; the finished ones stay broken with their curves, the waiting
+ones stand intact and dimmed.  omega as grey steps with isolines (style
+bl_grey of res_section.py).
+
+    manim -r 1600,900 --fps 25 --disable_caching res_sections_seq.py ResSectionsSeq
+"""
+import os
+from mech_common import *
+from fndata import Run, SERIES
+from res_section import FieldRaster, STYLES, U_MAX
+from res_curves import fn_color, SIG_MAX
+from res_sections_all import frac_tex
+
+T0 = 0.6                              # the first run starts
+D, G = 2.0, 0.3                       # one run, the pause after it
+T_END = T0 + 8 * (D + G)
+T_DIP = (T_END + 1.4, T_END + 2.1, T_END + 2.4, T_END + 3.1)
+T_LOOP = T_DIP[3] + 0.4
+EPS_AX = 0.135
+DIM = 0.4                             # waiting sections
+ST = STYLES[os.environ.get('PAL', 'bl_grey')]
+
+
+class ResSectionsSeq(Scene):
+    def construct(self):
+        self.camera.background_color = BG
+        runs = [Run(fn) for fn, _ in SERIES]
+        F = [r.k_radial / 12 for r in runs]
+        z_cut = float(os.environ.get('ZCUT', 0)) or runs[0].best_section('z')
+        r0 = runs[0]
+        LX, LY = r0.hi[0] - r0.lo[0], r0.hi[1] - r0.lo[1]
+
+        # ---------------- layout: a 3 x 3 grid of sections | the curves ----------------
+        labs = [tex(frac_tex(r.k_radial), L3M, fn_color(f)) for r, f in zip(runs, F)]
+        hl = max(m.height for m in labs)
+        GX, GY, GL = 0.3, 0.28, 0.1                     # gaps: columns, rows, label - section
+        ch = (CONTENT.h - 2 * GY) / 3 - hl - GL           # section height
+        sc = ch / LY
+        cw = (LX + U_MAX) * sc                            # cell width (room for the stretch)
+        grid_w = 3 * cw + 2 * GX
+        cellR = Box(CONTENT.x0 + grid_w + 0.7, CONTENT.x1, CONTENT.y0, CONTENT.y1)
+        origins = []                                      # lower-left of each section (scene)
+        for i in range(9):
+            c, rw = i % 3, i // 3
+            x0 = CONTENT.x0 + c * (cw + GX)
+            ytop = CONTENT.y1 - rw * (hl + GL + ch + GY)
+            origins.append(np.array([x0, ytop - hl - GL - ch, 0.]))
+        for i, lab in enumerate(labs):
+            o = origins[i]
+            lab.move_to(np.array([o[0], o[1] + ch + GL, 0.]), aligned_edge=DL)
+
+        def Pk(i, xy):
+            xy = np.asarray(xy)
+            o = origins[i]
+            return np.c_[o[0] + (xy[..., 0] - r0.lo[0]) * sc, o[1] + (xy[..., 1] - r0.lo[1]) * sc,
+                         np.zeros(xy.shape[:-1])].reshape(*xy.shape[:-1], 3)
+
+        boxes = [Box(o[0] - 0.04, o[0] + cw + 0.04, o[1] - 0.04, o[1] + ch + 0.04) for o in origins[:8]]
+        rasters = [FieldRaster(b, ST) for b in boxes]
+
+        # the omega key in the ninth cell
+        o9 = origins[8]
+        key_box = Box(o9[0] + 0.15, o9[0] + cw - 0.1, o9[1], o9[1] + ch + hl + GL)
+        lab_w = tex(r'\omega', L2M)
+        bw = key_box.w - lab_w.width - 0.25
+        bar = Rectangle(width=bw, height=0.3, stroke_color=GREY_B, stroke_width=2)
+        z0, z1 = tex('0', L3M, GREY_A), tex('1', L3M, GREY_A)
+        wrow = VGroup(lab_w, bar).arrange(RIGHT, buff=0.25)
+        z0.next_to(bar, DOWN, buff=0.1).align_to(bar, LEFT)
+        z1.next_to(bar, DOWN, buff=0.1).align_to(bar, RIGHT)
+        key = Group(wrow, z0, z1)
+        place(key, key_box)
+        bb = Box(bar.get_left()[0], bar.get_right()[0], bar.get_bottom()[1], bar.get_top()[1])
+        nq = 60
+        xs = np.linspace(bb.x0, bb.x1, nq + 1)
+        qs = [np.array([[xs[i], bb.y0], [xs[i + 1], bb.y0], [xs[i + 1], bb.y1], [xs[i], bb.y1]]) for i in range(nq)]
+        qv = [np.array([i, i + 1, i + 1, i]) / nq for i in range(nq)]
+        bimg = ImageMobject(FieldRaster(bb, ST).render(qs, qv))
+        bimg.stretch_to_fit_width(bb.w).stretch_to_fit_height(bb.h).move_to(bb.c)
+        key.add_to_back(bimg)
+
+        # ---------------- the curves ----------------
+        ls, le = tex(r'\sigma', L1), tex(r'\varepsilon', L1)
+        ax = Axes(x_range=[0, EPS_AX, EPS_AX], y_range=[0, SIG_MAX, SIG_MAX],
+                  x_length=cellR.w - ls.width - 0.3 - le.width - 0.3, y_length=cellR.h - 0.2, tips=True,
+                  axis_config=dict(color=GREY_B, stroke_width=3, include_ticks=False, tip_width=0.2, tip_height=0.2))
+        ax.move_to(np.array([cellR.x0 + ls.width + 0.3 + ax.width / 2, cellR.y1 - 0.06 - ax.height / 2, 0.]))
+        ls.next_to(ax.y_axis, LEFT, buff=0.2).align_to(ax.y_axis, UP)
+        le.next_to(ax.x_axis, RIGHT, buff=0.15)
+        cx = [np.r_[0, r.curve[:, 0]] for r in runs]
+        cy = [np.r_[0, r.curve[:, 1]] for r in runs]
+        e_end = [x[-1] for x in cx]
+
+        clk = ValueTracker(0.)
+
+        def dip(t):
+            if t < T_DIP[0]:
+                return 1.
+            return 1 - ramp(t, T_DIP[0], T_DIP[1]) + ramp(t, T_DIP[2], T_DIP[3])
+
+        def te_of(t):
+            return t if t < T_DIP[1] + 0.15 else 0.
+
+        def eps_run(i, te):
+            """Grip strain of run i at time te: 0 before its turn, its last
+            strain after it; quick through the uniform start."""
+            a = T0 + i * (D + G)
+            if te <= a:
+                return 0.
+            tau = smoothstep((min(te, a + D) - a) / D)
+            return float(np.interp(tau, [0, 0.2, 1], [0, 0.03, e_end[i]]))
+
+        def polys_vm(polys, color, sw=0.5):
+            pts = []
+            for q in polys:
+                b = np.roll(q, -1, axis=0)
+                pts.append(np.stack([q, q + (b - q) / 3, q + 2 * (b - q) / 3, b], 1).reshape(-1, 3))
+            vm = VMobject(stroke_color=color, stroke_width=sw, fill_color=color, fill_opacity=1)
+            if pts:
+                vm.set_points(np.vstack(pts))
+            return vm
+
+        cache = {}
+
+        def section(i, eps):
+            """Raster of the matrix and the hydride paths of section i at
+            eps; the intact and the broken states are kept."""
+            key_ = (i, round(eps, 7))
+            if key_ in cache:
+                return cache[key_]
+            r = runs[i]
+            s = r.at(eps)
+            polys, own, pv = r.slice('z', z_cut, s, 'omega')
+            ph = r.phase[own]
+            mat = np.flatnonzero(ph == 0)
+            img = rasters[i].render([Pk(i, polys[j][:, :2])[:, :2] for j in mat], [pv[j] for j in mat])
+            hyd = [(polys_vm([Pk(i, polys[j][:, :2]) for j in np.flatnonzero(ph == code)], col))
+                   for code, col in ((1, RAD), (2, TAN)) if np.any(ph == code)]
+            out = (img, hyd)
+            if eps == 0. or eps == e_end[i]:
+                cache[key_] = out
+            return out
+
+        def picture():
+            t = clk.get_value()
+            g = dip(t)
+            te = te_of(t)
+            out = Group()
+            vec = VGroup()
+            for i in range(8):
+                eps = eps_run(i, te)
+                a = T0 + i * (D + G)
+                k = g * (DIM + (1 - DIM) * ramp(te, a - 0.3, a))       # lights up just before its turn
+                img, hyd = section(i, eps)
+                if k < 1:
+                    img = img.copy(); img[..., 3] = (img[..., 3] * k).astype(np.uint8)
+                im = ImageMobject(img)
+                im.stretch_to_fit_width(boxes[i].w).stretch_to_fit_height(boxes[i].h).move_to(boxes[i].c)
+                out.add(im)
+                for h in hyd:
+                    vec.add(fade_all(h.copy(), k) if k < 1 else h.copy())
+                # the frame of the active section
+                on = ramp(te, a - 0.3, a) * (1 - ramp(te, a + D, a + D + G + 0.2))
+                if on > 0.01:
+                    fr = Rectangle(width=cw + 0.12, height=ch + 0.12, stroke_color=fn_color(F[i]),
+                                   stroke_width=4).move_to(np.array([origins[i][0] + cw / 2, origins[i][1] + ch / 2, 0.]))
+                    vec.add(fade_all(fr, on * g))
+                # its curve
+                if eps > 1e-4:
+                    m = cx[i] < eps
+                    pts = [ax.c2p(x_, y_) for x_, y_ in zip(cx[i][m], cy[i][m])] + \
+                          [ax.c2p(eps, np.interp(eps, cx[i], cy[i]))]
+                    active = te < a + D
+                    ln = VMobject(stroke_color=fn_color(F[i]), stroke_width=6 if active else 4).set_points_as_corners(pts)
+                    vec.add(fade_all(ln, g) if g < 1 else ln)
+                    if active:
+                        d = Dot(ax.c2p(eps, np.interp(eps, cx[i], cy[i])), radius=0.1, color=fn_color(F[i]))
+                        vec.add(fade_all(d, g) if g < 1 else d)
+            out.add(vec)
+            return out
+
+        pic = Group()
+        pic.add_updater(lambda m: m.set_submobjects(list(picture())))
+
+        def lab_up(i):
+            def f(m):
+                te = te_of(clk.get_value())
+                a = T0 + i * (D + G)
+                m.set_opacity((DIM + (1 - DIM) * ramp(te, a - 0.3, a)) * dip(clk.get_value()))
+            return f
+        for i, lab in enumerate(labs):
+            lab.add_updater(lab_up(i))
+        grid_rect = Rectangle(width=grid_w, height=CONTENT.h).move_to(
+            np.array([CONTENT.x0 + grid_w / 2, CONTENT.c[1], 0.]))
+        report({'grid': grid_rect, 'curves': VGroup(ax, ls, le)})
+
+        self.add(pic, ax, ls, le, *labs, key)
+        if os.environ.get('STILL'):
+            clk.set_value(float(os.environ['STILL']))
+            self.update_mobjects(0)
+            self.wait(0.04)
+            return
+        self.play(clk.animate.set_value(T_LOOP), run_time=T_LOOP, rate_func=linear)
