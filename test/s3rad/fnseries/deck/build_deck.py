@@ -498,27 +498,24 @@ def build(out):
              xr=(0, 1, 0.2), yr=(0, 80, 20), xfmt='0.0', yfmt='0')
     xy_chart(s, 0.35, 4.3, 6.2, 2.85, [('', F, sb, blue)], '*F_{n}*', 'σ_{в}, МПа',
              xr=(0, 1, 0.2), yr=(500, 600, 25), xfmt='0.0', yfmt='0')
-    cd = CategoryChartData()
-    cd.categories = ['0' if f == 0 else '1' if f == 1 else dec(f) for f in F]
-    sh = np.array([[v for v in r.fracture_surface(r.eps_f10).values()] for r in runs10])
-    sh = sh / sh.sum(1, keepdims=True) * 100
-    for j, (key, name) in enumerate((('ductile', 'вязкий разрыв'), ('cleavage', 'скол гидрида'),
-                                     ('debond', 'отслоение'))):
-        cd.add_series(name, list(sh[:, j]))
-    ch = s.shapes.add_chart(XL_CHART_TYPE.COLUMN_STACKED_100, Inches(6.8), Inches(4.3), Inches(6.2),
-                            Inches(2.85), cd).chart
-    style_chart(ch, 12)
-    ch.has_legend = True
-    ch.legend.position = XL_LEGEND_POSITION.RIGHT
-    ch.legend.include_in_layout = False
-    ch.legend.font.size = Pt(12); ch.legend.font.color.rgb = GREY; ch.legend.font.name = FONT
-    for ser, key in zip(ch.plots[0].series, ('ductile', 'cleavage', 'debond')):
-        ser.format.fill.solid(); ser.format.fill.fore_color.rgb = MECH[key]
-    ch.plots[0].gap_width = 40
-    style_axis(ch.category_axis, '*F_{n}*', 12)
-    style_axis(ch.value_axis, 'доля поверхности разрушения, %', 12, '0%')
-    textbox(s, 0.35, 0.92, 12.6, 0.35, [dict(text='деформация, работа и прочность до разрушения; состав '
-                                                  'поверхности разрушения по механизмам', size=14, color=DIM)])
+    # brittle share of the fracture surface seen along T (projection on the R-L plane, as in
+    # fractography): debonding + hydride cleavage; Fn = 0.33 from its completed rerun
+    from fracture_surface import projected_brittle
+    from pptx.enum.dml import MSO_LINE_DASH_STYLE
+    names = [n_ if fn != 0.33 else 'fn33v4e-3' for fn, n_ in SERIES]
+    br = [projected_brittle(Run(n_))[0] for n_ in names]
+    fx = np.linspace(0, 0.5, 26)                        # rings, Petrov et al. 2025 (fig. 6): logistic fit
+    fexp = 0.05 + 0.87 / (1 + np.exp(-(fx - 0.265) / 0.018))
+    # the longer series first: LibreOffice drops a first series that has fewer points
+    ch = xy_chart(s, 6.8, 4.3, 6.2, 2.85, [('эксперимент', list(fx), list(fexp), ACC), ('модель', F, br, blue)],
+                  '*F_{n}*', 'доля хрупкой составляющей', xr=(0, 1, 0.2), yr=(0, 1, 0.2), xfmt='0.0',
+                  yfmt='0.0', legend=True)
+    exp = ch.plots[0].series[0]
+    exp.marker.style = XL_MARKER_STYLE.NONE
+    exp.format.line.dash_style = MSO_LINE_DASH_STYLE.DASH
+    exp.format.line.width = Pt(2.25)
+    textbox(s, 6.8, 7.12, 5.4, 0.3, [dict(text='излом в проекции на плоскость *R*–*L*; хрупкое: отслоение '
+                                              'и скол гидрида', size=12, color=DIM, align=PP_ALIGN.CENTER)])
 
     # 11. conclusions (draft)
     s = nxt()
@@ -534,8 +531,9 @@ def build(out):
             dec(100 * (sb[i0] - sb[i1]) / sb[i0], 0)),
         'Тангенциальные гидриды раскалываются, а трещина идёт вязко по матрице; радиальные гидриды '
         'отслаиваются, и трещина проходит от пластины к пластине по перемычкам',
-        'Доля скола в изломе падает с %s %% при *F_{n}* = 0 до %s %% при *F_{n}* = 1, доля отслоения растёт '
-        'с %s до %s %%' % (dec(sh[i0, 1], 0), dec(sh[i1, 1], 0), dec(sh[i0, 2], 0), dec(sh[i1, 2], 0)),
+        'Доля хрупкой составляющей излома (в проекции на плоскость *R*–*L*) растёт с %s при *F_{n}* = 0 до %s '
+        'при *F_{n}* = 1; в испытаниях колец рост резче и достигает 0,9: в модели 12 отдельных пластин не '
+        'образуют сквозной сетки гидридов' % (dec(br[i0], 2), dec(br[i1], 2)),
         'Модель качественно воспроизводит наблюдаемое в испытаниях снижение пластичности с ростом *F_{n}*'],
         size=19, bullets=True, space_after=12)
 

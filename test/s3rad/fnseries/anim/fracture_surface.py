@@ -145,3 +145,38 @@ if __name__ == '__main__':
     for name in sys.argv[2:] or ['fn0', 'fn25v1e-3', 'fn60', 'fn100']:
         r = Run(name)
         print(name, render(r, os.path.join(out, 'fs_%s.png' % name)))
+
+
+def projected_brittle(r, px_per_mm=200):
+    """Fractography view: the fracture surface of each half seen along T (the
+    load axis), i.e. projected on the R-L plane with hidden parts removed.
+    Brittle = debonding + hydride cleavage, ductile = matrix.  Returns the
+    brittle share of the projected area (mean of the two halves) and the
+    per-half shares."""
+    t_end = r.t[-1]
+    lab, left, right, s = halves(r, t_end)
+    X = r.X0
+    shares = []
+    for part, sgn in ((left, 1.), (right, -1.)):          # the left half is seen from +x
+        faces, kind = surface_of(r, part, lab, s)
+        P = X[faces]
+        nrm = np.cross(P[:, 1] - P[:, 0], P[:, 2] - P[:, 0])
+        front = sgn * nrm[:, 0] > 0
+        keep = front & (kind != 'outer')
+        P, kind = P[keep], kind[keep]
+        o = np.argsort(sgn * P[:, :, 0].mean(1))           # far first, near last
+        P, kind = P[o], kind[o]
+        cid = {'ductile': (1., 0., 0.), 'debond': (0., 1., 0.), 'cleavage': (0., 0., 1.)}
+        cols = np.array([cid[k] for k in kind])
+        wpx, hpx = int((r.hi[1] - r.lo[1]) * px_per_mm), int((r.hi[2] - r.lo[2]) * px_per_mm)
+        fig = plt.figure(figsize=(wpx / 100, hpx / 100), dpi=100)
+        ax = fig.add_axes([0, 0, 1, 1]); ax.set_axis_off()
+        ax.add_collection(PolyCollection(P[:, :, 1:], facecolors=cols, edgecolors='none', antialiased=False))
+        ax.set_xlim(r.lo[1], r.hi[1]); ax.set_ylim(r.lo[2], r.hi[2])
+        fig.canvas.draw()
+        img = np.asarray(fig.canvas.buffer_rgba())[..., :3].astype(int)
+        plt.close(fig)
+        duct = np.sum((img[..., 0] == 255) & (img[..., 1] == 0) & (img[..., 2] == 0))
+        brit = np.sum((img[..., 0] == 0) & ((img[..., 1] == 255) ^ (img[..., 2] == 255)))
+        shares.append(brit / max(duct + brit, 1))
+    return float(np.mean(shares)), shares
