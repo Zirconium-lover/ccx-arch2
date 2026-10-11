@@ -136,6 +136,7 @@ class FnMeasure(Scene):
             x, k = scan.get_value(), lop.get_value()
             for ln, xm in zip(m, xs_mid):
                 set_neon(ln, k if xm <= x else 0.)
+        show_lines(lines)          # hidden from the very first frame, before any updater runs
         lines.add_updater(show_lines)
         scan_line = always_redraw(lambda: Line(
             np.array([scan.get_value(), cellI.y0, 0.]), np.array([scan.get_value(), cellI.y1, 0.]),
