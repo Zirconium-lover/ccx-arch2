@@ -1,0 +1,30 @@
+Fn series, presentation properties (decks_base/), solver c75ad9b - final set
+==========================================================================
+
+ Fn     run          peak, MPa  eps at peak  eps_f10   W, MJ/m3  damping share
+ 0      fn0             582       10.44 %    12.90 %     68.4      8.1e-07
+ 0.20   fn20            568        6.44 %     9.19 %     44.0      1.1e-06
+ 0.25   fn25v1e-3       564        5.94 %     8.45 %     39.6      5.1e-06
+ 0.33   fn33v1e-3       552        4.44 %     7.82 %     33.2      (*)
+ 0.40   fn40            548        4.44 %     7.29 %     30.0      3.6e-06
+ 0.60   fn60            541        3.94 %     6.04 %     24.9      1.0e-06
+ 0.80   fn80v1e-3       535        3.44 %     5.64 %     22.3      6.1e-06
+ 1      fn100           534        3.44 %     5.68 %     23.4      1.1e-06
+
+eps_f10: nominal strain where the force has fallen to 10 % of its peak;
+W: work of fracture per unit volume, the area under sigma(eps).
+damping share: energy taken by the nodal viscous damping / total work.
+
+fn25, fn33, fn80 with the stock flags (CCX_DAMAGE_VISCOUS_DAMPING = 2e-4)
+stopped rc=201 on the descending branch (41 / 49 / 51 % of the peak): a real
+loss of static equilibrium when a metal ligament snaps (cutting the step
+down to 2.6e-8 with CCX_DAMAGE_TMIN = 1e-9 still diverged, run fn80t).  They
+were rerun with the damping 5x (1e-3, the runs used above) and 20x (4e-3,
+check), both with CCX_DAMAGE_TMIN = 1e-9:
+  - before the original stop the curves agree with the stock runs within
+    0.2 % of the peak (fn80: 1.15 MPa, fn25: 1.14 MPa);
+  - 5x and 20x agree: fn80 eps_f10 5.64 / 5.61 %, W 22.3 / 22.3;
+    fn33 7.82 / 7.94 %, 33.2 / 33.2 (fn25v4e-3 still running at writing);
+  - the damping takes 5-25e-6 of the work (stock runs ~1e-6).
+(*) fn33v1e-3 stopped rc=201 at 6 % of the peak, after eps_f10; its step
+total is not printed; fn33v4e-3 (complete): 2.4e-05.
