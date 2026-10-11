@@ -8,10 +8,12 @@ import numpy as np
 from PIL import Image
 
 FORMULAS = {
-    'omega': r'\omega=\int\limits_0^{\bar\varepsilon^{\,p}}\frac{d\bar\varepsilon^{\,p}}{\varepsilon_f(\eta)}',
-    'eta': r'\eta=\frac{\sigma_m}{\sigma_{eq}}',
-    'damage': r'D=\frac{L_e\,\Delta\bar\varepsilon^{\,p}}{u_f}',
-    'sigma': r'\sigma=(1-D)\,\tilde\sigma',
+    # as in the literature (ABAQUS ductile damage; Kim, Lee 2024)
+    'omega': r'\omega=\int\limits_0^{\bar\varepsilon^{\,pl}}\frac{d\bar\varepsilon^{\,pl}}{\bar\varepsilon^{\,pl}_D(\eta)}',
+    'eta': r'\begin{gathered}\eta=\frac{\sigma_m}{\sigma_{eq}},\qquad\sigma_m=\frac{\sigma_1+\sigma_2+\sigma_3}{3},\\[4pt]'
+           r'\sigma_{eq}=\sqrt{\tfrac12\left[(\sigma_1-\sigma_2)^2+(\sigma_2-\sigma_3)^2+(\sigma_3-\sigma_1)^2\right]}'
+           r'\end{gathered}',
+    'sigma': r'\sigma=(1-D)\,\bar\sigma',
     'gc': r'G_c=\int\limits_0^{\delta_f}T\,d\delta',
 }
 TEMPLATE = r'''\documentclass[border=2pt]{standalone}

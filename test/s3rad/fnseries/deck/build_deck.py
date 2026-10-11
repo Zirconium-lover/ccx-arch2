@@ -92,7 +92,7 @@ def runs(par, text, size, color=WHITE, bold=False):
         elif text[i] in '_^' and i + 1 < len(text) and text[i + 1] == '{':
             flush(buf); buf = ''
             j = text.index('}', i)
-            flush(text[i + 2:j], '-25000' if text[i] == '_' else '30000', it_=False)
+            flush(text[i + 2:j], '-25000' if text[i] == '_' else '30000')
             i = j + 1
         else:
             buf += text[i]; i += 1
@@ -346,10 +346,10 @@ def build(out):
         'На шлифах видны именно мезомасштабные гидриды'], size=17, bullets=True, space_after=12)
     b1 = picture(s, os.path.join(SCRATCH, 'fn_measure.gif'), 0.1, gy, w=gw)
     t2 = textbox(s, 9.6, 1.55, 3.45, 5.0, [
-        'Ориентацию гидридов характеризует коэффициент *F*_{n}',
-        '*F*_{n}: доля суммарной длины гидридов, отклонённых от радиального направления трубы не более '
+        'Ориентацию гидридов характеризует коэффициент *F_{n}*',
+        '*F_{n}*: доля суммарной длины гидридов, отклонённых от радиального направления трубы не более '
         'чем на 45°',
-        '*F*_{n} = 0: все гидриды тангенциальные, *F*_{n} = 1: все радиальные'], size=17, bullets=True,
+        '*F_{n}* = 0: все гидриды тангенциальные, *F_{n}* = 1: все радиальные'], size=17, bullets=True,
         space_after=12)
     title(s, 'δ-гидриды циркония')
     click_swap(s, [a1, t1], [b1, t2])
@@ -383,9 +383,9 @@ def build(out):
     textbox(s, 10.2, 4.15, 2.7, 0.7, [dict(text='относительное удлинение колец', size=14, color=GREY,
                                            align=PP_ALIGN.CENTER)])
     textbox(s, 0.8, 5.05, 11.8, 2.0, [
-        'С ростом *F*_{n} излом переходит от вязкого (ямочного) к хрупкому',
-        'Переход резкий: при *F*_{n} ≈ 0,25–0,3 доля хрупкой составляющей растёт от 0,1 до 0,9',
-        'Удлинение колец 23–27 % при *F*_{n} < 0,2; при *F*_{n} > 0,25 оно снижается вплоть до нуля'],
+        'С ростом *F_{n}* излом переходит от вязкого (ямочного) к хрупкому',
+        'Переход резкий: при *F_{n}* ≈ 0,25–0,3 доля хрупкой составляющей растёт от 0,1 до 0,9',
+        'Удлинение колец 23–27 % при *F_{n}* < 0,2; при *F_{n}* > 0,25 оно снижается вплоть до нуля'],
         size=19, bullets=True, space_after=8)
 
     # 6. the numerical experiment
@@ -415,11 +415,12 @@ def build(out):
     eta = [0, 0.33, 0.5, 0.67, 1.0, 1.5]
     efm = [30, 12, 7, 4.25, 2.5, 1.5]
     efh = [12, 7, 4.5, 2.8, 1.5, 1.0]
-    textbox(s, 4.0, 1.25, 4.6, 0.4, [dict(text='Предельная пластическая деформация', size=16, color=GREY,
+    textbox(s, 4.0, 1.25, 4.6, 0.4, [dict(text='Деформация начала повреждения', size=16, color=GREY,
                                           align=PP_ALIGN.CENTER)])
     xy_chart(s, 3.95, 1.6, 4.7, 2.9, [('матрица', eta, efm, RGBColor(0xC9, 0xD1, 0xDB)),
                                        ('гидрид', eta, efh, MECH['cleavage'])],
-             'трёхосность η', 'ε_{f}, %', xr=(0, 1.5, 0.5), yr=(0, 30, 10), xfmt='0.0', yfmt='0', legend=True)
+             'трёхосность η', 'ε\u0304_{D}^{pl}, %', xr=(0, 1.5, 0.5), yr=(0, 30, 10), xfmt='0.0', yfmt='0',
+             legend=True)
     # T(delta): a drawn schematic
     ox, oy, sx, sy = 9.35, 4.2, 3.3, 2.3
     p0, pk, pf = (ox, oy), (ox + 0.12 * sx, oy - 0.85 * sy), (ox + 0.85 * sx, oy)
@@ -442,23 +443,22 @@ def build(out):
     textbox(s, ox + 0.25 * sx, oy - 0.42 * sy, 0.8, 0.4, [dict(text='*G*_{c}', size=18, color=WHITE)])
     textbox(s, 8.85, 1.25, 4.3, 0.4, [dict(text='Когезионный закон границы фаз', size=16, color=GREY,
                                            align=PP_ALIGN.CENTER)])
-    # the damage laws
-    fy = 4.85
-    for k, (img, hgt, cap) in enumerate((
-            ('f_omega.png', 1.0, 'ω: исчерпание пластичности; при ω = 1 начинается разупрочнение'),
-            ('f_damage.png', 0.68, '*D*: повреждённость после ω = 1; при *D* = 1 элемент удаляется'),
-            ('f_sigma.png', 0.33, 'напряжение в повреждённом материале; σ̃: без повреждения'))):
-        x = 0.6 + k * 4.2
-        picture(s, os.path.join(ASSETS, img), x, fy + (1.0 - hgt) / 2, h=hgt)
-        textbox(s, x, fy + 1.15, 3.9, 0.9, [dict(text=cap, size=14, color=GREY)])
-    textbox(s, 0.6, 6.85, 12, 0.4, [dict(text='ε_{f}(η): предельная деформация при трёхосности η = σ_{m}/σ_{eq}; '
-                                              '*L*_{e}: размер элемента; *u*_{f}: перемещение разрушения',
-                                         size=13, color=DIM)])
+    # the damage laws, as written in the literature; no evolution law for D
+    fy = 4.75
+    for x, img, hgt, cap in (
+            (0.6, 'f_omega.png', 1.0, 'ω: исчерпание пластичности; при ω = 1 начинается повреждение'),
+            (4.05, 'f_eta.png', 1.2, 'трёхосность напряжённого состояния; σ_{1}, σ_{2}, σ_{3}: главные напряжения'),
+            (9.75, 'f_sigma.png', 0.33, '*D*: повреждённость, растёт после ω = 1; при *D* = 1 элемент удаляется')):
+        picture(s, os.path.join(ASSETS, img), x, fy + min(0., 1.0 - hgt) + max(0., 1.0 - hgt) / 2, h=hgt)
+        textbox(s, x, fy + 1.12, 5.2 if img == 'f_eta.png' else 3.3, 0.9, [dict(text=cap, size=14, color=GREY)])
+    textbox(s, 0.6, 6.85, 12, 0.4, [dict(text='ε\u0304^{pl}: эквивалентная пластическая деформация; '
+                                              'ε\u0304_{D}^{pl}(η): её значение в начале повреждения; '
+                                              'σ\u0304: напряжение без повреждения', size=13, color=DIM)])
 
     # 8. the series
     s = nxt()
     picture(s, os.path.join(GIFS, 'res_sections_seq.gif'), 0, 0, w=W)
-    title(s, 'Серия расчётов с различным *F*_{n}')
+    title(s, 'Серия расчётов с различным *F_{n}*')
 
     # 9. fracture surfaces + mechanism GIFs as the colour key
     s = nxt()
@@ -468,7 +468,7 @@ def build(out):
         x = 0.35 + k * 3.18
         picture(s, os.path.join(SCRATCH, 'fs', 'fs_%s.png' % name), x, 1.35, w=3.1)
         lab = '0' if f == 0 else '1' if f == 1 else dec(f)
-        textbox(s, x, 1.05, 3.1, 0.4, [dict(text='*F*_{n} = ' + lab, size=18, color=fn_rgb(f),
+        textbox(s, x, 1.05, 3.1, 0.4, [dict(text='*F_{n}* = ' + lab, size=18, color=fn_rgb(f),
                                             align=PP_ALIGN.CENTER)])
     for k, (gif, key, name) in enumerate((('mech1_ductile.gif', 'ductile', 'вязкий разрыв матрицы'),
                                           ('mech2_cleave.gif', 'cleavage', 'скол гидрида'),
@@ -492,11 +492,11 @@ def build(out):
         x_, y_ = np.r_[0, c[m, 0]], np.r_[0, c[m, 1]]
         wk.append(float(np.sum(0.5 * (y_[1:] + y_[:-1]) * np.diff(x_))))
     blue = RGBColor(0x8F, 0xC8, 0xEA)
-    xy_chart(s, 0.35, 1.2, 6.2, 2.85, [('', F, ef, blue)], '*F*_{n}', 'ε_{f}, %',
+    xy_chart(s, 0.35, 1.2, 6.2, 2.85, [('', F, ef, blue)], '*F_{n}*', 'ε_{f}, %',
              xr=(0, 1, 0.2), yr=(0, 14, 2), xfmt='0.0', yfmt='0')
-    xy_chart(s, 6.8, 1.2, 6.2, 2.85, [('', F, wk, blue)], '*F*_{n}', '*W*, МДж/м^{3}',
+    xy_chart(s, 6.8, 1.2, 6.2, 2.85, [('', F, wk, blue)], '*F_{n}*', '*W*, МДж/м^{3}',
              xr=(0, 1, 0.2), yr=(0, 80, 20), xfmt='0.0', yfmt='0')
-    xy_chart(s, 0.35, 4.3, 6.2, 2.85, [('', F, sb, blue)], '*F*_{n}', 'σ_{в}, МПа',
+    xy_chart(s, 0.35, 4.3, 6.2, 2.85, [('', F, sb, blue)], '*F_{n}*', 'σ_{в}, МПа',
              xr=(0, 1, 0.2), yr=(500, 600, 25), xfmt='0.0', yfmt='0')
     cd = CategoryChartData()
     cd.categories = ['0' if f == 0 else '1' if f == 1 else dec(f) for f in F]
@@ -515,7 +515,7 @@ def build(out):
     for ser, key in zip(ch.plots[0].series, ('ductile', 'cleavage', 'debond')):
         ser.format.fill.solid(); ser.format.fill.fore_color.rgb = MECH[key]
     ch.plots[0].gap_width = 40
-    style_axis(ch.category_axis, '*F*_{n}', 12)
+    style_axis(ch.category_axis, '*F_{n}*', 12)
     style_axis(ch.value_axis, 'доля поверхности разрушения, %', 12, '0%')
     textbox(s, 0.35, 0.92, 12.6, 0.35, [dict(text='деформация, работа и прочность до разрушения; состав '
                                                   'поверхности разрушения по механизмам', size=14, color=DIM)])
@@ -528,15 +528,15 @@ def build(out):
         'Построена конечно-элементная модель разрушения циркониевого сплава с пластинчатыми гидридами: '
         'вязкое разрушение матрицы и скол гидрида описываются исчерпанием пластичности и повреждённостью, '
         'граница фаз описывается когезионным законом',
-        'С ростом *F*_{n} от 0 до 1 деформация разрушения снижается с %s до %s %%, работа разрушения с %s до '
+        'С ростом *F_{n}* от 0 до 1 деформация разрушения снижается с %s до %s %%, работа разрушения с %s до '
         '%s МДж/м^{3}, а прочность меняется лишь на %s %%' % (
             dec(ef[i0], 1), dec(ef[i1], 1), dec(wk[i0], 0), dec(wk[i1], 0),
             dec(100 * (sb[i0] - sb[i1]) / sb[i0], 0)),
         'Тангенциальные гидриды раскалываются, а трещина идёт вязко по матрице; радиальные гидриды '
         'отслаиваются, и трещина проходит от пластины к пластине по перемычкам',
-        'Доля скола в изломе падает с %s %% при *F*_{n} = 0 до %s %% при *F*_{n} = 1, доля отслоения растёт '
+        'Доля скола в изломе падает с %s %% при *F_{n}* = 0 до %s %% при *F_{n}* = 1, доля отслоения растёт '
         'с %s до %s %%' % (dec(sh[i0, 1], 0), dec(sh[i1, 1], 0), dec(sh[i0, 2], 0), dec(sh[i1, 2], 0)),
-        'Модель качественно воспроизводит наблюдаемое в испытаниях снижение пластичности с ростом *F*_{n}'],
+        'Модель качественно воспроизводит наблюдаемое в испытаниях снижение пластичности с ростом *F_{n}*'],
         size=19, bullets=True, space_after=12)
 
     # 12. thanks
