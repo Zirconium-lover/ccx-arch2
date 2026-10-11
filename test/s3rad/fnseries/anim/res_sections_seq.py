@@ -142,6 +142,17 @@ class ResSectionsSeq(Scene):
             img = rasters[i].render([Pk(i, polys[j][:, :2])[:, :2] for j in mat], [pv[j] for j in mat])
             hyd = [(polys_vm([Pk(i, polys[j][:, :2]) for j in np.flatnonzero(ph == code)], col))
                    for code, col in ((1, RAD), (2, TAN)) if np.any(ph == code)]
+            # a thin dark outline around each plate's cut (its outer edges only)
+            cnt = {}
+            for j in np.flatnonzero(ph > 0):
+                q = Pk(i, polys[j][:, :2])
+                for a, b in zip(q, np.roll(q, -1, axis=0)):
+                    ka, kb = tuple(np.round(a[:2], 4)), tuple(np.round(b[:2], 4))
+                    kk = (ka, kb) if ka < kb else (kb, ka)
+                    cnt[kk] = (cnt[kk][0] + 1, a, b) if kk in cnt else (1, a, b)
+            seg = [np.array([a, a + (b - a) / 3, a + 2 * (b - a) / 3, b]) for n_, a, b in cnt.values() if n_ == 1]
+            if seg:
+                hyd.append(VMobject(stroke_color=BLACK, stroke_width=1.2).set_points(np.vstack(seg)))
             out = (img, hyd)
             if eps == 0. or eps == e_end[i]:
                 cache[key_] = out

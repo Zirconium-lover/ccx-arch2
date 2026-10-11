@@ -68,6 +68,14 @@ for name, stops, line in (
         ('bl_coolwarm', STYLES['coolwarm']['stops'], '#2A2A2A'),
         ('bl_teal_pink', STYLES['teal_pink']['stops'], '#F2F2F2')):
     STYLES[name] = dict(kind='bands_lines', stops=stops, levels=BL, line=line)
+# rainbow laid semi-transparent over a dark grey matrix: muted colours that
+# leave the red / blue hydrides readable (steps or smooth, two opacities)
+# (mixed into the colours beforehand: semi-transparent triangles would show
+# their seams)
+for name, kind, al in (('rb_bands_50', 'bands', 0.5), ('rb_bands_70', 'bands', 0.7),
+                       ('rb_smooth_50', 'smooth', 0.5), ('rb_smooth_70', 'smooth', 0.7)):
+    STYLES[name] = dict(kind=kind, levels=BL,
+                        stops=[(a, interpolate_color(C('#2B2F35'), c, al)) for a, c in STYLES['rainbow']['stops']])
 STYLE = os.environ.get('PAL', 'white')
 ST = STYLES[STYLE]
 DOT_DENS = 1300.                      # specks per mm^2 of section at full omega
@@ -131,14 +139,18 @@ class FieldRaster:
         if polys:
             tr, v = self.mesh(polys, vals)
             kind = st['kind']
+            al = st.get('alpha', 1.)                       # < 1: over the flat base colour
+            if al < 1:
+                ax.tripcolor(tr, v * 0, shading='gouraud', cmap=self.flat, vmin=0, vmax=1)
             if kind == 'smooth':
-                ax.tripcolor(tr, v, shading='gouraud', cmap=self.cmap, vmin=0, vmax=1)
+                ax.tripcolor(tr, v, shading='gouraud', cmap=self.cmap, vmin=0, vmax=1, alpha=al)
             elif kind in ('bands', 'bands_lines'):
                 lv = st['levels']
                 mids = [(a + b) / 2 for a, b in zip(lv[:-1], lv[1:])]
                 cols = [self.cmap(m) for m in mids]
-                ax.tripcolor(tr, v * 0, shading='gouraud', cmap=self.cmap, vmin=0, vmax=1)  # under the seams
-                ax.tricontourf(tr, v, levels=lv, colors=cols, antialiased=True)
+                if al == 1:
+                    ax.tripcolor(tr, v * 0, shading='gouraud', cmap=self.cmap, vmin=0, vmax=1)  # under the seams
+                ax.tricontourf(tr, v, levels=lv, colors=cols, antialiased=True, alpha=al)
                 if kind == 'bands_lines':
                     ax.tricontour(tr, v, levels=lv[1:-1], colors=st.get('line', '#E6E6E6'), linewidths=0.9,
                                   alpha=0.8)
