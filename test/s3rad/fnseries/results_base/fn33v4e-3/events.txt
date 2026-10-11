@@ -972,3 +972,21 @@
 [DAMAGE DE1.2 COMMIT] inc=584 time=3.219375000000e-01 active=9907 D>0.1=7727 D>0.5=2033 D>0.9=157 Dfull=2 Dmax=1.000000e+00 max_dD_inc=2.746487e-02
 [DAMAGE COMMIT] batch=406 inc=585 time=3.221250000000e-01 deleted=1 active_passes=1
 [DAMAGE DE1.2 COMMIT] inc=585 time=3.221250000000e-01 active=9906 D>0.1=7726 D>0.5=2033 D>0.9=159 Dfull=2 Dmax=1.000000e+00 max_dD_inc=1.782717e-02
+[DAMAGE COMMIT] batch=407 inc=586 time=3.224062500000e-01 deleted=1 active_passes=1
+[DAMAGE DE1.2 COMMIT] inc=586 time=3.224062500000e-01 active=9905 D>0.1=7725 D>0.5=2034 D>0.9=158 Dfull=1 Dmax=1.000000e+00 max_dD_inc=2.556689e-02
+[DAMAGE COMMIT] batch=408 inc=587 time=3.228281250000e-01 deleted=1 active_passes=1
+[DAMAGE DE1.2 COMMIT] inc=587 time=3.228281250000e-01 active=9906 D>0.1=7725 D>0.5=2033 D>0.9=158 Dfull=1 Dmax=1.000000e+00 max_dD_inc=4.315541e-02
+[DAMAGE COMMIT] batch=409 inc=588 time=3.234609375000e-01 deleted=1 active_passes=1
+[DAMAGE DE1.2 COMMIT] inc=588 time=3.234609375000e-01 active=9906 D>0.1=7725 D>0.5=2033 D>0.9=161 Dfull=5 Dmax=1.000000e+00 max_dD_inc=6.930978e-02
+[DAMAGE DE1.2 COMMIT] inc=589 time=3.235000000000e-01 active=9906 D>0.1=7726 D>0.5=2033 D>0.9=161 Dfull=5 Dmax=1.000000e+00 max_dD_inc=4.527164e-03
+[DAMAGE COMMIT] batch=410 inc=590 time=3.240000000000e-01 deleted=6 active_passes=1
+[DAMAGE DE1.2 COMMIT] inc=590 time=3.240000000000e-01 active=9901 D>0.1=7721 D>0.5=2030 D>0.9=159 Dfull=2 Dmax=1.000000e+00 max_dD_inc=6.754671e-02
+[DAMAGE COMMIT] batch=411 inc=591 time=3.241875000000e-01 deleted=1 active_passes=1
+[DAMAGE DE1.2 COMMIT] inc=591 time=3.241875000000e-01 active=9900 D>0.1=7720 D>0.5=2029 D>0.9=159 Dfull=2 Dmax=1.000000e+00 max_dD_inc=3.170869e-02
+[DAMAGE COMMIT] batch=412 inc=592 time=3.244687500000e-01 deleted=2 active_passes=1
+[DAMAGE DE1.2 COMMIT] inc=592 time=3.244687500000e-01 active=9898 D>0.1=7719 D>0.5=2028 D>0.9=158 Dfull=3 Dmax=1.000000e+00 max_dD_inc=6.900442e-02
+[DAMAGE COMMIT] batch=413 inc=593 time=3.248906250000e-01 deleted=3 active_passes=1
+[DAMAGE DE1.2 COMMIT] inc=593 time=3.248906250000e-01 active=9895 D>0.1=7717 D>0.5=2027 D>0.9=164 Dfull=8 Dmax=1.000000e+00 max_dD_inc=1.535319e-01
+[DAMAGE COMMIT] batch=414 inc=594 time=3.255000000000e-01 deleted=6 active_passes=1
+[FRACTURE COMPLETE] inc=594 step_time=3.255000000000e-01
+[DAMAGE DE1.2 COMMIT] inc=594 time=3.255000000000e-01 active=9890 D>0.1=7711 D>0.5=2027 D>0.9=160 Dfull=8 Dmax=1.000000e+00 max_dD_inc=1.546316e-01
