@@ -4,6 +4,7 @@ The talk "Роль ориентации гидридов в разрушении
     python formulas.py assets                       # LaTeX formulas -> white PNG
     python ../anim/fracture_surface.py <in>/fs      # fracture surfaces, slide 11
     python article_figs.py saburov.pdf petrov.pdf <in>/art7   # slide 7 figures
+    python ring_curves.py saburov.pdf ring_curves.png [.csv]  # ring F(x) curves, digitized
     ANIM=../anim SCRATCH=<in> python build_deck.py out.pptx
 
 SCRATCH holds what is not kept in this public repository: fn_measure.gif and
