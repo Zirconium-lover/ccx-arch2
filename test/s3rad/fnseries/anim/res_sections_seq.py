@@ -85,31 +85,46 @@ class ResSectionsSeq(Scene):
         bimg.stretch_to_fit_width(bb.w).stretch_to_fit_height(bb.h).move_to(bb.c)
         key.add_to_back(bimg)
 
-        # ---------------- the curves ----------------
-        ls, le = tex(r'\sigma', L1), tex(r'\varepsilon', L1)
-        # Fn of each finished curve, in a row under the axis (values only, in the curve's colour)
+        # ---------------- the curves: axes with titles, units and numbers ----------------
+        # Fn of each finished curve, in a row above the graph (values in the curve's colour)
         vals = [tex('0' if f == 0 else '1' if f == 1 else ('%.2f' % f).replace('.', '{,}'), L3M, fn_color(f))
                 for f in F]
         row_h = max(v.height for v in vals)
-        ax = Axes(x_range=[0, EPS_AX, EPS_AX], y_range=[0, SIG_MAX, SIG_MAX],
-                  x_length=cellR.w - ls.width - 0.3 - le.width - 0.3, y_length=cellR.h - 0.2 - row_h - 0.5, tips=True,
-                  axis_config=dict(color=GREY_B, stroke_width=3, include_ticks=False, tip_width=0.2, tip_height=0.2))
-        ax.move_to(np.array([cellR.x0 + ls.width + 0.3 + ax.width / 2, cellR.y1 - 0.06 - ax.height / 2, 0.]))
-        ls.next_to(ax.y_axis, LEFT, buff=0.2).align_to(ax.y_axis, UP)
-        le.next_to(ax.x_axis, RIGHT, buff=0.15)
+        ls = tex(r'\sigma,\ \text{МПа}', L2M).rotate(PI / 2)     # upright along the axis: the top stays free
+        le = tex(r'\varepsilon,\ \%', L2M)
+        YT, XT = [0, 100, 200, 300, 400, 500], [2, 4, 6, 8, 10, 12]       # one 0, at the corner
+        ynum = [tex(str(v), L3M, GREY_A) for v in YT]
+        xnum = [tex(str(v), L3M, GREY_A) for v in XT]
+        yw = max(m.width for m in ynum)
+        xh = max(m.height for m in xnum)
+        x0 = cellR.x0 + ls.width + 0.2 + yw + 0.15        # the sigma axis
+        y0 = CONTENT.y0 + xh + 0.12 + le.height + 0.12    # the eps axis: numbers, then its title
+        y_top = CONTENT.y1 - row_h - 0.55                 # room for the row and the leaders
+        ax = Axes(x_range=[0, EPS_AX, 0.02], y_range=[0, SIG_MAX, 100],
+                  x_length=CONTENT.x1 - 0.25 - x0, y_length=y_top - 0.2 - y0, tips=True,
+                  axis_config=dict(color=GREY_B, stroke_width=3, include_ticks=True, tick_size=0.06,
+                                   tip_width=0.2, tip_height=0.2))
+        ax.shift(np.array([x0, y0, 0.]) - ax.c2p(0, 0))
+        for v, m in zip(YT, ynum):
+            m.next_to(ax.c2p(0, v), LEFT, buff=0.15)
+        for v, m in zip(XT, xnum):
+            m.next_to(ax.c2p(v / 100, 0), DOWN, buff=0.12)
+        ls.move_to(np.array([cellR.x0 + ls.width / 2, ax.c2p(0, SIG_MAX / 2)[1], 0.]))
+        le.move_to(np.array([CONTENT.x1, CONTENT.y0, 0.]), aligned_edge=DR)   # under the numbers, at the end
+        nums = VGroup(*ynum, *xnum)
         cx = [np.r_[0, r.curve[:, 0]] for r in runs]
         cy = [np.r_[0, r.curve[:, 1]] for r in runs]
         e_end = [x[-1] for x in cx]
-        # the row goes Fn = 1 ... 0, the order in which the curves come down along eps,
-        # so the dashed leaders (curve at eps_f10 -> its value) hardly cross
+        # the row goes Fn = 1 ... 0, the order of the knees of the curves along eps,
+        # so the dashed leaders (knee -> its value) hardly cross
         order = sorted(range(N), key=lambda i: -F[i])
         x_a, x_b = cellR.x0 + 0.35, CONTENT.x1 - 0.35         # the whole width of the column
         for j, i in enumerate(order):
-            vals[i].move_to(np.array([x_a + (x_b - x_a) * j / (N - 1), CONTENT.y0 + row_h / 2, 0.]))
+            vals[i].move_to(np.array([x_a + (x_b - x_a) * j / (N - 1), CONTENT.y1 - row_h / 2, 0.]))
         leaders = []
         for i, r in enumerate(runs):
-            p0 = ax.c2p(r.eps_f10, float(np.interp(r.eps_f10, cx[i], cy[i])))
-            leaders.append(DashedLine(p0, vals[i].get_top() + UP * 0.1, dash_length=0.07, stroke_width=2.5,
+            p0 = ax.c2p(r.eps_peak, r.peak) + UP * 0.08
+            leaders.append(DashedLine(p0, vals[i].get_bottom() + DOWN * 0.1, dash_length=0.07, stroke_width=2.5,
                                       color=fn_color(F[i])))
 
         clk = ValueTracker(0.)
@@ -238,9 +253,9 @@ class ResSectionsSeq(Scene):
             leaders[i].add_updater(done_up(i, True))
         grid_rect = Rectangle(width=grid_w + 0.12, height=CI.h + 0.12).move_to(
             np.array([CI.x0 + grid_w / 2, CI.c[1], 0.]))
-        report({'grid': grid_rect, 'curves': VGroup(ax, ls, le), 'row': VGroup(*vals)})
+        report({'grid': grid_rect, 'curves': VGroup(ax, ls, le, nums), 'row': VGroup(*vals)})
 
-        self.add(pic, ax, ls, le, *labs, key, *leaders, *vals)
+        self.add(pic, ax, ls, le, nums, *labs, key, *leaders, *vals)
         if os.environ.get('STILL'):
             clk.set_value(float(os.environ['STILL']))
             self.update_mobjects(0)
