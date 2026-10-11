@@ -5,15 +5,17 @@ Dark slides (the GIFs are black), Cambria, 16:9.  The animations go in as
 GIFs, one per slide.  Text is plain paragraphs, no bullets; the conclusions
 are numbered.  Charts of the materials and the numbers slides are native
 PowerPoint charts (editable, in the deck's font), each headed above;
-formulas are LaTeX pictures (formulas.py).
+formulas are LaTeX pictures (formulas.py).  References: [@key] in a text,
+numbered in the order of first citation, listed small at the slide's foot.
 
     python build_deck.py out.pptx
 
 Inputs: the GIFs (ANIM), the formula and figure pictures (ASSETS), the packed
-runs (fndata).  Third-party figures (micrograph of fn_measure, article
-figures of slide 5) are read from SCRATCH and never go to the public repo.
+runs (fndata).  Third-party figures (micrograph of fn_measure, the article
+figures of slide 7 cut by article_figs.py into SCRATCH/art7) are read from
+SCRATCH and never go to the public repo.
 """
-import copy, os, sys
+import copy, os, re, sys
 import numpy as np
 from lxml import etree
 from pptx import Presentation
@@ -120,7 +122,7 @@ def textbox(slide, x, y, w, h, paras, size=18, color=WHITE, align=PP_ALIGN.LEFT,
             pPr.set('marL', str(Emu(Inches(0.42)))); pPr.set('indent', str(-Emu(Inches(0.42))))
             etree.SubElement(pPr, qn('a:buFontTx'))
             an = etree.SubElement(pPr, qn('a:buAutoNum')); an.set('type', 'arabicPeriod')
-        runs(par, p['text'], p.get('size', size), p.get('color', color), p.get('bold', False))
+        runs(par, cite(slide, p['text']), p.get('size', size), p.get('color', color), p.get('bold', False))
     return tb
 
 
@@ -128,6 +130,47 @@ def title(slide, text, sub=None):
     textbox(slide, 0.45, 0.22, 12.4, 0.7, [dict(text=text, size=30)], anchor=MSO_ANCHOR.TOP)
     if sub:
         textbox(slide, 0.47, 0.82, 12.4, 0.4, [dict(text=sub, size=16, color=GREY)])
+
+
+# The references.  A text cites them as [@key] or [@key, @key]; they are numbered in the order of
+# first citation, and refs(slide) lists the ones a slide cites at its foot.
+REFS = {
+    'zaim': 'Займовский А.С., Никулина А.В., Решетников Н.Г. Циркониевые сплавы в атомной энергетике. '
+            'М.: Энергоиздат, 1981.',
+    'motta': 'Motta A.T., Capolungo L., Chen L.-Q. et al. // J. Nucl. Mater. 2019. V. 518. P. 440–460.',
+    'saburov': 'Сабуров Н.С., Исаенкова М.Г., Петров М.И. и др. // Ядерная физика и инжиниринг. 2025. '
+               'Т. 16, № 4. С. 442–454.',
+    'kim': 'Kim S., Lee S. // Nucl. Eng. Technol. 2024. V. 56. P. 1975–1988.',
+    'plyasov': 'Plyasov A.A., Saburov N.S., Bekrenev S.A. et al. // Phys. At. Nucl. 2023. V. 86, № 12. '
+               'P. 2604–2617.',
+    'kearns': 'Kearns J.J., Woods C.R. // J. Nucl. Mater. 1966. V. 20, № 3. P. 241–261.',
+    'petrov': 'Petrov M.I., Isaenkova M.G., Saburov N.S. et al. // Letters on Materials. 2025. V. 15, № 1. '
+              'P. 49–54.',
+    'hillerborg': 'Hillerborg A., Modéer M., Petersson P.-E. // Cem. Concr. Res. 1976. V. 6, № 6. P. 773–781.',
+}
+CITE = re.compile(r'\[@([^\]]+)\]')
+_num, _cited = {}, {}
+
+
+def cite(slide, text):
+    """[@a, @b] -> [1, 2], numbering keys on first use and noting them for the slide."""
+    def sub(m):
+        keys = [k.strip().lstrip('@') for k in m.group(1).split(',')]
+        on = _cited.setdefault(slide.slide_id, [])
+        for k in keys:
+            _num.setdefault(k, len(_num) + 1)
+            if k not in on:
+                on.append(k)
+        return '[%s]' % ', '.join(str(_num[k]) for k in keys)
+    return CITE.sub(sub, text)
+
+
+def refs(slide, bottom=7.36):
+    """Small reference lines at the foot of a slide, growing upwards from bottom."""
+    keys = sorted(_cited.get(slide.slide_id, []), key=_num.get)
+    if keys:
+        textbox(slide, 0.45, bottom - 0.8, 11.6, 0.8, [dict(text='[%d] %s' % (_num[k], REFS[k])) for k in keys],
+                size=10, color=DIM, anchor=MSO_ANCHOR.BOTTOM, space_after=0)
 
 
 def page_no(slide, n):
@@ -155,16 +198,6 @@ def rect(slide, x, y, w, h, fill=CARD, line=None, rounded=True):
         s.adjustments[0] = 0.06
     s.shadow.inherit = False
     return s
-
-
-def card_picture(slide, path, x, y, w, h, pad=0.08):
-    """A white figure from a paper on a light card (keeps its aspect, centred)."""
-    rect(slide, x, y, w, h, fill=RGBColor(0xFF, 0xFF, 0xFF))
-    from PIL import Image
-    iw, ih = Image.open(path).size
-    k = min((w - 2 * pad) / iw, (h - 2 * pad) / ih)
-    pw, ph = iw * k, ih * k
-    return picture(slide, path, x + (w - pw) / 2, y + (h - ph) / 2, w=pw)
 
 
 def new_slide(prs):
@@ -293,47 +326,73 @@ def build(out):
     ], size=20, space_after=14, spacing=1.08)
 
     # 3-6. one animation per slide: the GIF on the left, its text on the right
-    def anim_slide(gif, head, paras):
+    def anim_slide(gif, head, paras, note=None):
         s = nxt()
         picture(s, gif, 0.1, 0.55, w=9.35)
         title(s, head)
         textbox(s, 9.6, 1.55, 3.45, 5.0, paras, size=18, space_after=16)
+        if note:
+            textbox(s, 0.45, 5.9, 8.8, 0.35, [dict(text=note, size=11, color=DIM)])
+        refs(s)
 
     anim_slide(os.path.join(GIFS, 'deck_of_cards.gif'), 'δ-гидриды циркония', [
         'Нанопластины δ-ZrH_{1,66} выделяются в базисной плоскости α-Zr.',
         'Мезомасштабный гидрид собран из нанопластин ступенями, как колода карт, и лежит вдоль плоскости '
-        '(10̅1̅7) под углом 14,7° к базисной.',
+        '(10̅1̅7) под углом 14,7° к базисной [@motta].',
         'На шлифах видны именно мезомасштабные гидриды.'])
     anim_slide(os.path.join(SCRATCH, 'fn_measure.gif'), 'Коэффициент ориентации гидридов', [
         'Ориентацию гидридов характеризует коэффициент *F_{n}*: доля суммарной длины гидридов, отклонённых '
-        'от радиального направления трубы не более чем на 45°.',
-        'При *F_{n}* = 0 все гидриды тангенциальные, при *F_{n}* = 1 все радиальные.'])
+        'от радиального направления трубы не более чем на 45° [@saburov].',
+        'При *F_{n}* = 0 все гидриды тангенциальные, при *F_{n}* = 1 все радиальные.'],
+        note='Микроструктура трубы после переориентации гидридов [@plyasov]')
     anim_slide(os.path.join(GIFS, 'texture.gif'), 'Что влияет на ориентацию гидридов?', [
-        'Гидриды выделяются вдоль базисных плоскостей α-Zr, поэтому их ориентация следует текстуре.',
+        'Гидриды выделяются вдоль базисных плоскостей α-Zr, поэтому их ориентация следует текстуре [@zaim, @kearns].',
         'В трубах базисные полюса направлены близко к радиальному направлению, поэтому гидриды выделяются '
-        'преимущественно тангенциально.'])
+        'преимущественно тангенциально [@kearns].'])
     anim_slide(os.path.join(GIFS, 'reorient.gif'), 'Что влияет на ориентацию гидридов?', [
         'При нагреве гидриды растворяются, при охлаждении выделяются вновь.',
-        'Растягивающее окружное напряжение σ_{θ} при охлаждении разворачивает выделяющиеся гидриды радиально.',
-        'После снятия нагрузки радиальные гидриды сохраняются.'])
+        'Растягивающее окружное напряжение σ_{θ} при охлаждении разворачивает выделяющиеся гидриды '
+        'радиально [@motta, @plyasov].',
+        'После снятия нагрузки радиальные гидриды сохраняются [@plyasov].'])
 
-    # 7. orientation and fracture in experiments (draft); each figure headed above
+    # 7. ring tests: two fractographs and two charts in one row of equal height, each headed above;
+    # cut from the papers by article_figs.py (photos with straight edges, charts as light ink)
     s = nxt()
-    title(s, 'Ориентация гидридов и характер разрушения', 'черновик: данные испытаний кольцевых образцов')
-    fr = os.path.join(SCRATCH, 'fracto_rings.jpg')
-    textbox(s, 0.45, 1.3, 3.3, 0.4, [dict(text='вязкий излом', size=15, color=GREY, align=PP_ALIGN.CENTER)])
-    textbox(s, 3.75, 1.3, 3.3, 0.4, [dict(text='хрупкий излом', size=15, color=GREY, align=PP_ALIGN.CENTER)])
-    card_picture(s, fr, 0.45, 1.75, 6.6, 2.55)
-    textbox(s, 7.1, 1.3, 3.15, 0.4, [dict(text='Доля хрупкой составляющей', size=15, color=GREY,
-                                          align=PP_ALIGN.CENTER)])
-    textbox(s, 10.2, 1.3, 2.7, 0.4, [dict(text='Удлинение колец', size=15, color=GREY, align=PP_ALIGN.CENTER)])
-    card_picture(s, os.path.join(SCRATCH, 'brittle_fn.png'), 7.35, 1.75, 2.65, 2.65)
-    card_picture(s, os.path.join(SCRATCH, 'elong_fn.png'), 10.2, 1.75, 2.7, 2.65)
-    textbox(s, 0.8, 4.8, 11.8, 2.2, [
-        'С ростом *F_{n}* излом переходит от вязкого (ямочного) к хрупкому.',
-        'Переход резкий: при *F_{n}* ≈ 0,25–0,3 доля хрупкой составляющей растёт от 0,1 до 0,9.',
-        'Удлинение колец составляет 23–27 % при *F_{n}* < 0,2, а при *F_{n}* > 0,25 снижается вплоть до нуля.'],
-        size=19, space_after=10)
+    title(s, 'Ориентация гидридов и характер разрушения')
+    A = os.path.join(SCRATCH, 'art7')
+    from PIL import Image
+    row = [('fracto_ductile.png', 'Вязкий излом [@saburov]'), ('fracto_brittle.png', 'Хрупкий излом [@saburov]'),
+           ('brittle_fn.png', 'Доля хрупкого излома [@petrov]'), ('elong_fn.png', 'Удлинение колец [@saburov]')]
+    y7, m7 = 1.75, 0.5
+    hs7 = [2.5, 2.5, 2.95, 2.95]                           # the charts carry their axis text: a little taller
+    ws = [h_ * Image.open(os.path.join(A, f)).size[0] / Image.open(os.path.join(A, f)).size[1]
+          for (f, _), h_ in zip(row, hs7)]
+    gap = (W - 2 * m7 - sum(ws)) / 3
+    x = m7
+    for (f, head), w, hh in zip(row, ws, hs7):
+        pic = picture(s, os.path.join(A, f), x, y7, h=hh)
+        textbox(s, x - gap / 2, y7 - 0.47, w + gap, 0.4, [dict(text=head, size=16, color=GREY,
+                                                               align=PP_ALIGN.CENTER)])
+        if f.startswith('fracto'):
+            pic.line.color.rgb = DIM; pic.line.width = Pt(0.75)
+        if f == 'fracto_ductile.png':                      # 10 um = 76 px of the 585 px cut
+            L = hh * 76 / 585
+            bx, by = x + w - L - 0.3, y7 + hh - 0.42
+            back = rect(s, bx, by, L + 0.2, 0.34, fill=BG, rounded=False)
+            sf = back.fill._xPr.find(qn('a:solidFill'))[0]
+            al = etree.SubElement(sf, qn('a:alpha')); al.set('val', '60000')
+            textbox(s, bx, by, L + 0.2, 0.2, [dict(text='10 мкм', size=10, align=PP_ALIGN.CENTER)])
+            c = s.shapes.add_connector(MSO_CONNECTOR.STRAIGHT, Inches(bx + 0.1), Inches(by + 0.26),
+                                       Inches(bx + 0.1 + L), Inches(by + 0.26))
+            c.line.color.rgb = WHITE; c.line.width = Pt(2)
+        x += w + gap
+    textbox(s, 0.8, 4.95, 11.8, 1.7, [
+        'С ростом *F_{n}* излом кольцевых образцов переходит от вязкого (ямочного) к хрупкому [@saburov, @petrov].',
+        'Переход резкий: при *F_{n}* ≈ 0,2–0,3 доля хрупкой составляющей излома растёт от 0,1 до 0,9 [@petrov].',
+        'Удлинение колец 23–27 % при *F_{n}* < 0,2; при *F_{n}* > 0,25 встречаются образцы как с высокой, '
+        'так и с нулевой пластичностью [@saburov].'],
+        size=17, space_after=7)
+    refs(s)
 
     # 8. the numerical experiment
     s = nxt()
@@ -351,14 +410,14 @@ def build(out):
     s = nxt()
     title(s, 'Свойства материалов')
     cards = [('Матрица α-Zr', ['*E* = 108,8 ГПа', 'σ_{т} = 500 МПа'], RGBColor(0xC9, 0xD1, 0xDB)),
-             ('Гидрид δ-ZrH_{1,66}', ['*E* = 130 ГПа', 'σ_{т} = 600 МПа'], MECH['cleavage']),
+             ('Гидрид δ-ZrH_{1,66}', ['*E* = 130 ГПа [@kim]', 'σ_{т} = 600 МПа'], MECH['cleavage']),
              ('Граница фаз', ['*T*_{0} = 300 МПа', '*G*_{c} = 2,4 кДж/м^{2}'], MECH['debond'])]
     for k, (head, lines, col) in enumerate(cards):
         y = 1.3 + k * 1.06
-        rect(s, 0.45, y, 3.2, 0.96, fill=CARD, line=col)
+        rect(s, 0.45, y, 3.35, 0.96, fill=CARD, line=col)
         textbox(s, 0.6, y + 0.05, 3.0, 0.4, [dict(text=head, size=17, color=col)])
-        textbox(s, 0.6, y + 0.44, 1.45, 0.5, [dict(text=lines[0], size=15)])
-        textbox(s, 2.0, y + 0.44, 1.6, 0.5, [dict(text=lines[1], size=15)])
+        textbox(s, 0.6, y + 0.44, 1.65, 0.5, [dict(text=lines[0], size=15)])
+        textbox(s, 2.25, y + 0.44, 1.5, 0.5, [dict(text=lines[1], size=15)])
     eta = [0, 0.33, 0.5, 0.67, 1.0, 1.5]
     efm = [30, 12, 7, 4.25, 2.5, 1.5]
     efh = [12, 7, 4.5, 2.8, 1.5, 1.0]
@@ -395,19 +454,20 @@ def build(out):
     # One scale for all formula pictures, centred in a row
     from PIL import Image
     fy, px_in = 4.5, 360.
-    rows = [(0.6, 2.95, 'f_omega.png', 'ω: исчерпание пластичности; при ω = 1 начинается повреждение'),
-            (3.75, 5.2, 'f_eta.png', 'трёхосность напряжённого состояния; σ_{1}, σ_{2}, σ_{3}: главные напряжения'),
+    rows = [(0.6, 2.95, 'f_omega.png', 'ω: исчерпание пластичности; при ω = 1 начинается повреждение [@kim]'),
+            (3.75, 4.8, 'f_eta.png', 'трёхосность напряжённого состояния; σ_{1}, σ_{2}, σ_{3}: главные напряжения'),
             (9.3, 3.8, 'f_damage.png', '*D*: повреждённость; *u*^{pl}: пластическое перемещение после ω = 1; '
-                                       '*L*: размер элемента; *u*^{pl}_{f} = 15 мкм (матрица), 4 мкм (гидрид); '
+                                       '*L*: размер элемента [@hillerborg]; *u*^{pl}_{f} = 15 мкм (матрица), 4 мкм (гидрид); '
                                        'при *D* = 1 элемент удаляется')]
     hs = [Image.open(os.path.join(ASSETS, img)).size[1] / px_in for _, _, img, _ in rows]
     for k, ((x, cw, img, cap), hgt) in enumerate(zip(rows, hs)):
         picture(s, os.path.join(ASSETS, img), x, fy + (max(hs) - hgt) / 2, h=hgt)
-        cx = 8.95 if k == 2 else x                        # the last caption reaches left to the eta one
-        textbox(s, cx, fy + max(hs) + 0.08, cw + x - cx, 1.1, [dict(text=cap, size=14, color=GREY)])
-    textbox(s, 0.6, 6.9, 11.6, 0.4, [dict(text='ε\u0304^{pl}: эквивалентная пластическая деформация; '
+        cx = 8.7 if k == 2 else x                         # the last caption reaches left to the eta one
+        textbox(s, cx, fy + max(hs) + 0.08, cw + x - cx, 1.1, [dict(text=cap, size=13, color=GREY)])
+    textbox(s, 0.6, 6.77, 11.6, 0.3, [dict(text='ε\u0304^{pl}: эквивалентная пластическая деформация; '
                                               'ε\u0304_{D}^{pl}(η): её значение в начале повреждения; '
-                                              'σ\u0304: напряжение без повреждения', size=13, color=DIM)])
+                                              'σ\u0304: напряжение без повреждения', size=12, color=DIM)])
+    refs(s, bottom=7.4)
 
     # 10. the series
     s = nxt()
@@ -455,9 +515,9 @@ def build(out):
         xy_chart(s, x, 1.85, 4.05, 4.95, [('', F, ys, col)], '*F_{n}*', yt,
                  xr=(0, 1, 0.2), yr=yr, xfmt='0.0', yfmt='0', size=15, tsize=20)
 
-    # 13. conclusions (draft), numbered
+    # 13. conclusions, numbered
     s = nxt()
-    title(s, 'Выводы', 'черновик')
+    title(s, 'Выводы')
     i0, i1 = 0, len(runs10) - 1
     textbox(s, 0.8, 1.45, 11.8, 5.6, [
         'Построена конечно-элементная модель разрушения циркониевого сплава с пластинчатыми гидридами: '
@@ -469,8 +529,10 @@ def build(out):
             dec(100 * (sb[i0] - sb[i1]) / sb[i0], 0)),
         'Тангенциальные гидриды раскалываются, а трещина идёт вязко по матрице; радиальные гидриды '
         'отслаиваются, и трещина проходит от пластины к пластине по перемычкам.',
-        'Модель качественно воспроизводит наблюдаемое в испытаниях снижение пластичности с ростом *F_{n}*.'],
+        'Модель качественно воспроизводит наблюдаемое в испытаниях снижение пластичности с ростом '
+        '*F_{n}* [@saburov, @petrov].'],
         size=20, numbered=True, space_after=16)
+    refs(s)
 
     # 14. thanks
     s = nxt()
