@@ -28,6 +28,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ANIM = os.environ.get('ANIM', os.path.join(HERE, '..', 'anim'))
 ASSETS = os.environ.get('ASSETS', os.path.join(HERE, 'assets'))
 SCRATCH = os.environ.get('SCRATCH', ASSETS)
+GIFS = os.environ.get('GIFS', ANIM)            # the GIFs (a lighter re-encode may stand in)
 sys.path.insert(0, ANIM)
 
 FONT = 'Cambria'
@@ -337,7 +338,7 @@ def build(out):
     s = nxt()
     gw = 9.35
     gy = 0.55
-    a1 = picture(s, os.path.join(ANIM, 'deck_of_cards.gif'), 0.1, gy, w=gw)
+    a1 = picture(s, os.path.join(GIFS, 'deck_of_cards.gif'), 0.1, gy, w=gw)
     t1 = textbox(s, 9.6, 1.55, 3.45, 5.0, [
         'Нанопластины δ-ZrH_{1,66} выделяются в базисной плоскости α-Zr',
         'Мезомасштабный гидрид собран из нанопластин ступенями, как колода карт, и лежит вдоль плоскости '
@@ -355,12 +356,12 @@ def build(out):
 
     # 4. what sets the orientation: texture -> (click) -> stress reorientation
     s = nxt()
-    a1 = picture(s, os.path.join(ANIM, 'texture.gif'), 0.1, gy, w=gw)
+    a1 = picture(s, os.path.join(GIFS, 'texture.gif'), 0.1, gy, w=gw)
     t1 = textbox(s, 9.6, 1.55, 3.45, 5.0, [
         'Гидриды выделяются вдоль базисных плоскостей α-Zr, поэтому их ориентация следует текстуре',
         'В трубах базисные полюса направлены близко к радиальному направлению, поэтому гидриды выделяются преимущественно тангенциально'],
         size=17, bullets=True, space_after=12)
-    b1 = picture(s, os.path.join(ANIM, 'reorient.gif'), 0.1, gy, w=gw)
+    b1 = picture(s, os.path.join(GIFS, 'reorient.gif'), 0.1, gy, w=gw)
     t2 = textbox(s, 9.6, 1.55, 3.45, 5.0, [
         'При нагреве гидриды растворяются, при охлаждении выделяются вновь',
         'Растягивающее окружное напряжение σ_{θ} при охлаждении разворачивает выделяющиеся гидриды радиально',
@@ -371,7 +372,7 @@ def build(out):
     # 5. orientation and fracture in experiments (draft)
     s = nxt()
     title(s, 'Ориентация гидридов и характер разрушения', 'черновик: данные испытаний кольцевых образцов')
-    fr = os.path.join(SCRATCH, 'fracto_rings.png')
+    fr = os.path.join(SCRATCH, 'fracto_rings.jpg')
     card_picture(s, fr, 0.45, 1.45, 6.6, 2.55)
     textbox(s, 0.45, 4.05, 3.3, 0.4, [dict(text='вязкий излом', size=16, color=GREY, align=PP_ALIGN.CENTER)])
     textbox(s, 3.75, 4.05, 3.3, 0.4, [dict(text='хрупкий излом', size=16, color=GREY, align=PP_ALIGN.CENTER)])
@@ -456,7 +457,7 @@ def build(out):
 
     # 8. the series
     s = nxt()
-    picture(s, os.path.join(ANIM, 'res_sections_seq.gif'), 0, 0, w=W)
+    picture(s, os.path.join(GIFS, 'res_sections_seq.gif'), 0, 0, w=W)
     title(s, 'Серия расчётов с различным *F*_{n}')
 
     # 9. fracture surfaces + mechanism GIFs as the colour key
@@ -473,7 +474,7 @@ def build(out):
                                           ('mech2_cleave.gif', 'cleavage', 'скол гидрида'),
                                           ('mech3_debond.gif', 'debond', 'отслоение по границе фаз'))):
         x = 0.9 + k * 4.15
-        picture(s, os.path.join(ANIM, gif), x, 4.05, h=2.55)
+        picture(s, os.path.join(GIFS, gif), x, 4.05, h=2.55)
         rect(s, x + 2.7, 4.95, 0.32, 0.32, fill=MECH[key], rounded=False)
         textbox(s, x + 2.7, 5.35, 1.35, 1.0, [dict(text=name, size=15, color=MECH[key])])
 

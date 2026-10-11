@@ -13,3 +13,8 @@ itself is not committed for the same reason.
 
 Slides 3 and 4 swap one GIF (with its theses) for another on a click
 (p:timing written by click_swap); slides 7 and 10 use native charts.
+
+Size: the GIFs of slides 3 and 4 are re-encoded for the deck at 1344 px
+(they fill 70 % of the slide width; texture and fn_measure also at 20 fps,
+64 / 112 colours), GIFS=<dir> points the builder at them; the deck is then
+~28 MB.
