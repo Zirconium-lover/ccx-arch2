@@ -1,4 +1,5 @@
-"""Looping GIF from the computed model: the sections of all eight runs
+"""Looping GIF from the computed model: the sections of seven runs (Fn = 0.33
+left out: its section cuts the same plates as 0.42)
 (z = 0.61 mm, one plane and one scale), loaded one after another, Fn growing:
 the active section is framed in the colour of its curve and its curve runs
 on the right; the finished ones stay broken with their curves, the waiting
@@ -14,9 +15,11 @@ from res_section import FieldRaster, STYLES, U_MAX
 from res_curves import fn_color, SIG_MAX
 from res_sections_all import frac_tex
 
+SKIP = (0.33,)                        # Fn = 4/12: its section shows the same plates as 5/12
+N = sum(1 for fn, _ in SERIES if fn not in SKIP)
 T0 = 0.6                              # the first run starts
 D, G = 2.0, 0.3                       # one run, the pause after it
-T_END = T0 + 8 * (D + G)
+T_END = T0 + N * (D + G)
 T_DIP = (T_END + 1.4, T_END + 2.1, T_END + 2.4, T_END + 3.1)
 T_LOOP = T_DIP[3] + 0.4
 EPS_AX = 0.135
@@ -27,7 +30,7 @@ ST = STYLES[os.environ.get('PAL', 'bl_grey')]
 class ResSectionsSeq(Scene):
     def construct(self):
         self.camera.background_color = BG
-        runs = [Run(fn) for fn, _ in SERIES]
+        runs = [Run(fn) for fn, _ in SERIES if fn not in SKIP]
         F = [r.k_radial / 12 for r in runs]
         z_cut = float(os.environ.get('ZCUT', 0)) or runs[0].best_section('z')
         r0 = runs[0]
@@ -59,12 +62,11 @@ class ResSectionsSeq(Scene):
             return np.c_[o[0] + (xy[..., 0] - r0.lo[0]) * sc, o[1] + (xy[..., 1] - r0.lo[1]) * sc,
                          np.zeros(xy.shape[:-1])].reshape(*xy.shape[:-1], 3)
 
-        boxes = [Box(o[0] - 0.04, o[0] + cw + 0.04, o[1] - 0.04, o[1] + ch + 0.04) for o in origins[:8]]
+        boxes = [Box(o[0] - 0.04, o[0] + cw + 0.04, o[1] - 0.04, o[1] + ch + 0.04) for o in origins[:N]]
         rasters = [FieldRaster(b, ST) for b in boxes]
 
-        # the omega key in the ninth cell
-        o9 = origins[8]
-        key_box = Box(o9[0] + 0.15, o9[0] + cw - 0.1, o9[1], o9[1] + ch + hl + GL)
+        # the omega key in the free cells of the last row
+        key_box = Box(origins[N][0] + 0.15, origins[8][0] + cw - 0.1, origins[8][1], origins[8][1] + ch + hl + GL)
         lab_w = tex(r'\omega', L2M)
         bw = key_box.w - lab_w.width - 0.25
         bar = Rectangle(width=bw, height=0.3, stroke_color=GREY_B, stroke_width=2)
@@ -151,7 +153,7 @@ class ResSectionsSeq(Scene):
             te = te_of(t)
             out = Group()
             vec = VGroup()
-            for i in range(8):
+            for i in range(N):
                 eps = eps_run(i, te)
                 a = T0 + i * (D + G)
                 k = g * (DIM + (1 - DIM) * ramp(te, a - 0.3, a))       # lights up just before its turn
