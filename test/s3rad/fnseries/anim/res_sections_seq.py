@@ -24,7 +24,7 @@ T_DIP = (T_END + 1.4, T_END + 2.1, T_END + 2.4, T_END + 3.1)
 T_LOOP = T_DIP[3] + 0.4
 EPS_AX = 0.135
 DIM = 0.4                             # waiting sections
-ST = STYLES[os.environ.get('PAL', 'bl_grey')]
+ST = STYLES[os.environ.get('PAL', 'rb_smooth_50')]
 
 
 class ResSectionsSeq(Scene):
@@ -87,8 +87,12 @@ class ResSectionsSeq(Scene):
 
         # ---------------- the curves ----------------
         ls, le = tex(r'\sigma', L1), tex(r'\varepsilon', L1)
+        # Fn of each finished curve, in a row under the axis (values only, in the curve's colour)
+        vals = [tex('0' if f == 0 else '1' if f == 1 else ('%.2f' % f).replace('.', '{,}'), L3M, fn_color(f))
+                for f in F]
+        row_h = max(v.height for v in vals)
         ax = Axes(x_range=[0, EPS_AX, EPS_AX], y_range=[0, SIG_MAX, SIG_MAX],
-                  x_length=cellR.w - ls.width - 0.3 - le.width - 0.3, y_length=cellR.h - 0.2, tips=True,
+                  x_length=cellR.w - ls.width - 0.3 - le.width - 0.3, y_length=cellR.h - 0.2 - row_h - 0.5, tips=True,
                   axis_config=dict(color=GREY_B, stroke_width=3, include_ticks=False, tip_width=0.2, tip_height=0.2))
         ax.move_to(np.array([cellR.x0 + ls.width + 0.3 + ax.width / 2, cellR.y1 - 0.06 - ax.height / 2, 0.]))
         ls.next_to(ax.y_axis, LEFT, buff=0.2).align_to(ax.y_axis, UP)
@@ -96,6 +100,17 @@ class ResSectionsSeq(Scene):
         cx = [np.r_[0, r.curve[:, 0]] for r in runs]
         cy = [np.r_[0, r.curve[:, 1]] for r in runs]
         e_end = [x[-1] for x in cx]
+        # the row goes Fn = 1 ... 0, the order in which the curves come down along eps,
+        # so the dashed leaders (curve at eps_f10 -> its value) hardly cross
+        order = sorted(range(N), key=lambda i: -F[i])
+        x_a, x_b = cellR.x0 + 0.35, CONTENT.x1 - 0.35         # the whole width of the column
+        for j, i in enumerate(order):
+            vals[i].move_to(np.array([x_a + (x_b - x_a) * j / (N - 1), CONTENT.y0 + row_h / 2, 0.]))
+        leaders = []
+        for i, r in enumerate(runs):
+            p0 = ax.c2p(r.eps_f10, float(np.interp(r.eps_f10, cx[i], cy[i])))
+            leaders.append(DashedLine(p0, vals[i].get_top() + UP * 0.1, dash_length=0.07, stroke_width=2.5,
+                                      color=fn_color(F[i])))
 
         clk = ValueTracker(0.)
 
@@ -207,11 +222,25 @@ class ResSectionsSeq(Scene):
             return f
         for i, lab in enumerate(labs):
             lab.add_updater(lab_up(i))
+
+        def done_up(i, stroke):
+            def f(m):
+                t = clk.get_value()
+                a = T0 + i * (D + G)
+                k = ramp(te_of(t), a + D, a + D + 0.4) * dip(t)
+                if stroke:
+                    m.set_stroke(opacity=k)
+                else:
+                    m.set_opacity(k)
+            return f
+        for i in range(N):
+            vals[i].add_updater(done_up(i, False))
+            leaders[i].add_updater(done_up(i, True))
         grid_rect = Rectangle(width=grid_w + 0.12, height=CI.h + 0.12).move_to(
             np.array([CI.x0 + grid_w / 2, CI.c[1], 0.]))
-        report({'grid': grid_rect, 'curves': VGroup(ax, ls, le)})
+        report({'grid': grid_rect, 'curves': VGroup(ax, ls, le), 'row': VGroup(*vals)})
 
-        self.add(pic, ax, ls, le, *labs, key)
+        self.add(pic, ax, ls, le, *labs, key, *leaders, *vals)
         if os.environ.get('STILL'):
             clk.set_value(float(os.environ['STILL']))
             self.update_mobjects(0)
