@@ -56,6 +56,10 @@ From the computed model (data: ../animdata/*.npz via fndata.py)
                      plates as 0.42): the active section framed in the
                      colour of its curve, finished ones stay broken, waiting
                      ones intact and dimmed; Fn written as decimals
+  res_sections_seq_rainbow_steps.gif, _rainbow_smooth.gif
+                     the same without isolines: a rainbow laid at 50 % over
+                     a dark grey matrix (PAL=rb_bands_50 / rb_smooth_50),
+                     plates outlined
 Render these with --disable_caching (manim's cache cannot hash the updaters).
 
 Each GIF loops without a seam, 1600x900, 25 fps, black background; one GIF
