@@ -50,6 +50,12 @@ From the computed model (data: ../animdata/*.npz via fndata.py)
                      grey steps with isolines (res_section.py PAL=bl_grey);
                      right: the eight curves running with it, Fn written in
                      the colour of its curve
+  res_sections_seq.gif
+                     the same sections loaded one run after another, Fn
+                     growing (Fn = 0.33 left out: its cut shows the same
+                     plates as 0.42): the active section framed in the
+                     colour of its curve, finished ones stay broken, waiting
+                     ones intact and dimmed; Fn written as decimals
 Render these with --disable_caching (manim's cache cannot hash the updaters).
 
 Each GIF loops without a seam, 1600x900, 25 fps, black background; one GIF
