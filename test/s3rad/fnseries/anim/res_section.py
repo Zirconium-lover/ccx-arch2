@@ -76,6 +76,13 @@ for name, kind, al in (('rb_bands_50', 'bands', 0.5), ('rb_bands_70', 'bands', 0
                        ('rb_smooth_50', 'smooth', 0.5), ('rb_smooth_70', 'smooth', 0.7)):
     STYLES[name] = dict(kind=kind, levels=BL,
                         stops=[(a, interpolate_color(C('#2B2F35'), c, al)) for a, c in STYLES['rainbow']['stops']])
+# glass: the rainbow mixed into a light grey (tinted frosted glass instead of a
+# darkened field); sheen adds a soft light from the upper left and a faint
+# diagonal streak, as on a glass pane
+for name, base, frac, sheen in (('gl_light', '#C9CED6', 0.55, 0.), ('gl_light_sheen', '#C9CED6', 0.55, 0.22),
+                                ('gl_mid_sheen', '#7D848E', 0.6, 0.22), ('gl_vivid_sheen', '#FFFFFF', 0.72, 0.18)):
+    STYLES[name] = dict(kind='smooth', sheen=sheen,
+                        stops=[(a, interpolate_color(C(base), c, frac)) for a, c in STYLES['rainbow']['stops']])
 STYLE = os.environ.get('PAL', 'white')
 ST = STYLES[STYLE]
 DOT_DENS = 1300.                      # specks per mm^2 of section at full omega
@@ -164,7 +171,16 @@ class FieldRaster:
             on = st['f'](w) > u
             ax.scatter(xy[on, 0], xy[on, 1], s=3.2, c='#F4F4F4', linewidths=0)
         self.fig.canvas.draw()
-        return np.asarray(self.fig.canvas.buffer_rgba()).copy()
+        img = np.asarray(self.fig.canvas.buffer_rgba()).copy()
+        sh = st.get('sheen', 0.)
+        if sh > 0:                                     # screen a light gradient over the material
+            hh, ww = img.shape[:2]
+            u = np.linspace(0, 1, ww)[None, :]; v = np.linspace(0, 1, hh)[:, None]
+            d = (u + v) / 2                            # 0 at the upper left
+            g = sh * (1 - d) ** 1.5 + 0.5 * sh * np.exp(-((d - 0.32) / 0.07) ** 2)
+            rgb = img[..., :3].astype(float)
+            img[..., :3] = (rgb + (255 - rgb) * np.clip(g, 0, 1)[..., None]).astype(np.uint8)
+        return img
 
 
 def sample_dots(r, z, rng):
