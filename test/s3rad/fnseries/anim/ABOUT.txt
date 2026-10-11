@@ -58,7 +58,7 @@ From the computed model (data: ../animdata/*.npz via fndata.py)
                      section framed in the colour of its curve, finished ones
                      stay broken, waiting ones intact and dimmed.  The graph
                      has axis titles with units and numbers; the Fn of each
-                     finished curve appears above it (two tiers over the knees), with a dashed
+                     finished curve appears in one packed row above it, with a dashed
                      leader to the knee of the curve
 Render these with --disable_caching (manim's cache cannot hash the updaters).
 

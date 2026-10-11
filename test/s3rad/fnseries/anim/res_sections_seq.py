@@ -99,8 +99,7 @@ class ResSectionsSeq(Scene):
         xh = max(m.height for m in xnum)
         x0 = cellR.x0 + ls.width + 0.2 + yw + 0.15        # the sigma axis
         y0 = CONTENT.y0 + xh + 0.12 + le.height + 0.12    # the eps axis: numbers, then its title
-        TIER = row_h + 0.1                                # the row has two tiers
-        y_top = CONTENT.y1 - row_h - TIER - 0.5           # room for the row and the leaders
+        y_top = CONTENT.y1 - row_h - 0.55                 # room for the row and the leaders
         ax = Axes(x_range=[0, EPS_AX, 0.02], y_range=[0, SIG_MAX, 100],
                   x_length=CONTENT.x1 - 0.25 - x0, y_length=y_top - 0.2 - y0, tips=True,
                   axis_config=dict(color=GREY_B, stroke_width=3, include_ticks=True, tick_size=0.06,
@@ -116,18 +115,19 @@ class ResSectionsSeq(Scene):
         cx = [np.r_[0, r.curve[:, 0]] for r in runs]
         cy = [np.r_[0, r.curve[:, 1]] for r in runs]
         e_end = [x[-1] for x in cx]
-        # the row goes Fn = 1 ... 0, the order of the knees of the curves along eps, in two
-        # tiers (alternating) so it stays short, centred over the knees; the dashed
-        # leaders (knee -> its value) hardly cross
+        # one row, Fn = 1 ... 0 (the order of the knees of the curves along eps), packed with
+        # an even gap between the labels and centred over the knees; the dashed leaders
+        # (knee -> its value) hardly cross
         order = sorted(range(N), key=lambda i: -F[i])
         knees = [ax.c2p(runs[i].eps_peak, 0)[0] for i in order]
-        step = 0.58
-        xc = (min(knees) + max(knees)) / 2
-        xs_ = xc + step * (np.arange(N) - (N - 1) / 2)
-        xs_ = xs_ + max(0., cellR.x0 + 0.4 - xs_[0]) - max(0., xs_[-1] - (CONTENT.x1 - 0.4))
+        gap = 0.24
+        ws = [vals[i].width for i in order]
+        lefts = np.cumsum([0.] + [w + gap for w in ws[:-1]])
+        span = lefts[-1] + ws[-1]
+        x_l = (min(knees) + max(knees)) / 2 - span / 2
+        x_l = min(max(x_l, cellR.x0 + 0.1), CONTENT.x1 - 0.1 - span)
         for j, i in enumerate(order):
-            y = CONTENT.y1 - row_h / 2 - (TIER if j % 2 else 0.)
-            vals[i].move_to(np.array([xs_[j], y, 0.]))
+            vals[i].move_to(np.array([x_l + lefts[j] + ws[j] / 2, CONTENT.y1 - row_h / 2, 0.]))
             vals[i].set_background_stroke(color=BLACK, width=8)   # cuts the leaders passing close by
         leaders = []
         for i, r in enumerate(runs):
