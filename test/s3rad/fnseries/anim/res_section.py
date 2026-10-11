@@ -73,7 +73,8 @@ for name, stops, line in (
 # (mixed into the colours beforehand: semi-transparent triangles would show
 # their seams)
 for name, kind, al in (('rb_bands_50', 'bands', 0.5), ('rb_bands_70', 'bands', 0.7),
-                       ('rb_smooth_50', 'smooth', 0.5), ('rb_smooth_70', 'smooth', 0.7)):
+                       ('rb_smooth_50', 'smooth', 0.5), ('rb_smooth_70', 'smooth', 0.7),
+                       ('rb_smooth_75', 'smooth', 0.75), ('rb_smooth_85', 'smooth', 0.85)):
     STYLES[name] = dict(kind=kind, levels=BL,
                         stops=[(a, interpolate_color(C('#2B2F35'), c, al)) for a, c in STYLES['rainbow']['stops']])
 # glass: the rainbow mixed into a light grey (tinted frosted glass instead of a

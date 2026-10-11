@@ -24,7 +24,7 @@ T_DIP = (T_END + 1.4, T_END + 2.1, T_END + 2.4, T_END + 3.1)
 T_LOOP = T_DIP[3] + 0.4
 EPS_AX = 0.135
 DIM = 0.4                             # waiting sections
-ST = STYLES[os.environ.get('PAL', 'rb_smooth_50')]
+ST = STYLES[os.environ.get('PAL', 'rb_smooth_75')]
 
 
 class ResSectionsSeq(Scene):
@@ -99,7 +99,8 @@ class ResSectionsSeq(Scene):
         xh = max(m.height for m in xnum)
         x0 = cellR.x0 + ls.width + 0.2 + yw + 0.15        # the sigma axis
         y0 = CONTENT.y0 + xh + 0.12 + le.height + 0.12    # the eps axis: numbers, then its title
-        y_top = CONTENT.y1 - row_h - 0.55                 # room for the row and the leaders
+        TIER = row_h + 0.1                                # the row has two tiers
+        y_top = CONTENT.y1 - row_h - TIER - 0.5           # room for the row and the leaders
         ax = Axes(x_range=[0, EPS_AX, 0.02], y_range=[0, SIG_MAX, 100],
                   x_length=CONTENT.x1 - 0.25 - x0, y_length=y_top - 0.2 - y0, tips=True,
                   axis_config=dict(color=GREY_B, stroke_width=3, include_ticks=True, tick_size=0.06,
@@ -115,12 +116,19 @@ class ResSectionsSeq(Scene):
         cx = [np.r_[0, r.curve[:, 0]] for r in runs]
         cy = [np.r_[0, r.curve[:, 1]] for r in runs]
         e_end = [x[-1] for x in cx]
-        # the row goes Fn = 1 ... 0, the order of the knees of the curves along eps,
-        # so the dashed leaders (knee -> its value) hardly cross
+        # the row goes Fn = 1 ... 0, the order of the knees of the curves along eps, in two
+        # tiers (alternating) so it stays short, centred over the knees; the dashed
+        # leaders (knee -> its value) hardly cross
         order = sorted(range(N), key=lambda i: -F[i])
-        x_a, x_b = cellR.x0 + 0.35, CONTENT.x1 - 0.35         # the whole width of the column
+        knees = [ax.c2p(runs[i].eps_peak, 0)[0] for i in order]
+        step = 0.58
+        xc = (min(knees) + max(knees)) / 2
+        xs_ = xc + step * (np.arange(N) - (N - 1) / 2)
+        xs_ = xs_ + max(0., cellR.x0 + 0.4 - xs_[0]) - max(0., xs_[-1] - (CONTENT.x1 - 0.4))
         for j, i in enumerate(order):
-            vals[i].move_to(np.array([x_a + (x_b - x_a) * j / (N - 1), CONTENT.y1 - row_h / 2, 0.]))
+            y = CONTENT.y1 - row_h / 2 - (TIER if j % 2 else 0.)
+            vals[i].move_to(np.array([xs_[j], y, 0.]))
+            vals[i].set_background_stroke(color=BLACK, width=8)   # cuts the leaders passing close by
         leaders = []
         for i, r in enumerate(runs):
             p0 = ax.c2p(r.eps_peak, r.peak) + UP * 0.08
