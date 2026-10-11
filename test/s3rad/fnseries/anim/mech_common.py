@@ -74,9 +74,9 @@ def ramp(t, t0, t1):
 METAL = ManimColor('#18212C')       # the metal block
 
 
-def block(L):
+def block(L, color=METAL):
     return RoundedRectangle(width=2 * L, height=2 * L, corner_radius=0.18, stroke_color=GREY_B,
-                            stroke_width=3, fill_color=METAL, fill_opacity=1)
+                            stroke_width=3, fill_color=color, fill_opacity=1)
 
 
 def glow(center, intensity, rx, ry, n=9, clip=None):
@@ -90,7 +90,8 @@ def glow(center, intensity, rx, ry, n=9, clip=None):
         f = 1 - k / n                                  # 1 (outer) .. 1/n (inner)
         e = Ellipse(width=2 * rx * f * (0.4 + 0.6 * intensity),
                     height=2 * ry * f * (0.4 + 0.6 * intensity)).move_to(center)
-        col, op = omega_color(intensity * (1 - 0.75 * f)), 0.18 + 0.5 * (1 - f)
+        col = omega_color(0.35 + 0.65 * intensity * (1 - 0.75 * f))   # amber at the faint end, never dark
+        op = (0.18 + 0.5 * (1 - f)) * min(1., 3 * intensity)
         if clip is not None:
             e = Intersection(e, clip)
         g.add(e.set_fill(col, op).set_stroke(width=0))
