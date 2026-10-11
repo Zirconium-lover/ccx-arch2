@@ -4,6 +4,9 @@ discs of radius 0.3 and thickness 0.09).  The discs turn from tangential
 (normal along R) to radial (normal along T, the load) one by one in the
 series' nested order, F_n = k/12 follows; then they turn back.
 
+Right: the formula, a top view (along L: the discs seen edge-on as segments,
+turning with the 3D) with the load arrows, and the legend.
+
 Model axes: x = T (hoop, the load), y = R, z = L.  Scene: X = T, Y = R (into
 the picture), Z (up) = L - the tube axis stands roughly upright and the discs
 turn about it.  The camera sways a little; the axis and load labels follow
@@ -28,7 +31,7 @@ T_LOOP = HOLD0 + 12 * STEP + HOLD1 + 12 * STEP + 0.04
 
 def fn_tex(k):
     v = '0' if k == 0 else '1' if k == 12 else ('%.2f' % (k / 12)).replace('.', '{,}')
-    return r'F_n = {%d \over 12} = %s' % (k, v)
+    return r'F_n = %s' % v
 
 
 def m2s(p):
@@ -50,7 +53,7 @@ class FnBlock(ThreeDScene):
         # ---------------- right column, measured ----------------
         widest = max((tex(fn_tex(k), L1) for k in range(13)), key=lambda m: m.width)
         leg = legend(L2)
-        col_w = max(widest.width, leg.width) + 0.1
+        col_w = max(widest.width, leg.width, 4.2) + 0.1     # room for the top view
         left = Box(CONTENT.x0, CONTENT.x1 - col_w - 0.6, CONTENT.y0, CONTENT.y1)
         right = Box(CONTENT.x1 - col_w, CONTENT.x1, CONTENT.y0, CONTENT.y1)
 
@@ -145,9 +148,29 @@ class FnBlock(ThreeDScene):
             sig.next_to(projected(sig_at), UP, buff=0.12)
         follow(None)
 
+        # ---------------- top view (along L): the discs as segments, turning with the 3D ----------------
+        TA, TG = 0.42, 0.08                                # its load arrows: length, gap
+        tv_w = col_w - 2 * (TA + TG)
+        k2 = tv_w / LX
+        tv_rect = Rectangle(width=tv_w, height=LY * k2, stroke_color=GREY_B, stroke_width=3,
+                            fill_color=WALL, fill_opacity=0.6)
+        segs = []
+        for c in CEN:
+            p = np.array([(c[0] - LX / 2) * k2, (c[1] - LY / 2) * k2, 0.])
+            segs.append(Line(p - RIGHT * gen.RAD * k2, p + RIGHT * gen.RAD * k2, stroke_color=TAN,
+                             stroke_width=7, cap_style=CapStyleType.ROUND))
+        tv_arrows = VGroup()
+        for yy in (-0.25, 0.25):
+            for sg in (-1, 1):
+                p0 = np.array([sg * (tv_w / 2 + TG), yy * LY * k2, 0.])
+                tv_arrows.add(Arrow(p0, p0 + sg * RIGHT * TA, buff=0, color=WHITE, stroke_width=5,
+                                    max_tip_length_to_length_ratio=0.3))
+        topv = VGroup(tv_rect, *segs, tv_arrows)
+
         # ---------------- right column ----------------
         k = ValueTracker(0)
-        blk = VGroup(widest.copy(), leg).arrange(DOWN, buff=1.1, aligned_edge=LEFT)
+        blk = VGroup(widest.copy(), topv, leg).arrange(DOWN, buff=0.55, aligned_edge=LEFT)
+        topv.align_to(blk, LEFT).shift(RIGHT * 0.)
         place(blk, right)
         anchor = blk[0].get_left()
         states = VGroup(*[tex(fn_tex(j), L1).move_to(anchor, aligned_edge=LEFT) for j in range(13)])
@@ -161,10 +184,10 @@ class FnBlock(ThreeDScene):
         report({'block': VGroup(*[Dot(np.array([x, y, 0.]), radius=0.01)
                                   for x, y in ((lo[0], lo[1]), (hi[0], hi[1]))]),
                 'triad': VGroup(tri2, labs),
-                'formula': blk[0], 'legend': leg})
+                'formula': blk[0], 'top view': topv, 'legend': leg})
 
         self.add(floor, edges, dg, arrows)
-        self.fixed(labs, sig, leg, states, tri2)
+        self.fixed(labs, sig, leg, states, tri2, topv)
         labs.add_updater(lambda m: follow(m))
 
         # camera sway over the whole loop, back where it started
@@ -185,8 +208,15 @@ class FnBlock(ThreeDScene):
                 m.become(start.copy().rotate(-sgn * a * PI / 2, axis=OUT, about_point=ctr)
                          .set_fill(interpolate_color(c0, c1, a))
                          .set_stroke(interpolate_color(interpolate_color(c0, c1, a), WHITE, 0.4)))
-            return AnimationGroup(UpdateFromAlphaFunc(dsk, upd), k.animate.set_value(j),
-                                  run_time=STEP, rate_func=smooth)
+            seg = segs[i]
+            s0 = seg.copy()
+            sc_ = s0.get_center()
+
+            def upd2(m, a, s0=s0):                       # the same turn seen from above
+                m.become(s0.copy().rotate(-sgn * a * PI / 2, about_point=sc_)
+                         .set_stroke(interpolate_color(c0, c1, a)))
+            return AnimationGroup(UpdateFromAlphaFunc(dsk, upd), UpdateFromAlphaFunc(seg, upd2),
+                                  k.animate.set_value(j), run_time=STEP, rate_func=smooth)
 
         self.wait(HOLD0)
         for j, i in enumerate(ORDER, start=1):
