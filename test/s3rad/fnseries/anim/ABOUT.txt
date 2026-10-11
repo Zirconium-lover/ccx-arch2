@@ -1,5 +1,8 @@
 Animations for the presentation (Manim Community 0.19.1, manim-slides 5.7)
 
+  fn_block.gif       problem statement in 3D: the block (4 x 3.6 x 1.6 mm, L up),
+                     the 12 discs of the series turn radial about L one by
+                     one and back, F_n = k/12, load along T, axis triad
   fn_loop.gif        the 12 plates of the series turn radial one by one and
                      back; the formula F_n = k/12 = ... follows (seed 5)
   deck_of_cards.gif  delta platelets on the alpha basal plane stack into a
