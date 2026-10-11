@@ -145,3 +145,24 @@ def legend(size=L2):
         return VGroup(VGroup(slot, sw), txt(name, size, col)).arrange(RIGHT, buff=0.3)
     return VGroup(row(0.14, 0.62, RAD, 'радиальные'),
                   row(0.62, 0.14, TAN, 'тангенциальные')).arrange(DOWN, aligned_edge=LEFT, buff=0.3)
+
+
+def neon(p0, p1, color, width=4.):
+    """A neon stick: white-hot core over three coloured halos.  Each layer
+    keeps its own base opacity in .base_op (see set_neon)."""
+    g = VGroup()
+    for w, op, col in ((width * 6.5, 0.10, color), (width * 4., 0.20, color),
+                       (width * 2.2, 0.55, color),
+                       (width, 1.0, interpolate_color(color, WHITE, 0.55))):
+        ln = Line(p0, p1, stroke_width=w, color=col, cap_style=CapStyleType.ROUND)
+        ln.base_op = op
+        ln.set_stroke(opacity=op)
+        g.add(ln)
+    return g
+
+
+def set_neon(g, k):
+    """Scale a neon stick's opacity by k (0..1), keeping the layer ratios."""
+    for ln in g:
+        ln.set_stroke(opacity=ln.base_op * k)
+    return g

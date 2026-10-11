@@ -55,6 +55,10 @@ class FnMeasure(Scene):
                         fill_opacity=1).move_to(cellI.c).set_opacity(0)
         frame = Rectangle(width=img_w, height=img_h, stroke_color=GREY_B, stroke_width=2,
                           fill_opacity=0).move_to(cellI.c)
+        # black strips just outside the micrograph: the glow stops at its edge
+        clip = VGroup(*[Rectangle(width=0.3, height=img_h + 0.4, stroke_width=0, fill_color=BG,
+                                  fill_opacity=1).move_to(np.array([x, cellI.c[1], 0.]))
+                        for x in (cellI.x0 - 0.15, cellI.x1 + 0.15)])
 
         def to_scene(x, y):
             return np.array([cellI.x0 + (x - CROP[0]) / cw * img_w,
@@ -62,8 +66,7 @@ class FnMeasure(Scene):
         lines, xs_mid, Ls, rad = VGroup(), [], [], []
         for s in segs:
             r = s['ang'] <= 45
-            ln = Line(to_scene(s['x0'], s['y0']), to_scene(s['x1'], s['y1']),
-                      stroke_width=6, color=RAD if r else TAN, cap_style=CapStyleType.ROUND)
+            ln = neon(to_scene(s['x0'], s['y0']), to_scene(s['x1'], s['y1']), RAD if r else TAN, 3.5)
             lines.add(ln)
             xs_mid.append(ln.get_center()[0]); Ls.append(s['L']); rad.append(r)
         xs_mid, Ls, rad = map(np.array, (xs_mid, Ls, rad))
@@ -101,8 +104,8 @@ class FnMeasure(Scene):
         def needle():
             a = np.radians(90 - phi.get_value())
             u = np.array([np.cos(a), np.sin(a), 0.])
-            return Line(kc - u * rad_k * 0.88, kc + u * rad_k * 0.88, stroke_width=11,
-                        color=RAD if phi.get_value() <= 45 else TAN)
+            return neon(kc - u * rad_k * 0.88, kc + u * rad_k * 0.88,
+                        RAD if phi.get_value() <= 45 else TAN, 6.)
         ndl = always_redraw(needle)
 
         place(leg, rLg, LEFT)
@@ -127,10 +130,12 @@ class FnMeasure(Scene):
         val.next_to(frm, RIGHT, buff=0.25)
         form = VGroup(frm, val)
 
+        lop = ValueTracker(1.)                     # overall opacity of the traced sticks
+
         def show_lines(m):
-            x = scan.get_value()
+            x, k = scan.get_value(), lop.get_value()
             for ln, xm in zip(m, xs_mid):
-                ln.set_stroke(opacity=1. if xm <= x else 0.)
+                set_neon(ln, k if xm <= x else 0.)
         lines.add_updater(show_lines)
         scan_line = always_redraw(lambda: Line(
             np.array([scan.get_value(), cellI.y0, 0.]), np.array([scan.get_value(), cellI.y1, 0.]),
@@ -141,18 +146,18 @@ class FnMeasure(Scene):
                 'bar': bar_frame, 'formula': form})
 
         # ---------------- timeline (first frame = last frame) ----------------
-        self.add(img, dim, lines, frame, sectors, bounds, circ, ang45, t45, lab_R, lab_T, ndl,
+        self.add(img, dim, lines, clip, frame, sectors, bounds, circ, ang45, t45, lab_R, lab_T, ndl,
                  leg, bar_frame, bars, scan_line)
         self.wait(1.0)
         self.play(phi.animate.set_value(90.), run_time=1.8, rate_func=smooth)
         self.play(phi.animate.set_value(0.), run_time=1.8, rate_func=smooth)
-        self.play(dim.animate.set_opacity(0.45), run_time=0.6)
+        self.play(dim.animate.set_opacity(0.6), run_time=0.6)
         self.play(scan.animate.set_value(cellI.x1), run_time=6.0, rate_func=linear)
         self.play(Write(frm), FadeIn(val, shift=LEFT * 0.2), run_time=1.0)
         self.wait(2.6)
-        lines.clear_updaters()
-        self.play(FadeOut(form), lines.animate.set_stroke(opacity=0), dim.animate.set_opacity(0),
+        self.play(FadeOut(form), lop.animate.set_value(0.), dim.animate.set_opacity(0),
                   bar_op.animate.set_value(0.), run_time=1.0)
         scan.set_value(cellI.x0)
         bar_op.set_value(1.)
+        lop.set_value(1.)
         self.wait(0.04)
