@@ -52,6 +52,22 @@ STYLES = {
     'mint': dict(kind='smooth', stops=[(0.0, C('#1D2624')), (0.55, C('#2C5A50')), (0.85, C('#58B79C')),
                                        (1.0, C('#D9F7EC'))]),
 }
+# steps + isolines in several colour schemes: (low, high) or full stops, line colour
+BL = [0, 0.2, 0.4, 0.6, 0.8, 1.0001]
+for name, stops, line in (
+        ('bl_grey', [(0.0, C('#26292E')), (1.0, C('#9A9DA3'))], '#E6E6E6'),
+        ('bl_contrast', [(0.0, C('#1C1C1C')), (1.0, C('#E4E4E4'))], '#000000'),
+        ('bl_sand', [(0.0, C('#2A2622')), (1.0, C('#CDBFA8'))], '#F6F0E6'),
+        ('bl_mint', [(0.0, C('#1D2624')), (1.0, C('#7FC7B0'))], '#E3FFF5'),
+        ('bl_violet', [(0.0, C('#24203A')), (1.0, C('#A58BD6'))], '#EFE7FF'),
+        ('bl_steel', [(0.0, C('#1F2833')), (1.0, C('#8FA3BA'))], '#EAF2FA'),
+        ('bl_olive', [(0.0, C('#262A1F')), (1.0, C('#A9B07A'))], '#F3F6E2'),
+        ('bl_rainbow', STYLES['rainbow']['stops'], '#111111'),
+        ('bl_viridis', STYLES['viridis']['stops'], '#111111'),
+        ('bl_magma', STYLES['magma']['stops'], '#F2F2F2'),
+        ('bl_coolwarm', STYLES['coolwarm']['stops'], '#2A2A2A'),
+        ('bl_teal_pink', STYLES['teal_pink']['stops'], '#F2F2F2')):
+    STYLES[name] = dict(kind='bands_lines', stops=stops, levels=BL, line=line)
 STYLE = os.environ.get('PAL', 'white')
 ST = STYLES[STYLE]
 DOT_DENS = 1300.                      # specks per mm^2 of section at full omega
@@ -124,7 +140,8 @@ class FieldRaster:
                 ax.tripcolor(tr, v * 0, shading='gouraud', cmap=self.cmap, vmin=0, vmax=1)  # under the seams
                 ax.tricontourf(tr, v, levels=lv, colors=cols, antialiased=True)
                 if kind == 'bands_lines':
-                    ax.tricontour(tr, v, levels=lv[1:-1], colors='#E6E6E6', linewidths=0.9, alpha=0.8)
+                    ax.tricontour(tr, v, levels=lv[1:-1], colors=st.get('line', '#E6E6E6'), linewidths=0.9,
+                                  alpha=0.8)
             elif kind in ('lines', 'dots'):
                 ax.tripcolor(tr, v * 0, shading='gouraud', cmap=self.flat, vmin=0, vmax=1)
                 if kind == 'lines':
