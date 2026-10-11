@@ -59,86 +59,147 @@ class _Base(Scene):
         self.play(self.clk.animate.set_value(T_LOOP), run_time=T_LOOP, rate_func=linear)
 
 
+ZONE_COLS = [ManimColor('#5E5332'), ManimColor('#8A7232'), ManimColor('#B8902E'), ManimColor('#E0B23A')]
+
+
+def butterfly(n=90):
+    """Plane-strain mode-I plastic zone, r(theta) ~ cos^2(theta/2) ((1-2 nu)^2
+    + 3 sin^2(theta/2)), theta from the crack growth direction; max r = 1."""
+    th = np.linspace(-PI, PI, n)
+    r = np.cos(th / 2) ** 2 * ((1 - 2 * 0.3) ** 2 + 3 * np.sin(th / 2) ** 2)
+    return th, r / r.max()
+
+
 class Ductile(_Base):
-    """Radial plate across the load: the metal glows at the tips, voids
-    nucleate ahead of them, grow and coalesce, the crack runs to the edges."""
+    """Radial plate across the load: a plastic zone (two-lobed, banded like a
+    FE contour plot) forms at each tip; a cloud of pores nucleates in it and
+    grows; the pores on the crack line coalesce and the crack runs to the
+    edges, the zone moving with its tip."""
     def construct(self):
         PW, PH = 0.3, 2.0
-        plate = RoundedRectangle(width=PW, height=PH, corner_radius=PW / 2, stroke_width=0,
-                                 fill_color=RAD, fill_opacity=1)
+        A = PH / 2
         self.setup_picture()
-        plate.scale(self.sc).move_to(self.sh)
-        rng = np.random.default_rng(4)
-        sites = []
+        plate = RoundedRectangle(width=PW, height=PH, corner_radius=PW / 2, stroke_width=0,
+                                 fill_color=RAD, fill_opacity=1).scale(self.sc).move_to(self.sh)
+        rng = np.random.default_rng(11)
+        T_RUN = (2.4, 6.2)                          # the front goes from the tip to the edge
+        th, rb = butterfly()
+
+        def t_front(y):                             # when the front reaches |y|
+            return T_RUN[0] + (abs(y) - A) / (L - A) * (T_RUN[1] - T_RUN[0])
+        sides = []
         for sg in (1, -1):
-            ys = PH / 2 + 0.25 + np.arange(5) * 0.3
-            xs = np.cumsum(rng.normal(0, 0.06, len(ys)))
-            sites.append([(x, sg * y) for x, y in zip(xs, ys) if y < L - 0.1])
-        n = len(sites[0])
-        t_join = np.linspace(2.2, 5.6, n)            # void j joins the crack
-        t_nuc = t_join - 1.4                          # void j appears
+            ys = A + 0.2 + np.arange(12) * 0.22
+            ys = ys[ys < L - 0.08]
+            xs = np.cumsum(rng.normal(0, 0.045, len(ys)))
+            chain = [(x, sg * y) for x, y in zip(xs, ys)]
+            cloud = []
+            tries = 0
+            while len(cloud) < 16 and tries < 4000:
+                tries += 1
+                y = rng.uniform(A + 0.08, L - 0.08)
+                x = rng.normal(np.interp(y, ys, xs), 0.2)
+                if abs(x) > L - 0.1:
+                    continue
+                p = np.array([x, sg * y])
+                if all(np.hypot(*(p - np.array(q[:2]))) > 0.13 for q in cloud + chain):
+                    cloud.append((x, sg * y, rng.uniform(0.022, 0.055),
+                                  t_front(y) - rng.uniform(0.5, 0.9)))
+            sides.append((sg, chain, cloud))
 
         def picture():
             t = self.clk.get_value()
             g, te = dip(t), te_of(t)
+            load = ramp(te, 0.4, 2.0)
             out = VGroup()
-            I = ramp(te, 0.4, 2.0)
-            for sg, ss in zip((1, -1), sites):
-                k = int(np.sum(te >= t_join))
-                front = (0., sg * PH / 2) if k == 0 else ss[k - 1]
-                if k < n:                              # plastic zone ahead of the front
-                    out.add(glow(self.P(front[0], front[1] + sg * 0.3), I, 0.5 * self.sc,
-                                 0.7 * self.sc, clip=self.blk))
-                pts = [(0., sg * PH / 2)] + ss[:k]
-                if k == n:
-                    pts.append((ss[-1][0], sg * L))
+            for sg, chain, cloud in sides:
+                k = sum(1 for (x, y) in chain if te >= t_front(y))
+                # current front: the last merged pore, or the plate tip
+                fx, fy = (0., sg * A) if k == 0 else chain[k - 1]
+                done = k == len(chain)
+                # plastic zone around the front, banded
+                r0 = 0.85 * (0.45 + 0.55 * load) * (1 - ramp(te, T_RUN[1] - 0.4, T_RUN[1] + 0.2))
+                if r0 > 0.02:
+                    for kk, col in zip((1.0, 0.74, 0.5, 0.3), ZONE_COLS):
+                        pts = [self.P(fx + r0 * kk * r * np.sin(a), fy + sg * r0 * kk * r * np.cos(a))
+                               for a, r in zip(th, rb)]
+                        out.add(Intersection(Polygon(*pts), self.blk, stroke_width=0, fill_color=col,
+                                             fill_opacity=0.9 * min(1., 3 * load)))
+                # cloud pores: nucleate, grow (a little wider along the load)
+                for x, y, rm, tn in cloud:
+                    a = ramp(te, tn, tn + 1.5)
+                    if a > 0:
+                        r = rm * (0.3 + 0.7 * a)
+                        out.add(Ellipse(width=2.6 * r * self.sc, height=2 * r * self.sc, stroke_width=0,
+                                        fill_color=BLACK, fill_opacity=1).move_to(self.P(x, y)))
+                # pores on the crack line grow, then coalesce into the crack
+                for j, (x, y) in enumerate(chain):
+                    tf = t_front(y)
+                    a = ramp(te, tf - 1.3, tf)
+                    if a > 0:
+                        r = 0.03 + 0.05 * a
+                        out.add(Ellipse(width=2.4 * r * self.sc, height=2 * r * self.sc, stroke_width=0,
+                                        fill_color=BLACK, fill_opacity=1).move_to(self.P(x, y)))
+                pts = [(0., sg * A)] + chain[:k]
+                if done:
+                    pts.append((chain[-1][0], sg * L))
                 if len(pts) > 1:
-                    out.add(VMobject(stroke_color=BLACK, stroke_width=8 + 4 * k / n)
-                            .set_points_as_corners([self.P(*p) for p in pts]))
-                for j, (x, y) in enumerate(ss):        # voids grow and stretch toward the crack
-                    a = ramp(te, t_nuc[j], t_join[j])
-                    if a <= 0 or te >= t_join[j]:
-                        continue
-                    out.add(Ellipse(width=(0.06 + 0.16 * a) * self.sc,
-                                    height=(0.05 + 0.24 * a ** 2) * self.sc, stroke_width=0,
-                                    fill_color=BLACK, fill_opacity=1).move_to(self.P(x, y)))
+                    out.add(VMobject(stroke_color=BLACK, stroke_width=7).set_points_as_corners(
+                        [self.P(*p) for p in pts]))
             out.add(plate.copy())
             return fade_all(out, g) if g < 1 else out
         self.run(picture)
 
 
 class Cleave(_Base):
-    """Tangential plate along the load: it stretches with the metal and
-    cleaves across in a few places; the pieces move apart."""
+    """Tangential plate along the load: it stretches with the metal; a thin
+    zigzag crack runs across it, then a second one, and the pieces move
+    slightly apart."""
     def construct(self):
         PL, PT = 3.0, 0.32
         self.setup_picture()
-        XC = [0.06, -0.82, 0.86]
-        t_c = [3.0, 3.25, 3.5]
-        GAP = 0.12
+        rng = np.random.default_rng(5)
+        CR = [(0.12, 3.0), (-0.86, 4.1)]            # (x, time) of the two cracks
+        GAP, NZ = 0.06, 6
+        zig = {xc: np.r_[0., rng.uniform(-0.045, 0.045, NZ - 1), 0.] for xc, _ in CR}
+        yz = np.linspace(PT / 2, -PT / 2, NZ + 1)
 
         def picture():
             t = self.clk.get_value()
             g, te = dip(t), te_of(t)
-            e = 0.05 * ramp(te, 0.4, 6.0)
-            out = VGroup()
-            opens = {x: GAP * ramp(te, tc, tc + 2.0) for x, tc in zip(XC, t_c) if te >= tc}
+            e = 0.03 * ramp(te, 0.4, 6.0)
+            run = {xc: ramp(te, tc, tc + 0.25) for xc, tc in CR}      # crack across the thickness
+            gap = {xc: GAP * ramp(te, tc + 0.25, tc + 1.8) for xc, tc in CR}
 
             def X(x0):
-                return x0 * (1 + e) + sum(o / 2 * np.sign(x0 - xc) for xc, o in opens.items())
-            edges = [-PL / 2] + sorted(opens) + [PL / 2]
-            whole = len(opens) == 0
+                return x0 * (1 + e) + sum(gp / 2 * np.sign(x0 - xc) for xc, gp in gap.items())
+            out = VGroup()
+            cut = sorted(xc for xc in run if run[xc] >= 1)
+            # pieces between the cracks that have gone through; outline = right
+            # boundary top -> bottom, then left boundary bottom -> top
+            edges = [-PL / 2] + cut + [PL / 2]
+            r = PT / 2
             for a, b in zip(edges[:-1], edges[1:]):
-                xa, xb = X(a + 1e-6), X(b - 1e-6)
-                r = PT / 2 if whole else 0.04
-                out.add(RoundedRectangle(width=(xb - xa) * self.sc, height=PT * self.sc,
-                                         corner_radius=r * self.sc, stroke_width=0, fill_color=TAN,
-                                         fill_opacity=1).move_to(self.P((xa + xb) / 2, 0)))
-            for xc, tc in zip(XC, t_c):                 # a short flash as each crack appears
-                f = 1 - ramp(te, tc, tc + 0.35) if te >= tc else 0.
-                if f > 0.01:
-                    out.add(Line(self.P(X(xc), -PT * 1.3), self.P(X(xc), PT * 1.3),
-                                 stroke_color=WHITE, stroke_width=5).set_stroke(opacity=f))
+                if b == PL / 2:
+                    cx = X(b) - r
+                    rb = [self.P(cx + r * np.cos(q), r * np.sin(q)) for q in np.linspace(PI / 2, -PI / 2, 14)]
+                else:
+                    xb = X(b - 1e-6)
+                    rb = [self.P(xb + dz, y) for dz, y in zip(zig[b], yz)]
+                if a == -PL / 2:
+                    cx = X(a) + r
+                    lb = [self.P(cx + r * np.cos(q), r * np.sin(q)) for q in np.linspace(1.5 * PI, PI / 2, 14)]
+                else:
+                    xa = X(a + 1e-6)
+                    lb = [self.P(xa + dz, y) for dz, y in zip(zig[a][::-1], yz[::-1])]
+                out.add(Polygon(*(rb + lb), stroke_width=0, fill_color=TAN, fill_opacity=1))
+            # a crack still running across: a thin dark zigzag over the plate
+            for xc, _ in CR:
+                f = run[xc]
+                if 0 < f < 1:
+                    m = max(2, int(np.ceil(f * NZ)) + 1)
+                    pts = [self.P(X(xc) + dz, y) for dz, y in zip(zig[xc][:m], yz[:m])]
+                    out.add(VMobject(stroke_color=BLACK, stroke_width=4).set_points_as_corners(pts))
             return fade_all(out, g) if g < 1 else out
         self.run(picture)
 

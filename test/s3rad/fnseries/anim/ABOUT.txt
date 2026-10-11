@@ -15,9 +15,11 @@ Animations for the presentation (Manim Community 0.19.1, manim-slides 5.7)
                      the micrograph are not in this public repo, see
                      fnmeasure/SOURCE.txt
   mech1_ductile.gif  fracture mechanisms, simple square loops (900x900) for one
-  mech2_cleave.gif   slide, as on the old slide 7 (mech_simple.py): voids grow
-  mech3_debond.gif   and coalesce at the tips of a radial plate; a tangential
-                     plate cleaves; the interface of a radial plate opens.
+  mech2_cleave.gif   slide, as on the old slide 7 (mech_simple.py): a banded
+                     two-lobed plastic zone with a cloud of pores at the tips
+                     of a radial plate, the pores on the crack line coalesce;
+                     a tangential plate cleaves by thin zigzag cracks;
+  mech3_debond.gif   the interface of a radial plate opens.
                      mech_ductile/cleave/debond.py: the earlier detailed
                      16:9 versions (omega and D bars, T - delta law)
   reorient.gif       stress reorientation, qualitative: heat (hydrides
