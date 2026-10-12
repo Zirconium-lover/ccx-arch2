@@ -20,6 +20,10 @@ T_DIP = (7.3, 7.9, 8.1, 8.7)
 L = 2.6                                  # block half-size
 SQ = Box(-3.7, 3.7, -3.7, 3.7)           # square frame minus margins
 STEEL = ManimColor('#34404F')            # lighter metal: black cracks and gaps must read
+# each mechanism outlines the surface it makes in its colour (as the fracture surfaces slide)
+DUCT = ManimColor('#A9B4C2')             # ductile tearing of the matrix: light grey
+CLEAV = ManimColor('#FFA040')            # hydride cleavage: orange
+DEB = IFC                                # debonding of the interface: green
 
 
 def dip(t):
@@ -142,20 +146,28 @@ class Ductile(_Base):
                         r = rm * (0.3 + 0.7 * a)
                         out.add(Ellipse(width=2.6 * r * self.sc, height=2 * r * self.sc, stroke_width=0,
                                         fill_color=BLACK, fill_opacity=1).move_to(self.P(x, y)))
-                # pores on the crack line grow, then coalesce into the crack
+                # pores on the crack line grow, then coalesce into the crack; once a pore
+                # is part of the crack, its walls are fracture surface: a light-grey rim
+                rims, cores = VGroup(), VGroup()
                 for j, (x, y) in enumerate(chain):
                     tf = t_front(y)
                     a = ramp(te, tf - 1.3, tf)
                     if a > 0:
                         r = 0.03 + 0.05 * a
-                        out.add(Ellipse(width=2.4 * r * self.sc, height=2 * r * self.sc, stroke_width=0,
-                                        fill_color=BLACK, fill_opacity=1).move_to(self.P(x, y)))
+                        if te >= tf:
+                            rr = r + 0.04
+                            rims.add(Ellipse(width=2.4 * rr * self.sc, height=2 * rr * self.sc, stroke_width=0,
+                                             fill_color=DUCT, fill_opacity=1).move_to(self.P(x, y)))
+                        cores.add(Ellipse(width=2.4 * r * self.sc, height=2 * r * self.sc, stroke_width=0,
+                                          fill_color=BLACK, fill_opacity=1).move_to(self.P(x, y)))
                 pts = [(0., sg * A)] + chain[:k]
                 if done:
                     pts.append((chain[-1][0], sg * L))
                 if len(pts) > 1:
-                    out.add(VMobject(stroke_color=BLACK, stroke_width=7).set_points_as_corners(
-                        [self.P(*p) for p in pts]))
+                    path = [self.P(*p) for p in pts]
+                    rims.add(VMobject(stroke_color=DUCT, stroke_width=17).set_points_as_corners(path))
+                    cores.add(VMobject(stroke_color=BLACK, stroke_width=7).set_points_as_corners(path))
+                out.add(rims, cores)
             out.add(plate.copy())
             return fade_all(out, g) if g < 1 else out
         self.run(picture)
@@ -210,13 +222,15 @@ class Cleave(_Base):
                 rf = [self.P(X(xc + 1e-6) + dz, y) for dz, y in zip(zig[xc][::-1], yz[::-1])]
                 out.add(Polygon(*(lf + rf), stroke_color=BLACK, stroke_width=2, fill_color=BLACK,
                                 fill_opacity=1))
-            # a crack still running across: a thin dark zigzag over the plate
+                for face in (lf, rf):               # the two cleavage faces
+                    out.add(VMobject(stroke_color=CLEAV, stroke_width=7).set_points_as_corners(face))
+            # a crack still running across: a thin orange zigzag over the plate
             for xc, _ in CR:
                 f = run[xc]
                 if 0 < f < 1:
                     m = max(2, int(np.ceil(f * NZ)) + 1)
                     pts = [self.P(X(xc) + dz, y) for dz, y in zip(zig[xc][:m], yz[:m])]
-                    out.add(VMobject(stroke_color=BLACK, stroke_width=7).set_points_as_corners(pts))
+                    out.add(VMobject(stroke_color=CLEAV, stroke_width=7).set_points_as_corners(pts))
             return fade_all(out, g) if g < 1 else out
         self.run(picture)
 
@@ -239,18 +253,25 @@ class Debond(_Base):
             front = A * ramp(te, 1.0, 5.0)              # debonded half-length
             dm = DMAX * ramp(te, 1.0, 5.6)
             out, bonds = VGroup(), VGroup()
-            # the bonded interface: a thin green line on both faces where still intact
+            # the bonded interface: a faint thin green line where still intact; the
+            # debonded part: both faces of the gap (plate and matrix) bright green
+            faces = VGroup()
             for sg in (1, -1):
                 xf = sg * PW / 2
                 for y0, y1 in ((front, A - PW / 2), (-(A - PW / 2), -front)):
                     if y1 - y0 > 0.02:
-                        bonds.add(Line(self.P(xf, y0), self.P(xf, y1), stroke_color=IFC, stroke_width=4))
+                        bonds.add(Line(self.P(xf, y0), self.P(xf, y1), stroke_color=DEB, stroke_width=2.5,
+                                       stroke_opacity=0.45))
                 if front > 0.02 and dm > 1e-3:          # the gap on the debonded part
                     yy = np.linspace(-front, front, 40)
                     dd = dm * np.sqrt(np.clip(1 - (yy / front) ** 2, 0, 1))
                     pts = [self.P(xf, y) for y in yy] + \
                           [self.P(xf + sg * d, y) for y, d in zip(yy[::-1], dd[::-1])]
                     out.add(Polygon(*pts, stroke_width=0, fill_color=BLACK, fill_opacity=1))
-            out.add(plate.copy(), bonds)
+                    faces.add(VMobject(stroke_color=DEB, stroke_width=7).set_points_as_corners(
+                        [self.P(xf, y) for y in yy]))
+                    faces.add(VMobject(stroke_color=DEB, stroke_width=7).set_points_as_corners(
+                        [self.P(xf + sg * d, y) for y, d in zip(yy, dd)]))
+            out.add(plate.copy(), bonds, faces)
             return fade_all(out, g) if g < 1 else out
         self.run(picture)
