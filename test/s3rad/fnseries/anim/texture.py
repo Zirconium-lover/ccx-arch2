@@ -3,20 +3,27 @@
 Each grain's basal pole (c axis) sits at phi + spread from the radial
 direction R; the hydride lies in the basal plane, i.e. normal to c.  phi
 sweeps 0 -> 90 deg -> 0: the hydrides go from tangential to radial and back.
+Middle: a zoom on the circled grain - its hcp cell (as on the deck-of-cards
+slide) turns with the grain: the c axis is the crystal's, the hydride lies in
+the basal plane across it.
 Right: the (0001) pole figure, R at the centre (stereographic, r = tan(psi/2)).
 Qualitative: no numbers.
 
-Layout: CONTENT = [wall cell: axes + labels band / wall / caption | pole
-figure column]; the wall is built in nominal units and mapped into its cell
-by the measured scale k.
+Layout: CONTENT = [wall cell: axes + labels band / wall / caption | zoom
+column | pole figure column]; the wall is built in nominal units and mapped
+into its cell by the measured scale k.
 
     manim -r 1600,900 --fps 25 texture.py Texture
 """
+import os
 from style import *
 
 SPREAD = 15.0
 POLE = ACC
-CAP = 36                       # caption Text size (cap ~40 px)
+ZR = ManimColor('#7FB2D9')     # alpha-Zr lattice, as on the deck-of-cards slide
+COA = 1.593                    # c / a of alpha-Zr
+TILT = np.radians(24)          # the zoomed cell is seen a little from above its basal plane
+CAP = 32                       # caption Text size (the wall cell is narrower with the zoom)
 
 
 class Texture(Scene):
@@ -36,9 +43,12 @@ class Texture(Scene):
         pT, pL, pR = tex('T', L2M, GREY_A), tex('L', L2M, GREY_A), tex('R', L2M, GREY_A)
         pf_lab = tex('(0001)', L2M)
 
+        lab_z = txt('ячейка α-Zr', L2, ZR)
+
         # ---------------- grid ----------------
-        pole_w = 4.5
-        cellW = Box(CONTENT.x0 + 0.03, CONTENT.x1 - pole_w - 0.6, CONTENT.y0, CONTENT.y1)
+        pole_w, zoom_w, gp = 3.7, 2.75, 0.35
+        cellW = Box(CONTENT.x0 + 0.03, CONTENT.x1 - pole_w - zoom_w - 2 * gp, CONTENT.y0, CONTENT.y1)
+        cellZ = Box(cellW.x1 + gp, cellW.x1 + gp + zoom_w, CONTENT.y0, CONTENT.y1)
         cellP = Box(CONTENT.x1 - pole_w, CONTENT.x1, CONTENT.y0, CONTENT.y1)
 
         # nominal wall: centre O at the origin
@@ -100,8 +110,8 @@ class Texture(Scene):
         r_l.next_to(r_ar.get_end(), RIGHT, buff=0.12).align_to(r_ar, UP)
         t_l.next_to(t_ar.get_end(), RIGHT, buff=0.12).align_to(t_ar, DOWN)
         ps = pts[star]
-        lab_c.move_to(np.array([ps[0] - 1.5, rBand.c[1], 0.]))
-        lab_h.move_to(np.array([ps[0] + 1.5, rBand.c[1], 0.]))
+        lab_c.move_to(np.array([ps[0] - 1.25, rBand.c[1], 0.]))
+        lab_h.move_to(np.array([ps[0] + 1.25, rBand.c[1], 0.]))
         lead = always_redraw(lambda: VGroup(
             Line(lab_c.get_bottom() + DOWN * 0.06, grain_geom(star)[0] + grain_geom(star)[1] * 0.3 * k,
                  stroke_width=2.5, color=POLE),
@@ -114,6 +124,64 @@ class Texture(Scene):
                     (caps[1], np.clip((ph - 65) / 15, 0, 1))
             return place(m.copy(), rCap).set_opacity(op)
         cap = always_redraw(caption)
+
+        # ---------------- zoom: the circled grain's hcp cell ----------------
+        # a magnifier level with the grain, dashed lines from the small circle; inside,
+        # the cell in parallel projection: c in the T-R plane along the grain's c axis,
+        # tilted by TILT about the in-plane normal so that the basal plane shows
+        Rz = min(cellZ.w / 2 - 0.05, 1.45)
+        rs = 0.68 * k
+        Cz = np.array([cellZ.c[0], ps[1], 0.])
+        mag = Circle(radius=Rz, stroke_color=WHITE, stroke_width=2.5).move_to(Cz)
+        links = VGroup(*[DashedLine(ps + sg * UP * rs, Cz + sg * UP * Rz, stroke_width=2, color=GREY_B,
+                                    dash_length=0.1) for sg in (1, -1)])
+        lab_z.next_to(mag, DOWN, buff=0.18)
+        lab_cz = tex('c', L2M, POLE)
+        A_ = 0.5 * Rz                                  # hexagon radius in the zoom
+        H_ = COA * A_
+        ARR = 0.36 * Rz
+
+        def cell_zoom():
+            _, c, d, w = grain_geom(star)
+            ct, st = np.cos(TILT), np.sin(TILT)
+
+            def P(sc, sd, sz):                         # (along c, along d, out of screen) -> screen
+                return Cz + (sc * ct - sz * st) * c + sd * d
+
+            def depth(sc, sz):
+                return sc * st + sz * ct
+            ang = [np.radians(15 + 60 * j) for j in range(6)]
+            hexa = [(A_ * np.cos(a), A_ * np.sin(a)) for a in ang]          # (sd, sz)
+            side_vis = [np.sin(np.radians(45 + 60 * j)) > 0 for j in range(6)]  # face j: between j, j+1
+            back, front = VGroup(), VGroup()
+            for j in range(6):
+                j1 = (j + 1) % 6
+                (d0, z0), (d1, z1) = hexa[j], hexa[j1]
+                # top hexagon: always seen; bottom: seen with its side face
+                front.add(Line(P(H_ / 2, d0, z0), P(H_ / 2, d1, z1), stroke_color=ZR, stroke_width=3.5))
+                (front if side_vis[j] else back).add(
+                    Line(P(-H_ / 2, d0, z0), P(-H_ / 2, d1, z1), stroke_color=ZR, stroke_width=3.5))
+                vis = side_vis[j] or side_vis[j - 1]
+                (front if vis else back).add(
+                    Line(P(-H_ / 2, d0, z0), P(H_ / 2, d0, z0), stroke_color=ZR, stroke_width=3.5))
+            back.set_stroke(opacity=0.35)
+            atoms = VGroup()
+            for sc in (-H_ / 2, H_ / 2):
+                for (dd, zz) in hexa + [(0., 0.)]:
+                    seen = sc > 0 or depth(sc, zz) > depth(-H_ / 2, 0.)
+                    atoms.add(Dot(P(sc, dd, zz), radius=0.05, color=ZR).set_opacity(1 if seen else 0.4))
+            # the hydride: a plate in the basal plane at mid-height, coloured as the grain's
+            plate = Polygon(*[P(0., 0.92 * dd, 0.92 * zz) for dd, zz in hexa], stroke_width=0,
+                            fill_color=interpolate_color(TAN, RAD, w), fill_opacity=0.92)
+            tip = P(H_ / 2 + ARR + 0.06, 0., 0.)
+            arrow = Arrow(P(H_ / 2 + 0.04, 0., 0.), tip, buff=0, color=POLE, stroke_width=6,
+                          max_tip_length_to_length_ratio=0.35)
+            # the c axis through the cell, thin
+            axis = DashedLine(P(-H_ / 2 - 0.12, 0., 0.), P(H_ / 2, 0., 0.), stroke_width=2,
+                              color=POLE, dash_length=0.06)
+            lab = lab_cz.copy().move_to(tip + c * 0.24 + d * 0.0)
+            return VGroup(back, atoms[:len(hexa) + 1], axis, plate, front, atoms[len(hexa) + 1:], arrow, lab)
+        zcell = always_redraw(cell_zoom)
 
         # ---------------- pole figure ----------------
         side_w = pT.width + 0.15
@@ -146,10 +214,15 @@ class Texture(Scene):
 
         report({'axes': VGroup(r_ar, t_ar, r_l, t_l), 'lab_c': lab_c, 'lab_h': lab_h,
                 'wall': wall, 'caption': place(caps[0].copy(), rCap),
-                'pf': VGroup(pf, pT, pL, pf_lab)})
+                'zoom': VGroup(mag, lab_z), 'pf': VGroup(pf, pT, pL, pf_lab)})
 
-        self.add(wall, gr, lead, lab_c, lab_h, r_ar, r_l, t_ar, t_l, cap,
-                 pf, cross, pole, pT, pL, pR, pf_lab)
+        self.add(wall, gr, links, lead, lab_c, lab_h, r_ar, r_l, t_ar, t_l, cap,
+                 mag, zcell, lab_z, pf, cross, pole, pT, pL, pR, pf_lab)
+        if os.environ.get('STILL'):
+            phi.set_value(float(os.environ['STILL']))
+            self.update_mobjects(0)
+            self.wait(0.04)
+            return
         self.wait(2.0)
         self.play(phi.animate.set_value(90.), run_time=5.0, rate_func=smooth)
         self.wait(2.0)
