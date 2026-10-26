@@ -1453,7 +1453,7 @@
      &     ncell,ix,iy,iz,icell,jcell,ifree,nipel,iokel,ip1,ionnl,
      &     nact
       real*8 co(3,*),xstate(nstate_,mi(1),*),
-     &     xstateini(nstate_,mi(1),*),ell,
+     &     xstateini(nstate_,mi(1),*),ell,ellrep,
      &     xc,yc,zc,d2,w,swv,sv,det6,rmax,volel,elli,
      &     xmin,xmax,ymin,ymax,zmin,zmax,csize
 !
@@ -1635,10 +1635,19 @@
         do i=1,ne0
           if(evol(i).gt.0.d0) nact=nact+1
         enddo
-        write(*,*) '[DAMAGE NONLOCAL] ell=',ell,' radius=',rmax,
+!
+!       The LENGTH CONFIGURED, not ell: ell is ellsave, which only the
+!       environment writes, so a card-only deck printed ell=0.0 here
+!       while averaging with the card's 0.3 - and damnlresolve, which
+!       returns at once for ell<=0, never warned that such a deck does
+!       not resolve its length.  The gradient banner already asks
+!       damnlellmax; this is the same question.  Output only.
+!
+        call damnlellmax(ellrep)
+        write(*,*) '[DAMAGE NONLOCAL] ell=',ellrep,' radius=',rmax,
      &       ' mean neighbours=',dble(ifree)/dble(max(1,nact)),
      &       ' over ',nact,' regularised of ',ne0
-        call damnlresolve(dble(ifree)/dble(max(1,nact)),ell,0)
+        call damnlresolve(dble(ifree)/dble(max(1,nact)),ellrep,0)
         call flush(6)
       endif
 !

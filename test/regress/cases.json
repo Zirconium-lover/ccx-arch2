@@ -494,6 +494,28 @@
    }
   },
   {
+   "name": "hex-nonlocal-inherit",
+   "what": "a damage material whose card gives NONLOCAL= next to one whose card does not: hex-nonlocal-card's deck with NONLOCAL= removed from WEAKMAT only (mkhex.py --weak-nonlocal-ell 0). damnlellel hands such a material the LARGEST length any card configured - generous rather than degenerate, but a number its own definition never mentions - and until this case nothing said so. log_has pins the announcement and the length it reports for material 2, which is the one damnlellel actually returns. It also pins the INTEGRAL banner and the unresolved-length warning on a card-only deck: the banner printed ell=0.0 there (it showed ellsave, which only the environment writes) and damnlresolve, which returns at once for ell<=0, never warned that 0.3 is not resolved by unit cubes (mean neighbours 1.0). RED PATH, run: on 71ed70d this deck prints neither '(INHERITED)' nor 'length is NOT'. Output only: rc, theta and the neighbour count are those of hex-nonlocal-card, because WEAKMAT inherits exactly the 0.3 the other deck gives it on its card.",
+   "kind": "hex",
+   "mode": "uniaxial",
+   "nonlocal_ell": 0.3,
+   "weak_nonlocal_ell": 0.0,
+   "env": [
+    "CCX_DAMAGE_CHARLEN=1",
+    "CCX_DAMAGE_TANGENT="
+   ],
+   "expect": {
+    "neighbours": 1.0,
+    "rc": 0,
+    "theta": "0.100000E+01",
+    "log_has": [
+     "material     2  ell= 0.300000E+00  (INHERITED)",
+     "the internal length is NOT",
+     "[DAMAGE NONLOCAL] ell=  0.29999"
+    ]
+   }
+  },
+  {
    "name": "hex-gradient-card",
    "kind": "hex",
    "mode": "uniaxial",

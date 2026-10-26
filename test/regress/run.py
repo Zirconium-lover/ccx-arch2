@@ -198,9 +198,12 @@ def run_hex(case,rundir,exe):
     still says so explicitly, so the [SWITCHES] banner and check_switches()
     agree on what ran."""
     rundir.mkdir(parents=True,exist_ok=True)
-    r=sh('python3 %s/test/hex/mkhex.py -o %s --mode %s --nonlocal-ell %g'
+    weak=''
+    if 'weak_nonlocal_ell' in case:
+        weak=' --weak-nonlocal-ell %g'%case['weak_nonlocal_ell']
+    r=sh('python3 %s/test/hex/mkhex.py -o %s --mode %s --nonlocal-ell %g%s'
          %(ROOT,rundir/'hex.inp',case.get('mode','uniaxial'),
-           case.get('nonlocal_ell',0.0)),base_env([]))
+           case.get('nonlocal_ell',0.0),weak),base_env([]))
     if r.returncode!=0: return r.returncode,rundir/'run.log',None,None
     r=sh('%s -i hex > run.log 2>&1'%exe,base_env(case['env']),cwd=rundir)
     return r.returncode,rundir/'run.log',rundir/'hex.sta',None
