@@ -2876,6 +2876,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
   static glob_census damage_glob;
   double damage_nl_ell=0.;
   ITG damage_nl_mode=0;
+  ITG damage_commit_correct=0;
   double damage_qam_floor=0.;
   converge damage_cvg;
   ITG damage_deadsole_law=0,damage_bare_rep_mask=0,damage_hinge_total=0,
@@ -4680,6 +4681,17 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         printf("[DAMAGE NONLOCAL] backend FROZEN: CONTROL ONLY - the staggered damage update WITHOUT spatial averaging.  ell is read but NOT applied; this arm regularises nothing and exists to separate the internal length from the integration scheme\n");
       }
       FORTRAN(damnonlocalmode,(&damage_nl_mode));
+      {
+        const char *cc_env=ccxopt_getenv("CCX_DAMAGE_COMMIT_CORRECT");
+        damage_commit_correct=((cc_env!=NULL)&&(cc_env[0]=='1'))?1:0;
+        if(damage_commit_correct){
+          printf("[DAMAGE COMMIT CORRECT] after every accepted increment the "
+                 "damage (and its viscous copy) is re-integrated once from the "
+                 "converged state with the driver the commit has just rebuilt, "
+                 "independently of output.  This CHANGES THE ANSWER of the "
+                 "staggered nonlocal modes and of CCX_DAMAGE_CHARLEN=1\n");
+        }
+      }
       if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_QAM_FLOOR"))!=NULL){
         damage_qam_floor=atof(damage_de13_env);
         if(damage_qam_floor<0.) damage_qam_floor=0.;
@@ -16884,6 +16896,58 @@ damage_controller_done:
 	}else{negpres=0;}
       }
 
+    }
+
+    /* CCX_DAMAGE_COMMIT_CORRECT: the corrector the output call used to be.
+
+       Before 384cf55 the output-only results() call re-integrated dam and
+       its viscous copy from the converged displacements with the driver
+       the commit had just rebuilt - the current averaged increment in the
+       staggered nonlocal modes, the frozen band width under CHARLEN=1 -
+       and the next increment started from that.  So on output increments
+       the scheme had a corrector step, and only on those.  384cf55 made
+       the output call read-only, which removed the dependence on output
+       and the corrector with it; the lagged scheme then measured 4.8 times
+       its local reference error on test/mech/lag_order.
+
+       This puts the corrector back as a step of the COMMIT, on every
+       accepted increment: one results() call with iout=-2 (v known, no SPC
+       or MPC applied, no output, no f or qa recomputed) whose dam, viscous
+       copy and state are kept.  The equilibrium Newton found is not
+       re-solved: the next increment starts from the corrected damage
+       against the converged displacements, exactly as it did after an
+       output increment before.  Off by default until it is measured. */
+
+    if(damage_commit_correct&&(icutb==0)&&(*ndmat_>0)&&(*iexpl<=1)&&
+       damage_de12_enabled){
+      ITG cc_iout=-2,cc_icmd=3;
+      MNEW(v,double,mt**nk);
+      isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);
+      NNEW(stx,double,6*mi[0]**ne);
+      MNEW(fn,double,mt**nk);
+      NNEW(inum,ITG,*nk);
+      results(co,nk,kon,ipkon,lakon,ne,v,stn,inum,stx,
+	      elcon,nelcon,rhcon,nrhcon,alcon,nalcon,alzero,ielmat,
+	      ielorien,norien,orab,ntmat_,t0,t1act,ithermal,
+	      prestr,iprestr,filab,eme,emn,een,iperturb,
+	      f,fn,nactdof,&cc_iout,qa,vold,b,nodeboun,
+	      ndirboun,xbounact,nboun,ipompc,
+	      nodempc,coefmpc,labmpc,nmpc,nmethod,cam,&neq[1],veold,accold,
+	      &bet,&gam,&dtime,&time,ttime,plicon,nplicon,plkcon,nplkcon,
+	      xstateini,xstiff,xstate,npmat_,epn,matname,mi,&ielas,
+	      &cc_icmd,ncmat_,nstate_,stiini,vini,ikboun,ilboun,ener,enern,
+	      emeini,xstaten,eei,enerini,cocon,ncocon,set,nset,istartset,
+	      iendset,ialset,nprint,prlab,prset,qfx,qfn,trab,inotr,ntrans,
+	      fmpc,nelemload,nload,ikmpc,ilmpc,istep,&iinc,springarea,
+	      &reltime,&ne0,thicke,shcon,nshcon,
+	      sideload,xloadact,xloadold,&icfd,inomat,pslavsurf,pmastsurf,
+	      mortar,islavact,cdn,islavnode,nslavnode,ntie,clearini,
+	      islavsurf,ielprop,prop,energyini,energy,&kscale,iponoeln,
+	      inoeln,nener,orname,network,ipobody,xbodyact,ibody,typeboun,
+	      itiefac,tieset,smscale,&mscalmethod,nbody,t0g,t1g,
+	      islavquadel,aut,irowt,jqt,&mortartrafoflag,
+	      &intscheme,physcon,dam,damn,iponoel);
+      SFREE(inum);SFREE(v);SFREE(stx);VISC_FN_RELEASE();
     }
 
     /* output */

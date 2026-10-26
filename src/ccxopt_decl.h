@@ -357,6 +357,17 @@ static const ccxopt_decl ccxopt_decl_table[]={
  "Any non-blank value arms it with n=2, R=1e-2 unless given; n<0 resets to "
  "2, R clamped to [1e-6,1].  Read ONLY by the GRADIENT backend",NULL},
 
+{"CCX_DAMAGE_COMMIT_CORRECT",CCXOPT_ENUM,"unset (off)",CCXOPT_UNBOUNDED,"0|1",
+ "1 re-integrates the damage and its viscous copy once after every accepted "
+ "increment, from the converged displacements with the driver the commit "
+ "has just rebuilt (the current averaged increment for INTEGRAL, GRADIENT "
+ "and FROZEN; the frozen band width under CCX_DAMAGE_CHARLEN=1), and keeps "
+ "the result.  This is what the output-only results() call did, on output "
+ "increments only, until it was made read-only; here it is a step of the "
+ "commit and does not depend on output.  Equilibrium is not re-solved.  "
+ "Inert for the legacy width with local damage, where the re-integration "
+ "reproduces the converged state",NULL},
+
 /* ---- the constitutive law ----------------------------------------- */
 {"CCX_UC6_CONTACT_SMOOTH",CCXOPT_REAL,"unset (sharp law)",CCXOPT_UNBOUNDED,NULL,
  "penetration band over which the crack-face closure kink is blended.  The "
