@@ -44,6 +44,15 @@ L = 0.5 against 0.7071 and W +40 %: 13 checks red.  MECH_RED_ENV=
 CCX_DAMAGE_VISCOSITY=0.05 (D lags behind the law) turns every energy check
 red, W +23..32 %.
 
+Hardening after initiation (library notes/bulk-damage.md sec. 2b): with
+sigma_eff = sigma_i + H x during softening the work per crack area is
+G_f(sigma_i) (1 + H u_f / (3 sigma_i L)), so the crack band is not objective
+in L.  H = 4000, one C3D8 at a = L = 0.5 and 0.25: 1.0832 and 1.1443 against
+1.0635 and 1.1269 (+1.9 / +1.5 %, the NLGEOM and elastic-effective-strain
+bias, 3 % allowed); the L-dependent part itself, the difference of the two
+excesses, 0.0611 against 0.0634 (15 % allowed).  A law without the term
+(both excesses 0) fails that check by the whole 0.061.
+
 Tolerances.  Initiation and slope: the .dat prints 7 digits, but the slope
 is a difference of printed values: 2e-4.  Energy: the run is NLGEOM (the
 damage path needs it), so the force carries the area change of a plastic
@@ -65,8 +74,10 @@ E, NU, S0, EPS0, UF, A = 200000.0, 0.3, 400.0, 0.005, 0.01, 0.5
 TABLE = ((0.0, 0.012), (1.0 / 3, 0.006), (2.0 / 3, 0.004))
 
 
-def material(kind="RT", evolution="DISPLACEMENT", gf=None):
+def material(kind="RT", evolution="DISPLACEMENT", gf=None, hmod=0.0):
     m = ["*MATERIAL, NAME=M", "*ELASTIC", "%g, %g" % (E, NU), "*PLASTIC", "%g, 0." % S0]
+    if hmod:
+        m.append("%g, 1." % (S0 + hmod))
     if kind == "RT":
         m += ["*DAMAGE INITIATION, CRITERION=RICETRACEY, EVOLUTION=%s" % evolution,
               "%g, 1.0, %g, 0." % (EPS0, gf if gf else UF)]
@@ -108,9 +119,9 @@ def history(d):
     return out
 
 
-def one(work, name, eltype, ratios, mat, exe, rotz=0.0, charlen="1", emax=0.05, dt=0.005):
+def one(work, name, eltype, ratios, mat, exe, rotz=0.0, charlen="1", emax=0.05, dt=0.005, a=A):
     d = os.path.join(work, name)
-    write(os.path.join(d, "o.inp"), onelem.deck(eltype, ratios, emax, mat, dt, a=A, rotz=rotz))
+    write(os.path.join(d, "o.inp"), onelem.deck(eltype, ratios, emax, mat, dt, a=a, rotz=rotz))
     rc, _ = ccx(d, "o", exe, {"CCX_DAMAGE_CHARLEN": charlen})
     return rc, (history(d) if rc == 0 else [])
 
@@ -205,6 +216,31 @@ def run(work, exe):
         vol = A ** 3 / (6.0 if et == "C3D4" else 1.0)
         ck.append(Check("%s: W after init / ((V/L) G_f)" % tag,
                         work_after_init(h) / (vol / lref * S0 * UF / 2), 1.0, rtol=0.03))
+    # hardening AFTER initiation: sigma = (1-D)(sigma_i + H x), D = L x/u_f, so
+    # the work per crack area is  G_f (1 + H u_f / (3 sigma_i L))  - a term
+    # that depends on the band width L (library notes/bulk-damage.md sec. 2b)
+    hm = 4000.0
+    exc = {}
+    for a in (0.5, 0.25):
+        rc, h = one(work, "hardening_a%g" % a, "C3D8", (1, None, None), material(hmod=hm), exe,
+                    emax=0.08 if a == 0.25 else 0.05, dt=0.0025, a=a)
+        ck.append(Check("hardening L=%g: run rc" % a, rc, 0, tol=0))
+        if rc:
+            continue
+        k = next(i for i, x in enumerate(h) if x["dam"] >= 1.0)
+        x0, x1 = h[k - 1], h[k]
+        epi = x0["pe"] + (1 - x0["dam"]) / (x1["dam"] - x0["dam"]) * (x1["pe"] - x0["pe"])
+        si = S0 + hm * epi
+        gfi = si * UF / 2
+        pred = 1 + hm * UF / (3 * si * a)
+        got = work_after_init(h) / (a * a * gfi)
+        exc[a] = (got, pred)
+        ck.append(Check("hardening L=%g: W/(A G_f(sigma_i)) vs 1 + H u_f/(3 sigma_i L)" % a, got, pred,
+                        rtol=0.03, why="sigma_i = %.1f at initiation" % si))
+    if len(exc) == 2:
+        ck.append(Check("hardening: excess(L=0.25) - excess(L=0.5)", exc[0.25][0] - exc[0.5][0],
+                        exc[0.25][1] - exc[0.5][1], rtol=0.15,
+                        why="the L-dependent term itself; the NLGEOM bias common to both cancels"))
     # EVOLUTION=ENERGY: u_f = 2 G_f / sigma_0 at initiation
     gf = 3.0                                    # -> u_f = 0.015
     rc, h = one(work, "energy", "C3D8", (1, None, None), material(evolution="ENERGY", gf=gf), exe,
