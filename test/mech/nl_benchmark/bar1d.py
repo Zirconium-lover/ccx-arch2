@@ -13,8 +13,21 @@ W_crack / G_f = l_d,h / l_d (tabulated there per backend and h/ell).
 """
 
 
+KUHN = ((0, 1, 2, 6), (0, 2, 3, 6), (0, 3, 7, 6), (0, 7, 4, 6), (0, 4, 5, 6), (0, 5, 1, 6))
+
+
+def vol6(p, q, r, s):
+    a = [q[i] - p[i] for i in range(3)]
+    b = [r[i] - p[i] for i in range(3)]
+    c = [s[i] - p[i] for i in range(3)]
+    return a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0])
+
+
 def deck(nx, length=10.0, iweak=None, e=1.0e5, sy=100.0, sy_bulk=102.0, uf=0.1,
-         eps0=1.0e-6, ell=0.5, uend=0.15, dt=0.005, edge=False):
+         eps0=1.0e-6, ell=0.5, uend=0.15, dt=0.005, edge=False, eltype="C3D8"):
+    """eltype C3D8 / C3D8I / C3D8R: one hexahedron per slice; C3D4: each
+    slice cut into the six Kuhn tetrahedra; C3D10: the same with midside
+    nodes.  ell=None writes no NONLOCAL= (the local crack band)."""
     h = length / nx
     if iweak is None:
         iweak = 0 if edge else nx // 2
@@ -25,18 +38,48 @@ def deck(nx, length=10.0, iweak=None, e=1.0e5, sy=100.0, sy_bulk=102.0, uf=0.1,
         for j in (0, 1):
             for k in (0, 1):
                 L.append("%d, %.12g, %d, %d" % (nid(i, j, k), i * h, j, k))
+    coord = {}
+    for i in range(nx + 1):
+        for j in (0, 1):
+            for k in (0, 1):
+                coord[nid(i, j, k)] = (i * h, j, k)
+    mid, nxt = {}, 4 * (nx + 1) + 1
     bulk, weak = [], []
+    eid = 0
     for i in range(nx):
         c = [nid(i, 0, 0), nid(i + 1, 0, 0), nid(i + 1, 1, 0), nid(i, 1, 0),
              nid(i, 0, 1), nid(i + 1, 0, 1), nid(i + 1, 1, 1), nid(i, 1, 1)]
-        (weak if i == iweak else bulk).append("%d, " % (i + 1) + ", ".join(map(str, c)))
-    L += ["*ELEMENT, TYPE=C3D8, ELSET=EBULK"] + bulk
-    L += ["*ELEMENT, TYPE=C3D8, ELSET=EWEAK"] + weak
+        if eltype.startswith("C3D8"):
+            cells = [c]
+        else:
+            cells = []
+            for t in KUHN:
+                t = [c[v] for v in t]
+                if vol6(*[coord[v] for v in t]) < 0:
+                    t[1], t[2] = t[2], t[1]
+                if eltype == "C3D10":
+                    ext = []
+                    for a, b in ((0, 1), (1, 2), (0, 2), (0, 3), (1, 3), (2, 3)):
+                        key = tuple(sorted((t[a], t[b])))
+                        if key not in mid:
+                            mid[key] = nxt
+                            coord[nxt] = tuple(0.5 * (coord[t[a]][q] + coord[t[b]][q]) for q in range(3))
+                            nxt += 1
+                        ext.append(mid[key])
+                    t = t + ext
+                cells.append(t)
+        for t in cells:
+            eid += 1
+            (weak if i == iweak else bulk).append("%d, " % eid + ", ".join(map(str, t)))
+    L += ["%d, %.12g, %.12g, %.12g" % ((n,) + coord[n]) for n in sorted(coord) if n >= 4 * (nx + 1) + 1]
+    L += ["*ELEMENT, TYPE=%s, ELSET=EBULK" % eltype] + bulk
+    L += ["*ELEMENT, TYPE=%s, ELSET=EWEAK" % eltype] + weak
     L += ["*NSET, NSET=NLEFT"] + ["%d" % nid(0, j, k) for j in (0, 1) for k in (0, 1)]
     L += ["*NSET, NSET=NRIGHT"] + ["%d" % nid(nx, j, k) for j in (0, 1) for k in (0, 1)]
     for name, s in (("BULK", sy_bulk), ("WEAK", sy)):
         L += ["*MATERIAL, NAME=%s" % name, "*ELASTIC", "%g, 0." % e, "*PLASTIC", "%g, 0." % s,
-              "*DAMAGE INITIATION, CRITERION=RICETRACEY, EVOLUTION=DISPLACEMENT, NONLOCAL=%r" % ell,
+              "*DAMAGE INITIATION, CRITERION=RICETRACEY, EVOLUTION=DISPLACEMENT"
+              + (", NONLOCAL=%r" % ell if ell else ""),
               "%g, 1.0, %g, 0." % (eps0, uf)]
     L += ["*SOLID SECTION, ELSET=EBULK, MATERIAL=BULK", "*SOLID SECTION, ELSET=EWEAK, MATERIAL=WEAK",
           # uniaxial: x held on the left face, the rigid modes by three
@@ -47,4 +90,8 @@ def deck(nx, length=10.0, iweak=None, e=1.0e5, sy=100.0, sy_bulk=102.0, uf=0.1,
           "*BOUNDARY", "NRIGHT, 1, 1, %r" % uend,
           "*NODE PRINT, NSET=NRIGHT, TOTALS=ONLY", "RF",
           "*EL PRINT, ELSET=EWEAK", "PEEQ", "*END STEP"]
+    if eltype == "C3D10":   # midside nodes of the end faces belong to the grips too
+        xs = {n for n in coord if n >= 4 * (nx + 1) + 1}
+        L.insert(L.index("*NSET, NSET=NLEFT") + 1, ", ".join(str(n) for n in sorted(xs) if coord[n][0] == 0.0) or "1")
+        L.insert(L.index("*NSET, NSET=NRIGHT") + 1, ", ".join(str(n) for n in sorted(xs) if abs(coord[n][0] - length) < 1e-12) or "1")
     return "\n".join(L) + "\n"
