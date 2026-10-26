@@ -48,6 +48,7 @@ def base_env(extra):
     return e
 
 def last_sta(p):
+    if p is None: return None,None
     try: lines=[l for l in open(p) if l.strip()]
     except OSError: return None,None
     if not lines: return None,None
@@ -231,6 +232,22 @@ def run_cross(case,rundir,exe):
     r=sh('%s -i t > run.log 2>&1'%exe,base_env(case['env']),cwd=rundir)
     return r.returncode,rundir/'run.log',rundir/'t.sta',rundir/'t.damage'
 
+def run_mech(case,rundir,exe):
+    """The mechanics tests of test/mech/, each against its own reference.
+
+    run.py exits with the number of failed tests, so rc=0 is the whole
+    expectation; the table it prints is the log.  case['tests'] names the
+    tests to run (all when absent) - a test that is red BY DESIGN, the
+    acceptance test of a pending fix, is left out there with the reason in
+    'what', rather than letting it hold the gate red.  mechlib strips every
+    CCX_* name from the environment before each solver call, so the gate's
+    own environment cannot leak into a reference comparison."""
+    rundir.mkdir(parents=True,exist_ok=True)
+    e=base_env(case['env']); e['CCX_EXE']=str(exe)
+    r=sh('python3 %s/test/mech/run.py %s --work %s > run.log 2>&1'
+         %(ROOT,' '.join(case.get('tests',[])),rundir/'work'),e,cwd=rundir)
+    return r.returncode,rundir/'run.log',None,None
+
 def one(case,outroot,exe,required,lines):
     rundir=outroot/case['name']
     if rundir.exists(): shutil.rmtree(rundir)
@@ -239,6 +256,7 @@ def one(case,outroot,exe,required,lines):
     elif case['kind']=='hex':   rc,log,sta,dam=run_hex(case,rundir,exe)
     elif case['kind']=='close': rc,log,sta,dam=run_close(case,rundir,exe)
     elif case['kind']=='cross': rc,log,sta,dam=run_cross(case,rundir,exe)
+    elif case['kind']=='mech':  rc,log,sta,dam=run_mech(case,rundir,exe)
     else:                       rc,log,sta,dam=run_mixed(case,rundir,exe)
     got={'rc':rc}
     inc,theta=last_sta(sta)
@@ -314,7 +332,9 @@ def one(case,outroot,exe,required,lines):
         else:
             ok = have==want
         if not ok: fails.append("%s: want %r, got %r"%(k,want,have))
-    fails+=selftests(log,required,lines)
+    # a mech log is run.py's table, not a solver log: the solver's required
+    # banner lines belong to the logs it keeps under work/, one per deck
+    fails+=selftests(log,required,[] if case['kind']=='mech' else lines)
     fails+=check_switches(log,case['env'])
     return {'name':case['name'],'what':case['what'],'seconds':round(time.time()-t0,1),
             'got':got,'fails':fails,'rundir':str(rundir)}
