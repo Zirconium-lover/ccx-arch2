@@ -168,6 +168,18 @@
 !
       integer :: ellover=0,ellsaid=0
 !
+!     dmatdam(imat)=1 for every material that carries *DAMAGE
+!     INITIATION, whether or not its card gave NONLOCAL=.  Without it the
+!     module cannot tell "this material asked for no length" from "this
+!     material has no damage", and only the first is worth a warning:
+!     damnlellel hands a card-less damage material the LARGEST length any
+!     other card configured, which is generous rather than degenerate but
+!     is a number its own card never mentions.  inhsaid guards the
+!     one-time announcement in damnlinheritsay.
+!
+      integer :: dmatdam(64)=0
+      integer :: inhsaid=0
+!
 !     T1 CHAIN FACTOR and PROBE MODE.
 !
 !     chainf(i) is d(ebar_i)/d(e_i): how much the REGULARISED driving
@@ -952,6 +964,89 @@
         elmat(i)=ielmat(1,i)
       enddo
       matbuilt=1
+      call damnlinheritsay()
+      return
+      end
+!
+!     Record that material imat carries a damage card.  Called from the
+!     reader for every *DAMAGE INITIATION, with or without NONLOCAL=.
+!
+      subroutine damnldamset(imat)
+      use damnlmod
+      implicit none
+      integer imat
+      if((imat.lt.1).or.(imat.gt.64)) return
+      dmatdam(imat)=1
+      return
+      end
+!
+!     Say once when a damage material that gave no NONLOCAL= of its own
+!     is averaged with a length taken from ANOTHER material's card.  That
+!     is what damnlellel does on a card-only deck: the fallback is the
+!     largest configured length, so the answer for such a material
+!     depends on a card it does not own - a hydride without NONLOCAL=
+!     next to a matrix with NONLOCAL=0.3 runs at 0.3 and nothing in its
+!     own definition says so.  The table prints the length each damage
+!     material present in the mesh actually gets, from damnlellel itself
+!     rather than restated here, so the two cannot disagree.
+!
+!     Silent when the environment overrides every card (damnlellsay
+!     already prints that, and then every material gets the same value
+!     by design), for the FROZEN control (it applies no length at all),
+!     and when every damage material named its own length.  Output only:
+!     no length is changed.
+!
+      subroutine damnlinheritsay()
+      use damnlmod
+      implicit none
+      integer i,im,nin,ipres(64)
+      real*8 ell,fm
+      if(inhsaid.ne.0) return
+      inhsaid=1
+      call damnlellinit()
+      if(ncard.le.0) return
+      if(ellover.eq.1) return
+      if(imodenl.eq.2) return
+      if(.not.allocated(elmat)) return
+      do im=1,64
+        ipres(im)=0
+      enddo
+      do i=1,size(elmat)
+        im=elmat(i)
+        if((im.lt.1).or.(im.gt.64)) cycle
+        ipres(im)=i
+      enddo
+      nin=0
+      do im=1,64
+        if(ipres(im).eq.0) cycle
+        if(dmatdam(im).eq.0) cycle
+        if(ellcard(im).le.0.d0) nin=nin+1
+      enddo
+      if(nin.eq.0) return
+      write(*,*) '*WARNING in damnonlocal: ',nin,' damage material(s)',
+     &     ' give no NONLOCAL= on their card and INHERIT the largest'
+      write(*,*) '         internal length configured on another card.'
+      write(*,*) '         Internal length actually applied, per',
+     &     ' damage material:'
+      do im=1,64
+        if(ipres(im).eq.0) cycle
+        if(dmatdam(im).eq.0) cycle
+        call damnlellel(ipres(im),ell)
+!
+!       GRADIENT also multiplies by CCX_DAMAGE_NONLOCAL_ELL_MAT; INTEGRAL
+!       does not read it.  The localizing g(D) is 1 here, before damage.
+!
+        fm=1.d0
+        if((imodenl.eq.1).and.(ellmn.gt.0).and.(im.le.16)) fm=ellmf(im)
+        if(ellcard(im).gt.0.d0) then
+          write(*,'(a,i5,a,e13.6,a)') '          material ',im,
+     &         '  ell=',ell*fm,'  (own card)'
+        else
+          write(*,'(a,i5,a,e13.6,a)') '          material ',im,
+     &         '  ell=',ell*fm,'  (INHERITED)'
+        endif
+      enddo
+      call flush(6)
       return
       end
 !

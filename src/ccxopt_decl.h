@@ -291,6 +291,72 @@ static const ccxopt_decl ccxopt_decl_table[]={
  "roundoff, so the operator error against h is a curve with a minimum; the "
  "shipped value had never been placed on it",NULL},
 
+/* ---- nonlocal damage (nonlingeo.c, damnonlocal.f) ------------------ */
+{"CCX_DAMAGE_NONLOCAL",CCXOPT_REAL,"unset (local, or the card's NONLOCAL=)",
+ 0.,1.e30,NULL,
+ "internal length ell of the nonlocal damage model, in model units: the "
+ "driving variable of D (the plastic strain increment) is averaged and the "
+ "stress update stays local.  Read with atof; negative is clamped to 0 and "
+ "0 means unset.  It is a GLOBAL OVERRIDE: when a material card also gives "
+ "NONLOCAL=, this value wins for every material and the run prints "
+ "'CCX_DAMAGE_NONLOCAL OVERRIDES' with card and applied values.  Without it "
+ "the card's NONLOCAL= sets ell per material, and a damage material whose "
+ "card names none inherits the largest ell of any card (warned once).  "
+ "The averaging is staggered: refreshed at the predictor and the commit, "
+ "not inside Newton, unless CCX_DAMAGE_NONLOCAL_INNER=1",NULL},
+
+{"CCX_DAMAGE_NONLOCAL_MODE",CCXOPT_ENUM,"INTEGRAL",CCXOPT_UNBOUNDED,
+ "INTEGRAL|GRADIENT|FROZEN|integral|gradient|frozen",
+ "backend of the average; anything else stops the run.  INTEGRAL: Gaussian weight exp(-(d/ell)^2) over a neighbour list "
+ "of radius 2*ell built once on reference coordinates, O(N*(2ell/h)^3) "
+ "memory.  GRADIENT: solves ebar - div(ell^2 grad ebar) = e by lumped-mass "
+ "Jacobi-CG, every volume family, no neighbour list.  FROZEN: a CONTROL, "
+ "not a regulariser - the same staggered update with NO averaging and ell "
+ "not applied, so a local-vs-nonlocal comparison can separate the length "
+ "from the integration scheme.  Inert unless an ell is set",NULL},
+
+{"CCX_DAMAGE_NONLOCAL_ELL_MAT",CCXOPT_STRING,"unset (1 for every material)",
+ CCXOPT_UNBOUNDED,NULL,
+ "comma-separated multipliers of ell per material INDEX in deck order, at "
+ "most 16 read, negatives clamped to 0; \"1.0,0.2\" gives material 2 one "
+ "fifth of the length.  Read ONLY by the GRADIENT backend (ell2 scaled by "
+ "the square); INTEGRAL and FROZEN ignore it.  A malformed entry ends the "
+ "list silently at that point",NULL},
+
+{"CCX_DAMAGE_NONLOCAL_DTSCALE",CCXOPT_ENUM,"1 (on)",CCXOPT_UNBOUNDED,"0|1",
+ "the lagged averaged increment is handed to the damage law as a RATE "
+ "times the current step, val*dtcur/dtref, so a cutback does not apply a "
+ "full previous step's damage increment to a step up to 1000 times "
+ "smaller.  Only a value starting with '0' turns it off.  Measured on the "
+ "mkcross notched bar, INTEGRAL ell=0.375: unscaled stops at t=0.3675 "
+ "(rc=201), scaled runs to rupture",NULL},
+
+{"CCX_DAMAGE_NONLOCAL_INNER",CCXOPT_ENUM,"unset (off)",CCXOPT_UNBOUNDED,
+ "0|1",
+ "refresh the averaged driving variable once per Newton iteration (from "
+ "results.c) instead of once per increment, making the coupling "
+ "Gauss-Seidel.  Only a value starting with '1' arms it.  It ARMS "
+ "CCX_DAMAGE_NONLOCAL_CHAIN too unless CHAIN is set explicitly.  Measured: "
+ "rescues the bar arms, not the hexahedral gate decks, at +30 percent "
+ "iterations on that deck",NULL},
+
+{"CCX_DAMAGE_NONLOCAL_CHAIN",CCXOPT_ENUM,"unset (off; on with INNER=1)",
+ CCXOPT_UNBOUNDED,"0|1",
+ "chain factor d(ebar_i)/d(e_i) in the consistent tangent, turning the "
+ "local dD/d(eps) into the diagonal of the nonlocal one.  Any value counts "
+ "as explicit (overriding INNER's default); on only if it starts with '1'.  "
+ "Applied by the INTEGRAL backend only - GRADIENT and FROZEN report it "
+ "unavailable.  Off by default because with the staggered scheme the exact "
+ "Jacobian has a zero on this path; alone it measured +0.17 percent "
+ "iterations",NULL},
+
+{"CCX_DAMAGE_NONLOCAL_LOCALIZING",CCXOPT_STRING,"unset (off)",
+ CCXOPT_UNBOUNDED,NULL,
+ "localizing gradient damage, \"n,R\" or \"n\": ell2 is multiplied by "
+ "g(D)=(1-R)*(1-D)^n+R so the interaction radius collapses inside the band.  "
+ "Any non-blank value arms it with n=2, R=1e-2 unless given; n<0 resets to "
+ "2, R clamped to [1e-6,1].  Read ONLY by the GRADIENT backend",NULL},
+
 /* ---- the constitutive law ----------------------------------------- */
 {"CCX_UC6_CONTACT_SMOOTH",CCXOPT_REAL,"unset (sharp law)",CCXOPT_UNBOUNDED,NULL,
  "penetration band over which the crack-face closure kink is blended.  The "
