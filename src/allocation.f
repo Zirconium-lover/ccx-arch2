@@ -538,6 +538,17 @@
           elseif(textpart(i)(1:10).eq.'EVOLUTION=') then
             if(textpart(i)(11:22).eq.'DISPLACEMENT') then
               idamageevol=1
+!
+!           ENERGY carries G_f as its fourth constant exactly where
+!           DISPLACEMENT carries u_f, and damageinitiations.f reads it
+!           there.  Sizing it as a three-constant card wrote G_f one
+!           slot past dmcon - into the next material's temperature
+!           slot, or past the array for the last one.  Found by ASan
+!           (heap-buffer-overflow, damageinitiations.f) on the
+!           energy-equivalence decks.
+!
+            elseif(textpart(i)(11:16).eq.'ENERGY') then
+              idamageevol=2
             endif
           elseif(textpart(i)(1:8).eq.'NPOINTS=') then
             read(textpart(i)(9:18),'(i10)',iostat=istat)
@@ -547,7 +558,7 @@
         enddo
 !
         if(idamagetype.eq.1) then
-          if(idamageevol.eq.1) then
+          if(idamageevol.ge.1) then
             nconstants=4
             ndmat_=max(4,ndmat_)
           else
