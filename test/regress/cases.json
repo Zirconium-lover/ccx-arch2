@@ -256,6 +256,26 @@
    }
   },
   {
+   "name": "fast-wrapped-damping",
+   "what": "the nodal dashpot of the Fn-series recipe, CCX_DAMAGE_VISCOUS_DAMPING=2e-4, which no case ran although every run of that series depends on it. What is pinned is its energy AUDIT, under MALLOC_PERTURB_=165 so that a read of freed memory cannot pass by luck. The audit used to read fn at the top of an increment, after stock CalculiX had freed it at the end of the last Newton iteration: on this deck it printed work sum(fn.du) 3.843796e+01 without the perturbation and about -7.32e-125 with it (the exact value moves with the heap) - the fill byte 0xA5 read as a double - while m.sta, m.damage and m.cvg stayed byte-identical, because the audit feeds nothing back. On the fn100 deck with the gradient backend armed the freed block was unmapped and the run died with SIGSEGV after its first deletion batch. With the kept copy the audit prints 4.255799e+01 with and without the perturbation, and the solution is the one it was before the fix, file for file. RED PATH, run: the binary before the fix prints -7.321299e-125 here and fails the log_has line. The damping itself moves only the trajectory: the same 64 deletions in the same order as fast-wrapped, the last one at increment 93 theta 0.1600 instead of 95 theta 0.1588, and the step ends at increment 525 instead of 533.",
+   "kind": "fast",
+   "variant": "wrapped",
+   "env": [
+    "CCX_DAMAGE_VISCOUS_DAMPING=2e-4",
+    "MALLOC_PERTURB_=165"
+   ],
+   "expect": {
+    "rc": 0,
+    "last_inc": 525,
+    "theta": "0.100000E+01",
+    "deletions": 64,
+    "log_has": [
+     "[DAMAGE VISCOUS DAMPING] step total: dissipated 2.613800e-03, work sum(fn.du) 4.255799e+01 (fraction 6.142e-05)"
+    ]
+   },
+   "same_deletion_set_as": "fast-wrapped"
+  },
+  {
    "name": "fast-wrapped-noglob",
    "what": "the walling deck with the same four mechanisms off. MEASURED: it still walls - and it walls 0.5 percent LATER in load factor, 0.159572 against 0.158766, with 568 Newton iterations against 606 and one FEWER element deleted (63 against 64). The apparatus built one mechanism per wall does not move this wall in the direction it was built for. Pinned at the wall, which is the physically meaningful event here, not at whichever increment the solver gave up on. ENDING RECLASSIFIED 25.09 by Agent 1: rc 201 -> 0, and nothing else moved - m.sta and m.damage are byte-identical to the run before the change. The run still stops where it stopped; what changed is what the stop is called. At this point every one of the 54 cohesive facets is dead by its own law, the bulk elements the law broke are already deleted, and [FRACTURE SEPARATION] finds the grips joined by nothing the damage law has left unbroken; the end force is 1.5 per cent of peak (0.84 against 54.7). When every rescue level has then failed, checkconvergence ends the step as a completed fracture on the last committed state instead of the stock error stop. That the state carries a little load is the numerical floor, not material: fast-wrapped-gmin, whose facets keep more residual stiffness, passes through the same separated state and carries up to 10 per cent of peak through dead facets to theta=1. log_has pins the REASON, because rc=0 alone is also what a run that never fractured returns.",
    "kind": "fast",

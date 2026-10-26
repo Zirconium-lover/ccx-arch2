@@ -226,6 +226,26 @@ ITG ccx_fracture_sep=0,ccx_fracture_end=0;
 double ccx_visc_c=0.,*ccx_visc_m=NULL,ccx_visc_dtlast=0.;
 static double ccx_visc_ediss=0.,ccx_visc_wext=0.,ccx_visc_ratio_rep=0.;
 
+/* The dashpot audit at the top of an increment needs the internal force of
+   the state just committed, and fn is not alive there: stock CalculiX frees
+   it at the end of every Newton iteration.  The audit used to read the
+   freed array.  It did not change the solution, but what it printed was
+   whatever the allocator left behind - with MALLOC_PERTURB_=165 the work
+   reads -7.3e-125 on fast-wrapped - and on the fn100 deck with the
+   gradient backend armed the freed block was unmapped and the run died
+   with SIGSEGV after the first deletion batch.  Every release of fn in
+   nonlingeo therefore keeps a copy first; the copy exists only while the
+   dashpot is armed, so every other run frees fn exactly as before. */
+static double *ccx_visc_fnkeep=NULL;
+static ITG ccx_visc_fnkeep_n=0;
+#define VISC_FN_RELEASE() do{                                   \
+    if(ccx_visc_fnkeep!=NULL){                                    \
+      memcpy(ccx_visc_fnkeep,fn,sizeof(double)*                   \
+             ((mt**nk<ccx_visc_fnkeep_n)?mt**nk:ccx_visc_fnkeep_n)); \
+    }                                                             \
+    SFREE(fn);                                                    \
+  }while(0)
+
 /* CCX_DAMAGE_GRADUAL_DELETE=N: gradual release of the forces of a deleted
    batch (Liu & Liu 2018, the element-deletion "force release" of node-release
    crack growth).  An instant deletion hands the whole force the batch carried
@@ -4781,6 +4801,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
            a node held by nothing but softening facets lacks. */
         const char *vde=ccxopt_getenv("CCX_DAMAGE_VISCOUS_DAMPING");
         if(ccx_visc_m!=NULL){SFREE(ccx_visc_m);ccx_visc_m=NULL;}
+        if(ccx_visc_fnkeep!=NULL){SFREE(ccx_visc_fnkeep);ccx_visc_fnkeep=NULL;}
+        ccx_visc_fnkeep_n=0;
         ccx_visc_c=0.;ccx_visc_ediss=0.;ccx_visc_wext=0.;
         ccx_visc_ratio_rep=0.;ccx_visc_dtlast=0.;
         if(vde!=NULL) ccx_visc_c=atof(vde);
@@ -4788,6 +4810,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           ITG vi,vj,nv=0;
           double vtot=0.;
           NNEW(ccx_visc_m,double,*nk);
+          NNEW(ccx_visc_fnkeep,double,mt**nk);
+          ccx_visc_fnkeep_n=mt**nk;
           for(vi=0;vi<*ne;vi++){
             if(ipkon[vi]<0) continue;
             if(strcmp1(&lakon[8*vi],"C3D4")!=0) continue;
@@ -5678,7 +5702,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	    islavquadel,aut,irowt,jqt,&mortartrafoflag,
 	    &intscheme,physcon,dam,damn,iponoel);
       
-    SFREE(fn);SFREE(stx);if(ne1d2d==1)SFREE(inum);
+    VISC_FN_RELEASE();SFREE(stx);if(ne1d2d==1)SFREE(inum);
       
     if(*mortar<2){
       iout=0;
@@ -6125,7 +6149,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	cpypardou(sti,stx,&isiz,&num_cpus);
       }
 
-      SFREE(v);SFREE(stx);SFREE(fn);
+      SFREE(v);SFREE(stx);VISC_FN_RELEASE();
     }
     SFREE(ad);SFREE(au);
       
@@ -6728,17 +6752,18 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
          c*m*|du|^2/dt against the work sum(fn.du) over all dofs (the
          reactions carry it), so a run states how much of its answer the
          damping is */
-      if((ccx_visc_m!=NULL)&&(ccx_visc_dtlast>0.)&&(fn!=NULL)){
+      if((ccx_visc_m!=NULL)&&(ccx_visc_dtlast>0.)&&(ccx_visc_fnkeep!=NULL)){
         ITG vi,vj;
+        const double *fnc=ccx_visc_fnkeep;
         double de=0.,dw=0.,du;
-        for(vi=0;vi<*nk;vi++){
+        for(vi=0;(vi<*nk)&&(mt*vi+3<ccx_visc_fnkeep_n);vi++){
           for(vj=1;vj<4;vj++){
             du=vold[mt*vi+vj]-vini[mt*vi+vj];
             if(!isfinite(du)) continue;
             de+=ccx_visc_m[vi]*du*du;
             /* fn of a node whose every element is deleted is not
                defined (NaN measured on s3regen); it does no work */
-            if(isfinite(fn[mt*vi+vj])) dw+=fn[mt*vi+vj]*du;
+            if(isfinite(fnc[mt*vi+vj])) dw+=fnc[mt*vi+vj]*du;
           }
         }
         de*=ccx_visc_c/ccx_visc_dtlast;
@@ -8305,7 +8330,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     }
 
       
-    SFREE(fn);SFREE(v);
+    VISC_FN_RELEASE();SFREE(v);
     if((*ithermal!=3)||(ncont==0)||(*mortar!=1)||(*ncmat_<11)) SFREE(stx);
       
     /***************************************************************/
@@ -8586,7 +8611,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	    cpypardou(sti,stx,&isiz,&num_cpus);
 	  }
 	      
-	  SFREE(v);SFREE(fn);if(ne1d2d==1)SFREE(inum);
+	  SFREE(v);VISC_FN_RELEASE();if(ne1d2d==1)SFREE(inum);
 	  if((*ithermal!=3)||(ncont==0)||(*mortar!=1)||(*ncmat_<11)) SFREE(stx);
 	  iout=0;
 	}    
@@ -11250,7 +11275,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 
       if((*mortar==1)&&(iit!=1)&&(*ne-ne0>0)&&(*nmethod!=4)){
 
-	SFREE(v);SFREE(stx);SFREE(fn);
+	SFREE(v);SFREE(stx);VISC_FN_RELEASE();
       
 	/* calculating the residual */
       
@@ -11594,7 +11619,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
             isiz=lnst*mi[0]**ne;
             cpypardou(xstate,damage_dl_xs,&isiz,&num_cpus);
           }
-          SFREE(v);SFREE(stx);SFREE(fn);
+          SFREE(v);SFREE(stx);VISC_FN_RELEASE();
           for(ljj=0;ljj<neq[1];ljj++) b[ljj]=le*lp[ljj];
           MNEW(v,double,mt**nk);
           isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);
@@ -11805,7 +11830,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
             isiz=lnst*mi[0]**ne;
             cpypardou(xstate,damage_dl_xs,&isiz,&num_cpus);
           }
-          SFREE(v);SFREE(stx);SFREE(fn);
+          SFREE(v);SFREE(stx);VISC_FN_RELEASE();
           for(ljj=0;ljj<neq[1];ljj++) b[ljj]=le*lp[ljj];
           MNEW(v,double,mt**nk);
           isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);
@@ -11915,7 +11940,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           }
           for(ctj=0;ctj<*nboun;ctj++)
             xbounact[ctj]=xbounold[ctj]+(xboun[ctj]-xbounold[ctj])*ctlam;
-          SFREE(v);SFREE(stx);SFREE(fn);
+          SFREE(v);SFREE(stx);VISC_FN_RELEASE();
           MNEW(v,double,mt**nk);
           isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);
           NNEW(stx,double,6*mi[0]**ne);
@@ -11983,7 +12008,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           }
           for(ctj=0;ctj<*nboun;ctj++)
             xbounact[ctj]=xbounold[ctj]+(xboun[ctj]-xbounold[ctj])*ctlam;
-          SFREE(v);SFREE(stx);SFREE(fn);
+          SFREE(v);SFREE(stx);VISC_FN_RELEASE();
           MNEW(v,double,mt**nk);
           isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);
           NNEW(stx,double,6*mi[0]**ne);
@@ -12175,7 +12200,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           }
           for(ctj=0;ctj<*nboun;ctj++)
             xbounact[ctj]=xbounold[ctj]+(xboun[ctj]-xbounold[ctj])*ctlam;
-          SFREE(v);SFREE(stx);SFREE(fn);
+          SFREE(v);SFREE(stx);VISC_FN_RELEASE();
           MNEW(v,double,mt**nk);
           isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);
           NNEW(stx,double,6*mi[0]**ne);
@@ -12233,7 +12258,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           }
           for(ctj=0;ctj<*nboun;ctj++)
             xbounact[ctj]=xbounold[ctj]+(xboun[ctj]-xbounold[ctj])*ctlam;
-          SFREE(v);SFREE(stx);SFREE(fn);
+          SFREE(v);SFREE(stx);VISC_FN_RELEASE();
           MNEW(v,double,mt**nk);
           isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);
           NNEW(stx,double,6*mi[0]**ne);
@@ -12424,7 +12449,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
             isiz=tnst*mi[0]**ne;
             cpypardou(xstate,damage_dl_xs,&isiz,&num_cpus);
           }
-          SFREE(v);SFREE(stx);SFREE(fn);
+          SFREE(v);SFREE(stx);VISC_FN_RELEASE();
           for(tjj=0;tjj<neq[1];tjj++)
             b[tjj]=tpa*damage_dl_d[tjj]+tpb*damage_dl_pn[tjj];
           MNEW(v,double,mt**nk);
@@ -12531,7 +12556,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
             isiz=tnst*mi[0]**ne;
             cpypardou(xstate,damage_dl_xs,&isiz,&num_cpus);
           }
-          SFREE(v);SFREE(stx);SFREE(fn);
+          SFREE(v);SFREE(stx);VISC_FN_RELEASE();
           for(tjj=0;tjj<neq[1];tjj++)
             b[tjj]=tpa*damage_dl_d[tjj]+tpb*damage_dl_pn[tjj];
           MNEW(v,double,mt**nk);
@@ -12710,7 +12735,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
             ITG lpi;
             double lpr,lp0=-1.;
             for(lpi=0;lpi<9;lpi++){
-              SFREE(v);SFREE(stx);SFREE(fn);
+              SFREE(v);SFREE(stx);VISC_FN_RELEASE();
               for(i=0;i<neq[1];i++)
                 b[i]=lsp[lpi]*damage_linesearch_step[i];
               MNEW(v,double,mt**nk);
@@ -12766,7 +12791,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           for(damage_linesearch_trial=1;
               damage_linesearch_trial<=damage_ls_trials;
               damage_linesearch_trial++){
-            SFREE(v);SFREE(stx);SFREE(fn);
+            SFREE(v);SFREE(stx);VISC_FN_RELEASE();
             for(i=0;i<neq[1];i++)
               b[i]=flinesearch*damage_linesearch_step[i];
 
@@ -12850,7 +12875,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
           if((damage_linesearch_contracted==0)&&
              (fabs(lsladder_final(&damage_lsl)-flinesearch)>1.e-12)){
             flinesearch=lsladder_final(&damage_lsl);
-            SFREE(v);SFREE(stx);SFREE(fn);
+            SFREE(v);SFREE(stx);VISC_FN_RELEASE();
             for(i=0;i<neq[1];i++)
               b[i]=flinesearch*damage_linesearch_step[i];
             MNEW(v,double,mt**nk);
@@ -12938,7 +12963,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         rnpt=2;                       /* alpha=0 and alpha=1 only, at first */
         for(rii=0;rii<rnpt;rii++){
           ra=rayA[rii];
-          SFREE(v);SFREE(stx);SFREE(fn);
+          SFREE(v);SFREE(stx);VISC_FN_RELEASE();
           for(rjj=0;rjj<neq[1];rjj++) b[rjj]=ra*damage_ray_p[rjj];
           MNEW(v,double,mt**nk);
           isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);
@@ -13055,7 +13080,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
             if(r0n2<=0.) r0n2=1.e-300;
             if(r0ni<=0.) r0ni=1.e-300;
             for(dii=2;dii<14;dii++){
-              SFREE(v);SFREE(stx);SFREE(fn);
+              SFREE(v);SFREE(stx);VISC_FN_RELEASE();
               for(djj=0;djj<neq[1];djj++)
                 b[djj]=rayA[dii]*damage_ray_p[djj];
               MNEW(v,double,mt**nk);
@@ -13197,7 +13222,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
             isiz=bnst*mi[0]**ne;
             cpypardou(xstate,damage_bt_xs,&isiz,&num_cpus);
           }
-          SFREE(v);SFREE(stx);SFREE(fn);
+          SFREE(v);SFREE(stx);VISC_FN_RELEASE();
           for(bjj=0;bjj<neq[1];bjj++) b[bjj]=ba*damage_ray_p[bjj];
           MNEW(v,double,mt**nk);
           isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);
@@ -13325,7 +13350,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         if((bnst>0)&&(damage_bt_xs!=NULL)){
           isiz=bnst*mi[0]**ne;cpypardou(xstate,damage_bt_xs,&isiz,&num_cpus);
         }
-        SFREE(v);SFREE(stx);SFREE(fn);
+        SFREE(v);SFREE(stx);VISC_FN_RELEASE();
         for(bjj=0;bjj<neq[1];bjj++) b[bjj]=ba*damage_ray_p[bjj];
         MNEW(v,double,mt**nk);
         isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);
@@ -13405,7 +13430,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 
         for(apass=0;apass<3;apass++){
           aal=(apass==1)?(1.-damage_aba_a):damage_aba_a;
-          SFREE(v);SFREE(stx);SFREE(fn);
+          SFREE(v);SFREE(stx);VISC_FN_RELEASE();
           for(i=0;i<neq[1];i++) b[i]=aal*damage_ray_p[i];
           MNEW(v,double,mt**nk);
           isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);
@@ -13490,7 +13515,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         damage_aba_done=1;
 
         /* leave the full step, exactly as the unprobed code would have */
-        SFREE(v);SFREE(stx);SFREE(fn);
+        SFREE(v);SFREE(stx);VISC_FN_RELEASE();
         isiz=neq[1];cpypardou(b,damage_ray_p,&isiz,&num_cpus);
         MNEW(v,double,mt**nk);
         isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);
@@ -13575,7 +13600,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
 	}else{pressureratio=0.;}
       }
 
-      SFREE(v);SFREE(stx);SFREE(fn);
+      SFREE(v);SFREE(stx);VISC_FN_RELEASE();
       
       if((idamping==1)&&(*iexpl<=1)){SFREE(adc);SFREE(auc);}
 
@@ -16900,7 +16925,7 @@ damage_controller_done:
 	   ((strcmp1(&filab[1044],"ERR")==0)&&(*ithermal!=2))) SFREE(errn);
       }
       
-      SFREE(v);SFREE(fn);SFREE(stn);SFREE(inum);SFREE(stx);
+      SFREE(v);VISC_FN_RELEASE();SFREE(stn);SFREE(inum);SFREE(stx);
       if(*ithermal>1){SFREE(qfn);}
       
       if(strcmp1(&filab[261],"E   ")==0) SFREE(een);
@@ -17043,7 +17068,7 @@ damage_controller_done:
 	 ((strcmp1(&filab[1044],"ERR")==0)&&(*ithermal!=2))) SFREE(errn);
     }
 
-    SFREE(v);SFREE(fn);SFREE(stn);SFREE(inum);SFREE(stx);
+    SFREE(v);VISC_FN_RELEASE();SFREE(stn);SFREE(inum);SFREE(stx);
     if(*ithermal>1){SFREE(qfn);}
     
     if(strcmp1(&filab[261],"E   ")==0) SFREE(een);
@@ -17280,6 +17305,8 @@ damage_controller_done:
     fflush(stdout);
     SFREE(ccx_visc_m);ccx_visc_m=NULL;
   }
+  if(ccx_visc_fnkeep!=NULL){SFREE(ccx_visc_fnkeep);ccx_visc_fnkeep=NULL;}
+  ccx_visc_fnkeep_n=0;
   SFREE(aux);SFREE(iaux);SFREE(vini);
 
   if((*ndmat_>0)&&(*iexpl<=1)){

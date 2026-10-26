@@ -86,6 +86,9 @@ def check_switches(log,want):
          re.finditer(r'^\[SWITCHES\]   (CCX_[A-Z0-9_]+) = (.*?)(?:   \[|$)',txt,re.M)}
     for kv in want:
         k,_,v=kv.partition('=')
+        # the banner lists CCX_* names only; anything else a case sets
+        # (MALLOC_PERTURB_ for glibc) is the runtime's, not the binary's
+        if not k.startswith('CCX_'): continue
         if v=='':
             if k in got:
                 bad.append("%s was asked to be UNSET and the run has it = %s"
