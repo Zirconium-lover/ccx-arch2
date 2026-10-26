@@ -198,6 +198,7 @@
 !     driven from the environment is not broken by this.
 !
       if(ellcard.gt.0.d0) call damnlellsetmat(nmat,ellcard)
+      call damnldamset(nmat)
 !
       do
         do j=1,(nconstants-1)/8+1
