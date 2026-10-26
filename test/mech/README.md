@@ -20,3 +20,4 @@ docstring records its red path: what was run and which checks went red.
 |---|---|---|
 | `nl_objectivity` | nonlocal GRADIENT/INTEGRAL: W and band width converge in h at fixed ell; ell->0 is the unaveraged scheme; h > ell (XFAIL) | convergence between meshes; local model as red path |
 | `lag_order` | lagged nonlocal scheme: FROZEN -> implicit LOCAL as dt -> 0, order; INNER=1 | self-convergence against the implicit solution |
+| `uc6_law` | UC6 facet driven through the solver: T(d) modes I/II/45 deg, work = Gc, secant unloading, compression Kn, shear under compression, gmin residual, Duvaut-Lions viscosity; rigid rotation (XFAIL) | closed-form bilinear law, Duvaut-Lions ODE |
