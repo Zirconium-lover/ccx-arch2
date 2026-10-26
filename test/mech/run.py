@@ -64,7 +64,8 @@ def main():
             checks = m.run(os.path.join(work, n), exe)
             err = None
         except Exception as e:  # a crashed test is a failed test, not a skipped one
-            checks, err = [], "%s: %s" % (type(e).__name__, e)
+            import traceback
+            checks, err = [], "%s: %s\n%s" % (type(e).__name__, e, traceback.format_exc())
         dt = time.time() - t0
         for c in checks:
             print(c.line())
