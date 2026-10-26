@@ -2866,7 +2866,14 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
   /* [GLOBALIZE] the census of which globalization mechanism ever changes
      anything.  Counts and reports, decides
      nothing, changes no arithmetic. */
-  glob_census damage_glob;
+  /* static, not automatic: glob_census_arm hands its address to an atexit
+     reporter, which runs after nonlingeo has returned.  As a local it was
+     read from a dead stack frame - ASan: stack-use-after-return in
+     glob_census_report - whenever the run ended without the in-function
+     report (no *DAMAGE card, ndmat_=0), and the census printed whatever
+     the stack held: mixed-analytic-smooth showed a trust-region attempt
+     that never happened, and a different one under MALLOC_PERTURB_. */
+  static glob_census damage_glob;
   double damage_nl_ell=0.;
   ITG damage_nl_mode=0;
   double damage_qam_floor=0.;
