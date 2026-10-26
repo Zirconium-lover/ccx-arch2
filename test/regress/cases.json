@@ -611,6 +611,23 @@
      "joined only by material the damage law has broken"
     ]
    }
+  },
+  {
+   "name": "mech",
+   "what": "the mechanics tests of test/mech/ - every mechanism against its own reference (closed form, literature, or self-convergence) with a stated tolerance: nonlocal objectivity in h, the lag of the staggered scheme against the implicit solution, the UC6 law through the solver, the bulk law on one element, the nodal dashpot, and the nonlocal model against the exact 1-D bar of the library (where it fails, as XFAIL with the mechanism). run.py exits with the number of failed tests, so rc=0 is the whole expectation and its table is the log; XFAILs are known defects that must keep failing as documented (an XPASS is a failure, so a fix forces the test to be revisited). output_invariance is LEFT OUT on purpose: it is the developer's acceptance test for the output pass rewriting the committed damage, red until that fix, and goes into 'tests' with it. RED PATH, run: MECH_RED_ENV=CCX_DAMAGE_NLWIDTH=0 in the environment turns nl_objectivity red and this case with it (rc=1).",
+   "kind": "mech",
+   "tests": [
+    "bulk_law",
+    "damper",
+    "lag_order",
+    "nl_benchmark",
+    "nl_objectivity",
+    "uc6_law"
+   ],
+   "env": [],
+   "expect": {
+    "rc": 0
+   }
   }
  ],
  "selftests_required": [
