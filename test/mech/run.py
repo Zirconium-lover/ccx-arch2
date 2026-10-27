@@ -50,6 +50,8 @@ def main():
             m = load(n)
             print("%-22s %s%s" % (n, "[LONG] " if getattr(m, "LONG", False) else "", m.WHAT))
         return 0
+    if a.long:
+        os.environ["MECH_LONG"] = "1"   # tests read it to add their LONG-only arms
     exe = os.environ.get("CCX_EXE", os.path.join(mechlib.ROOT, "src", "ccx_2.23_pardiso"))
     if not os.access(exe, os.X_OK):
         print("no solver at %s: set CCX_EXE" % exe)

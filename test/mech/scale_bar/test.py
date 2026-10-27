@@ -50,6 +50,7 @@ import bar1d  # noqa: E402
 
 WHAT = "fracturing C3D4 bar x1 vs x1/25: identical when G_f ~ D; size effect recorded when physics kept"
 SOURCE = "library notes/scaling-levers.md sec. 1, 3, 5 (size effect is physics; numerical groups rescaled)"
+LONG = True   # pins model properties, not a piece of work in progress: out of the gate
 
 K, SY, ELL = 25.0, 100.0, 0.53
 

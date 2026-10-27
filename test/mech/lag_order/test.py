@@ -88,18 +88,22 @@ def run(work, exe):
                     why="measured 0.60: the lag adds less than the step already costs LOCAL"))
     # scheme A: no corrector at commit, the purely lagged scheme
     a_env = {"CCX_DAMAGE_COMMIT_CORRECT": "0"}
+    if os.environ.get("MECH_LONG") != "1":
+        ck.append(Check("scheme A arms (run.py --long)", "skipped", None, cmp="info"))
+        a_env = None
     # against LOCAL of scheme B: the implicit local model has no lagged driver,
     # and A and B differ there by 1e-4 of W at most (15.8479/15.9918/16.0809
     # against 15.8483/15.9902/16.0808), so its arms are not run twice
     # two steps, not three: the finest A arm cost 6 s and put the test over
     # its 60 s budget under the gate's -j 4; the order needs two points
-    frz_a = [arm(work, "FROZEN", d, exe, a_env, "_A") for d in DTS[:2]]
-    diff_a = [f["wtot"] - l["wtot"] for f, l in zip(frz_a, loc)]
-    for d, x, l in zip(DTS, diff_a, loc):
-        ck.append(Check("scheme A (COMMIT_CORRECT=0) dtmax=%g FROZEN-LOCAL W rel." % d, x / l["wtot"], None,
-                        cmp="info"))
-    ck.append(Check("scheme A: observed order of the lag error",
-                    math.log(abs(diff_a[0]) / max(abs(diff_a[-1]), 1e-30), 2), None, cmp="info"))
+    if a_env:
+        frz_a = [arm(work, "FROZEN", d, exe, a_env, "_A") for d in DTS[:2]]
+        diff_a = [f["wtot"] - l["wtot"] for f, l in zip(frz_a, loc)]
+        for d, x, l in zip(DTS, diff_a, loc):
+            ck.append(Check("scheme A (COMMIT_CORRECT=0) dtmax=%g FROZEN-LOCAL W rel." % d, x / l["wtot"], None,
+                            cmp="info"))
+        ck.append(Check("scheme A: observed order of the lag error",
+                        math.log(abs(diff_a[0]) / max(abs(diff_a[-1]), 1e-30), 2), None, cmp="info"))
     inner = cross_bar(os.path.join(work, "FROZEN_INNER"), 24, 0.01, "FROZEN",
                       env=dict(B, CCX_DAMAGE_NONLOCAL_INNER="1"), exe=exe,
                       gen=("--dt0", "0.00125", "--dtmax", "0.0025"))

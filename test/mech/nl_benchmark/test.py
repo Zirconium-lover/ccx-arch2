@@ -54,6 +54,7 @@ import bar1d  # noqa: E402
 
 WHAT = "nonlocal model vs exact 1-D bar B1 (librarian): W/G_f and where the plastic work goes"
 SOURCE = "library notes/nonlocal-benchmarks.md sec. 1 (Bazant & Jirasek 2002 eqs. 61-63)"
+LONG = True   # pins the 3-D anatomy (a model property); neck_dissipation keeps it in the gate on C3D4
 
 NX, ELL, GF, UEND = 80, 0.5, 5.0, 0.15
 REF = {"INTEGRAL": 1.768 / 1.764 * 1.0057, "GRADIENT": 2.266 / 2.0 * 1.0050}
