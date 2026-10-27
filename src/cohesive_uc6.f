@@ -38,7 +38,13 @@
       real*8 edge1(3),edge2(3),crossv(3),jump(3),qvec(3),grad(3)
       real*8 area,norm1,normc,kn,tn0,ts0,gc,gmin,mu,beta
       real*8 d0,df,deff,dmax,dmax0,dback,dvisc,dvisc0,alpha,g
-      real*8 ddback,ddvisc,tol,initialgap,scale
+      real*8 ddback,ddvisc,tol,initialgap,scale,gfl
+!
+!     B-K mixed mode (Turon et al. 2006, with the stiffness condition of
+!     Turon et al. 2010): active when the section has 8 constants.
+!
+      integer ncon,ibk
+      real*8 giic,etabk,bmix,lam0,xmb,hcur,hmax0,hmax,s2
 !
 !     CCX_UC6_CONTACT_SMOOTH.  The normal law is continuous at
 !     deltal(1)=0 but its SLOPE jumps from g*kn to kn there, a factor of
@@ -53,6 +59,32 @@
       real*8 zsmooth,wsm,upen,psism,dpsism,ctan11
       character*256 csm
       save zsmooth
+!
+!     CCX_UC6_FAILED_OPEN.  A facet whose degradation has reached the
+!     floor (1-dvisc <= gmin) still carries gmin*Kn*delta in tension and
+!     shear, a force that GROWS with the opening.  Over a large opening
+!     that is real extra work, W/Gc of order gmin*delta^2/(delta_0*
+!     delta_f) (library note notes/cohesive-uc6.md: +2.4 Gc at ten times
+!     delta_f for Kn=1e5, Tn0=50, Gc=0.3, gmin=1e-3), and it is what let
+!     fast-wrapped run on to theta=1 on the stretch of dead facets.  1
+!     removes the floor: g = max(0,1-dvisc), so tension and shear
+!     traction and tangent fall continuously to zero at delta_f and the
+!     facet does exactly Gc; compression keeps the full-Kn contact.  0
+!     (default) is the law as it was, bit for bit.
+!
+!     CONTINUOUS, AND THAT WAS MEASURED, NOT ASSUMED.  Two switched
+!     versions came first.  Zeroing the traction at the floor but keeping
+!     gmin*Kn in the tangent walled fast-wrapped at peak (theta 0.1075,
+!     rc=201): the operator kept a stiffness the residual no longer had.
+!     Zeroing both at the floor ran fast-wrapped to fracture, but walled
+!     the notched plate of test/mech/size_effect before its peak (theta
+!     0.302, gmin=1e-3): at the floor the traction jumps by gmin*Kn*delta,
+!     about 1 per cent of Tn0, on many facets at once.  At gmin=1e-6 that
+!     jump vanishes and the plate is the same with the switch as
+!     without, which is what pointed at the jump.
+!
+      integer ifopen
+      save ifopen
 !
 !     Diagnostic-only local rescue.  Acts on an explicit list of
 !     element numbers and on nothing else: no material card, no
@@ -84,6 +116,24 @@
       gc=prop(indexp+4)
       gmin=prop(indexp+5)
       mu=prop(indexp+6)
+!
+!     Constants 7 and 8, G_IIc and eta, select the B-K law.  A section
+!     with the six constants takes the original law below, statement for
+!     statement, so every 6-constant deck is bit for bit as before.
+!
+      call uc6nconget(indexp,ncon)
+      ibk=0
+      if(ncon.ge.8) then
+         giic=prop(indexp+7)
+         etabk=prop(indexp+8)
+         if((giic.le.0.d0).or.(etabk.le.0.d0)) then
+            write(*,*) '*ERROR in cohesive_uc6: B-K needs G_IIc > 0'
+            write(*,*) '       and eta > 0 (constants 7 and 8),'
+            write(*,*) '       element ',nelem
+            call exit(201)
+         endif
+         ibk=1
+      endif
 !
       if((kn.le.0.d0).or.(tn0.le.0.d0).or.(ts0.le.0.d0).or.
      &     (gc.le.0.d0).or.(gmin.lt.0.d0).or.(gmin.ge.1.d0).or.
@@ -176,6 +226,7 @@
 !     A potential-based mixed-mode metric.  beta gives the requested
 !     pure-shear strength while preserving a symmetric material tangent.
 !
+      if(ibk.eq.0) then
       beta=(ts0/tn0)**2
       deff=dsqrt(max(deltal(1),0.d0)**2+
      &     beta*(deltal(2)**2+deltal(3)**2))
@@ -188,6 +239,50 @@
          dback=1.d0
       else
          dback=df*(dmax-d0)/(dmax*(df-d0))
+      endif
+      else
+!
+!     B-K, as in the library note notes/cohesive-uc6.md (section 4) and
+!     its reference notes/scripts/cohesive_ref.py, class BK:
+!
+!       kappa = Ks/Kn = (G_Ic/G_IIc)(Ts0/Tn0)^2      (Turon 2010: keeps the
+!                                  pure-mode strengths AND toughnesses)
+!       lambda = sqrt(<dn>^2 + kappa s^2),  B = kappa s^2 / lambda^2
+!       lambda_0(B) = (Tn0/Kn) sqrt(1 + (G_IIc/G_Ic - 1) B^eta)
+!       m = lambda_f/lambda_0 = 2 G_Ic Kn/Tn0^2 = df/d0, independent of B
+!       h = max over the history of lambda/lambda_0(B)
+!       D = m (h-1) / (h (m-1))
+!
+!     The history is the ratio h, not lambda, so D cannot fall when the
+!     mode changes (Turon 2006 keep r = max lambda and evaluate the
+!     thresholds at the current B, which lets D decrease).  State 1
+!     stores h*d0: with G_IIc = G_Ic, lambda_0 = d0 and h*d0 = deff, so
+!     the variable keeps its meaning, and the law reduces to the one
+!     above to rounding.  beta carries kappa from here on, so the
+!     traction and tangent below are shared with the original law.
+!
+      beta=(gc/giic)*(ts0/tn0)**2
+      s2=deltal(2)**2+deltal(3)**2
+      deff=dsqrt(max(deltal(1),0.d0)**2+beta*s2)
+      if(deff.gt.1.d-300) then
+         bmix=beta*s2/deff**2
+      else
+         bmix=0.d0
+      endif
+      lam0=d0*dsqrt(1.d0+(giic/gc-1.d0)*bmix**etabk)
+      xmb=df/d0
+      hcur=deff/lam0
+      dmax0=max(0.d0,xstateini(1,mint,nelem))
+      hmax0=dmax0/d0
+      hmax=max(hmax0,hcur)
+      dmax=hmax*d0
+      if(hmax.le.1.d0) then
+         dback=0.d0
+      elseif(hmax.ge.xmb) then
+         dback=1.d0
+      else
+         dback=xmb*(hmax-1.d0)/(hmax*(xmb-1.d0))
+      endif
       endif
 !
 !     Backward-Euler viscous regularization from the committed baseline.
@@ -220,6 +315,16 @@
      &      ' x d0.  The law stays continuous and monotone; only its'
      &      //' derivative changes, and only within that band.'
         endif
+        ifopen=0
+        call getenv('CCX_UC6_FAILED_OPEN',csm)
+        if(csm(1:1).eq.'1') ifopen=1
+        if(ifopen.eq.1) then
+          write(*,'(a)')
+     &      '[UC6 FAILED OPEN] no gmin floor: tension and shear fall'
+     &      //' continuously to zero at delta_f, a failed facet carries'
+     &      //' nothing; compression keeps the full-Kn contact.  This'
+     &      //' CHANGES THE ANSWER after facets fail'
+        endif
         call getenv('CCX_UC6_RESCUE_INC',cresc)
         if(cresc(1:1).ne.' ') read(cresc,*,err=9102,end=9102) irescinc
  9102   continue
@@ -243,6 +348,16 @@
         endif
       endif
 !
+!     CCX_UC6_FAILED_OPEN: no floor.  g follows 1-dvisc to zero, so the
+!     traction and the tangent of tension and shear fall CONTINUOUSLY to
+!     zero at delta_f; compression keeps kn below.  gfl is the floor the
+!     softening tangent below is gated on.
+!
+      gfl=gmin
+      if(ifopen.eq.1) then
+         g=max(0.d0,1.d0-dvisc)
+         gfl=0.d0
+      endif!
 !     Gated by increment so the control and the intervention share
 !     the same history.  The first attempt applied the rescue from
 !     increment one, which changed the crack path from the start and
@@ -304,8 +419,31 @@
 !     Consistent softening term for an advancing inviscid maximum.
 !
       tol=1.d-12*max(1.d0,dmax0)
-      if((deff.ge.dmax0-tol).and.(deff.gt.d0).and.(deff.lt.df)
-     &     .and.(deff.gt.1.d-30).and.(1.d0-dvisc.gt.gmin)) then
+!
+!     B-K: the same rank-one term with B frozen over the increment
+!     (Turon 2006, eq. 49): dD/d(delta) = dD/dh * q/(lambda lambda_0),
+!     so ddback below carries dD/dh / lambda_0 and grad stays q/lambda.
+!
+      if(ibk.eq.1) then
+         if((hcur.ge.hmax0-1.d-12*max(1.d0,hmax0)).and.(hcur.gt.1.d0)
+     &     .and.(hcur.lt.xmb).and.(deff.gt.1.d-30)
+     &     .and.(1.d0-dvisc.gt.gfl)) then
+            ddback=xmb/((xmb-1.d0)*hcur**2)/lam0
+            ddvisc=alpha*ddback
+            qvec(1)=max(deltal(1),0.d0)
+            qvec(2)=beta*deltal(2)
+            qvec(3)=beta*deltal(3)
+            do j=1,3
+               grad(j)=qvec(j)/deff
+            enddo
+            do i=1,3
+               do j=1,3
+                  ctan(i,j)=ctan(i,j)-kn*qvec(i)*ddvisc*grad(j)
+               enddo
+            enddo
+         endif
+      elseif((deff.ge.dmax0-tol).and.(deff.gt.d0).and.(deff.lt.df)
+     &     .and.(deff.gt.1.d-30).and.(1.d0-dvisc.gt.gfl)) then
          ddback=df*d0/((df-d0)*deff**2)
          ddvisc=alpha*ddback
          qvec(1)=max(deltal(1),0.d0)
@@ -383,5 +521,41 @@
       integer i,uc6inc
       common /uc6ctl/ uc6inc
       uc6inc=i
+      return
+      end
+!
+!     ------------------------------------------------------------------
+!
+!     How many *USER SECTION constants a UC6 section has.  usersections.f
+!     knows the count and the element knows only the start index into
+!     prop, so the reader records (start, count) here and the law asks.
+!     A start nobody recorded answers 6, the original law.
+!
+      subroutine uc6nconset(istart,n)
+      implicit none
+      integer istart,n,nsec,ist(4096),nct(4096)
+      common /uc6ncon/ nsec,ist,nct
+      data nsec /0/
+      if(nsec.ge.4096) then
+         write(*,*) '*ERROR in uc6nconset: more than 4096 sections'
+         call exit(201)
+      endif
+      nsec=nsec+1
+      ist(nsec)=istart
+      nct(nsec)=n
+      return
+      end
+!
+      subroutine uc6nconget(istart,n)
+      implicit none
+      integer istart,n,nsec,ist(4096),nct(4096),i
+      common /uc6ncon/ nsec,ist,nct
+      n=6
+      do i=1,nsec
+         if(ist(i).eq.istart) then
+            n=nct(i)
+            return
+         endif
+      enddo
       return
       end

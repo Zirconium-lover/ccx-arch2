@@ -342,7 +342,9 @@ ITG crackcontrol_build(double *c,ITG neq,ITG mode,
 
   ITG e,ip,i,k,idx,nm,np,dof,nw=0,loading;
   double rmat[9],area,x[9],jump[3],dl[3],m[3],mg[3],sh[3];
-  double kn,tn0,ts0,gc,beta,d0,df,deff,dmax,dst,w,wtot=0.,rate,shear;
+  double kn,tn0,ts0,gc,beta,d0,df,deff,dmax,dst,w,wtot=0.,rate,shear,
+    giic=0.,etabk=0.,ratebk,draw;
+  ITG ncon=6;
 
   for(k=0;k<neq;k++) c[k]=0.;
   crackcontrol_census_zero(s);
@@ -363,6 +365,24 @@ ITG crackcontrol_build(double *c,ITG neq,ITG mode,
     df=2.*gc/tn0;
     if(!(df>d0)) continue;
     rate=crackcontrol_dissrate(kn,tn0,gc);
+
+    /* B-K sections (8 constants, cohesive_uc6.f): the law advances
+       h = lambda/lambda_0(B) and stores h*d0, with kappa = (G_Ic/G_IIc)
+       (Ts0/Tn0)^2 in place of beta.  Everything below is written in
+       units of h*d0 for those facets - the separation, its gradient and
+       the dissipation per unit of it, (lambda_0/d0)^2 times the original
+       rate at frozen B - so with G_IIc = G_Ic (lambda_0 = d0) nothing
+       changes, and a 6-constant deck takes none of this. */
+    {
+      ITG ist=ielprop[e];
+      FORTRAN(uc6nconget,(&ist,&ncon));
+    }
+    if(ncon>=8){
+      giic=prop[ielprop[e]+6];
+      etabk=prop[ielprop[e]+7];
+      if(!(giic>0.)||!(etabk>0.)) continue;
+      beta=(gc/giic)*(ts0/tn0)*(ts0/tn0);
+    }
 
     for(k=0;k<3;k++){
       x[0+k]=co[3*(kon[idx+0]-1)+k];
@@ -389,6 +409,17 @@ ITG crackcontrol_build(double *c,ITG neq,ITG mode,
         for(k=0;k<3;k++) dl[i]+=rmat[3*i+k]*jump[k];
       }
       deff=crackcontrol_dir(dl,beta,1.e-14*d0,m);
+      draw=deff;
+      if(ncon>=8){
+        double s2=dl[1]*dl[1]+dl[2]*dl[2],bmix,lam0,sc;
+        bmix=(deff>1.e-300)?beta*s2/(deff*deff):0.;
+        lam0=d0*sqrt(1.+(giic/gc-1.)*pow(bmix,etabk));
+        sc=d0/lam0;
+        deff*=sc;m[0]*=sc;m[1]*=sc;m[2]*=sc;
+        ratebk=rate/(sc*sc);
+      }else{
+        ratebk=rate;
+      }
 
       /* dst is the COMMITTED maximum separation; deff is recomputed from
          the same committed displacement field, so a point that was
@@ -410,7 +441,7 @@ ITG crackcontrol_build(double *c,ITG neq,ITG mode,
           s->nzone++;
           if(loading!=0) s->nload++;
           shear=beta*(dl[1]*dl[1]+dl[2]*dl[2]);
-          if(deff>0.) s->shearfrac+=area*shear/(deff*deff);
+          if(draw>0.) s->shearfrac+=area*shear/(draw*draw);
           s->zonearea+=area;
         }else{
           s->nfail++;
@@ -424,7 +455,7 @@ ITG crackcontrol_build(double *c,ITG neq,ITG mode,
       if(mode==0){
         w=area/3.;
       }else if((dmax>d0)&&(dmax<df)){
-        if(mode==2) w=(loading!=0)?(area/3.)*rate:0.;
+        if(mode==2) w=(loading!=0)?(area/3.)*ratebk:0.;
         else        w=area/3.;
       }else{
         w=0.;
