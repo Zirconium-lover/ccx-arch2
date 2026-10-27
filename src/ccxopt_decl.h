@@ -383,6 +383,13 @@ static const ccxopt_decl ccxopt_decl_table[]={
  "CCX_DAMAGE_FACET_DEBRIS, which removes a facet and its contact with it, "
  "the facet stays in compression",NULL},
 
+{"CCX_UC6_MIDSURFACE",CCXOPT_ENUM,"unset (off)",CCXOPT_UNBOUNDED,"0|1",
+ "1 takes the UC6 local frame and area from the CURRENT mid-surface "
+ "X + (u+ + u-)/2 (Segurado and LLorca 2004) instead of the reference minus "
+ "face, so a rigidly rotated open facet keeps its opening normal; the "
+ "tangent carries no derivative of the frame, as in that paper.  Off, a "
+ "90 degree rigid turn of an opened facet reads the opening as shear",NULL},
+
 /* ---- the constitutive law ----------------------------------------- */
 {"CCX_DAMAGE_TRIAX_PK2",CCXOPT_ENUM,"unset (Cauchy)",CCXOPT_UNBOUNDED,"0|1",
  "A/B ONLY.  1 makes the damage law read the second Piola-Kirchhoff stress "
