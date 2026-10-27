@@ -344,7 +344,11 @@ ITG crackcontrol_build(double *c,ITG neq,ITG mode,
   double rmat[9],area,x[9],jump[3],dl[3],m[3],mg[3],sh[3];
   double kn,tn0,ts0,gc,beta,d0,df,deff,dmax,dst,w,wtot=0.,rate,shear,
     giic=0.,etabk=0.,ratebk,draw;
-  ITG ncon=6;
+  ITG ncon=6,midsurf=0;
+  {
+    const char *ms=ccxopt_getenv("CCX_UC6_MIDSURFACE");
+    if((ms!=NULL)&&(ms[0]=='1')) midsurf=1;
+  }
 
   for(k=0;k<neq;k++) c[k]=0.;
   crackcontrol_census_zero(s);
@@ -388,6 +392,15 @@ ITG crackcontrol_build(double *c,ITG neq,ITG mode,
       x[0+k]=co[3*(kon[idx+0]-1)+k];
       x[3+k]=co[3*(kon[idx+1]-1)+k];
       x[6+k]=co[3*(kon[idx+2]-1)+k];
+    }
+    /* the same frame the law uses: CCX_UC6_MIDSURFACE=1 takes it from
+       the current mid-surface (cohesive_uc6.f) */
+    if(midsurf){
+      for(i=0;i<3;i++){
+        nm=kon[idx+i];np=kon[idx+i+3];
+        for(k=0;k<3;k++)
+          x[3*i+k]+=0.5*(v[mt*(nm-1)+k+1]+v[mt*(np-1)+k+1]);
+      }
     }
     area=crackcontrol_frame(x,x+3,x+6,rmat);
     if(!(area>0.)) continue;
