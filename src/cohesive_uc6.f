@@ -86,6 +86,22 @@
       integer ifopen
       save ifopen
 !
+!     CCX_UC6_MIDSURFACE.  The local frame and the area are taken from
+!     the REFERENCE minus face, so under a finite rotation of an open
+!     facet the normal stays where the reference put it: a rigid 90
+!     degree turn of an opened elastic facet reads its opening as shear
+!     (test/mech/uc6_law: |RF| 56.25 where 100 is right, and a facet
+!     with Ts0 > Tn0 is damaged by the turn alone).  1 takes both from
+!     the CURRENT mid-surface x = X + (u+ + u-)/2, as Segurado and
+!     LLorca 2004 (IJSS 41:2977, eqs. 6-12) do; like them the tangent
+!     carries no derivative of the frame or of the area.  0 (default)
+!     keeps the reference frame bit for bit.
+!
+      integer imid,imidinit
+      save imid,imidinit
+      data imidinit /0/
+      character*8 cmid
+!
 !     Diagnostic-only local rescue.  Acts on an explicit list of
 !     element numbers and on nothing else: no material card, no
 !     global damage law, no deletion logic, no controller.  Its
@@ -153,12 +169,30 @@
          call exit(201)
       endif
 !
-!     Reference local frame and area.
+!     Reference local frame and area - or, with CCX_UC6_MIDSURFACE=1,
+!     those of the current mid-surface.
 !
+      if(imidinit.eq.0) then
+        imid=0
+        call getenv('CCX_UC6_MIDSURFACE',cmid)
+        if(cmid(1:1).eq.'1') imid=1
+        imidinit=1
+      endif
+      if(imid.eq.0) then
       do k=1,3
          edge1(k)=co(k,kon(indexe+2))-co(k,kon(indexe+1))
          edge2(k)=co(k,kon(indexe+3))-co(k,kon(indexe+1))
       enddo
+      else
+      do k=1,3
+         edge1(k)=co(k,kon(indexe+2))-co(k,kon(indexe+1))
+     &     +0.5d0*(v(k,kon(indexe+2))+v(k,kon(indexe+5))
+     &            -v(k,kon(indexe+1))-v(k,kon(indexe+4)))
+         edge2(k)=co(k,kon(indexe+3))-co(k,kon(indexe+1))
+     &     +0.5d0*(v(k,kon(indexe+3))+v(k,kon(indexe+6))
+     &            -v(k,kon(indexe+1))-v(k,kon(indexe+4)))
+      enddo
+      endif
       crossv(1)=edge1(2)*edge2(3)-edge1(3)*edge2(2)
       crossv(2)=edge1(3)*edge2(1)-edge1(1)*edge2(3)
       crossv(3)=edge1(1)*edge2(2)-edge1(2)*edge2(1)
