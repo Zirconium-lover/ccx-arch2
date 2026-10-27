@@ -27,18 +27,22 @@ work from initiation to D = 1 is exactly  V sigma_0 u_f / (2L) = (V/L) G_f,
 G_f = sigma_0 u_f / 2: one G_f per crack area V/L (Bazant and Oh 1983).
 EVOLUTION=ENERGY reads G_f from the card and uses u_f = 2 G_f / sigma_0.
 
-FOUND, kept as XFAIL and reported (71ed70d): the triaxiality is computed
-from the 2nd Piola-Kirchhoff stress, not the Cauchy stress.  On the paths
-where S stays proportional to sigma (uniaxial, equibiaxial) the two agree and
-the Cauchy check passes to 3e-6; on pure shear and eps_y = eps_x/2 it is off
-by 1e-3..1e-2 in d(omega), while the same increments match eps_f(eta_PK2) to
-2e-6 - the PK2 checks pin what the code does.  The ENERGY sigma_0 is the
-PEAK von Mises of the same PK2 stress before initiation, which a non-hardening
-material reaches at FIRST YIELD (S = J sigma/lam^2 falls as it stretches):
-u_f +0.37 % here, matched to 1e-6 by 2 G_f / max vM(S).  Both grow with the
-strain at initiation, O(eps): small in this test, not in a necking tube.
+CAUCHY, NOT PK2.  Found here on 71ed70d and fixed in 0b7c26f: the
+triaxiality and the ENERGY sigma_0 used to come from the 2nd Piola-Kirchhoff
+stress.  On the paths where S stays proportional to sigma (uniaxial,
+equibiaxial) the two agree; on pure shear and eps_y = eps_x/2 the PK2 code
+was off by 1e-3..1e-2 in d(omega) (it matched eps_f(eta_PK2) to 2e-6), and
+the ENERGY u_f was +0.37 % - sigma_0 was the PEAK von Mises of S before
+initiation, reached at first yield since S = J sigma/lam^2 falls as the point
+stretches.  Both errors grow with the strain at initiation, O(eps).  The
+Cauchy checks are now plain checks; the old behaviour survives as the switch
+CCX_DAMAGE_TRIAX_PK2=1 and is this test's red path below.
 
-RED PATH, run: MECH_RED_ENV=CCX_DAMAGE_CHARLEN=0 gives the C3D8 arms rc=201
+RED PATH, run: MECH_RED_ENV=CCX_DAMAGE_TRIAX_PK2=1 (the old PK2 stress)
+turns the five Cauchy checks red - pure shear and eps_y = eps_x/2 for RT and
+the table (1.0e-2, 1.9e-3, 6.5e-4, 7.3e-4 against 2e-4) and the ENERGY u_f
+(+0.37 %), and nothing else - measured on 0b7c26f.
+MECH_RED_ENV=CCX_DAMAGE_CHARLEN=0 gives the C3D8 arms rc=201
 (the legacy width refuses hexahedra) and the C3D4-at-45-deg CHARLEN=1 arm
 L = 0.5 against 0.7071 and W +40 %: 13 checks red.  MECH_RED_ENV=
 CCX_DAMAGE_VISCOSITY=0.05 (D lags behind the law) turns every energy check
@@ -126,25 +130,15 @@ def one(work, name, eltype, ratios, mat, exe, rotz=0.0, charlen="1", emax=0.05, 
     return rc, (history(d) if rc == 0 else [])
 
 
-def pk2(x):
-    """triaxiality and von Mises of the 2nd Piola-Kirchhoff stress,
-    S_i = J sigma_i / lam_i^2 for a pure stretch along the axes."""
-    lam = x["lam"]
-    j = lam[0] * lam[1] * lam[2]
-    sv = [j * x["sig"][c] / lam[c] ** 2 for c in range(3)]
-    m = sum(sv) / 3
-    vm = math.sqrt(1.5 * sum((v - m) ** 2 for v in sv))
-    return (m / vm if vm > 1e-9 else 0.0), vm
-
-
 def init_check(name, h, eff, measure="cauchy", **kw):
+    """measure only names the stress in the label: the triaxiality is the Cauchy one."""
     """max relative error of d(omega) against d(eps_p)/eps_f(eta), pre-initiation."""
     err, n = 0.0, 0
     for a, b in zip(h, h[1:]):
         dp = b["pe"] - a["pe"]
         if b["dam"] >= 1.0 or dp < 1e-5:
             continue
-        eta = b["eta"] if measure == "cauchy" else pk2(b)[0]
+        eta = b["eta"]
         err = max(err, abs((b["dam"] - a["dam"]) / (dp / eff(eta)) - 1))
         n += 1
     return Check("%s: d(omega) = d(eps_p)/eps_f(eta_%s)  [%d inc]" % (name, measure, n),
@@ -191,16 +185,10 @@ def run(work, exe):
                 etas = [x["eta"] for x in h if x["pe"] > 0 and x["dam"] < 2]
                 ck.append(Check("%s: triaxiality while flowing" % tag, max(abs(e - eta0) for e in etas),
                                 0.0, tol=2e-3, why="the path fixes eta, up to the elastic volume change (1.2e-3 on pure shear)"))
-            # eta of the Cauchy stress is the triaxiality; the code takes it from
-            # the 2nd PK stress.  The two agree exactly on the uniaxial and
-            # equibiaxial paths (S stays proportional to sigma) and differ at
-            # O(strain) on the others: XFAIL there, reported; the PK2 check
-            # pins what the code does meanwhile.
-            exact = tag in ("uniaxial", "equibiaxial")
-            ck.append(init_check("%s %s" % (kind, tag), h, eff, expect_fail=not exact,
-                                 why="" if exact else "eta from the 2nd PK stress, not Cauchy (reported)"))
-            if not exact:
-                ck.append(init_check("%s %s" % (kind, tag), h, eff, measure="pk2"))
+            # eta of the Cauchy stress is the triaxiality (0b7c26f; before it
+            # the code read the 2nd PK stress, which differs at O(strain) on
+            # every path but the uniaxial and equibiaxial ones)
+            ck.append(init_check("%s %s" % (kind, tag), h, eff))
     # width and slope: C3D8 aligned / 45 deg, C3D4 45 deg legacy and projection
     cases = (("C3D8 aligned", "C3D8", 0.0, "1", A),
              ("C3D8 45deg", "C3D8", math.pi / 4, "1", A * math.sqrt(2)),
@@ -248,12 +236,7 @@ def run(work, exe):
     ck.append(Check("ENERGY: run rc", rc, 0, tol=0))
     if rc == 0:
         ck.append(Check("ENERGY: u_f = L/(dD/d eps_p) vs 2 G_f/sigma_0", A / slope(h), 2 * gf / S0,
-                        rtol=2e-4, expect_fail=True,
-                        why="sigma_0 is the PEAK von Mises of the 2nd PK stress before initiation, "
-                        "reached at first yield (reported)"))
-        s_pk2 = max(pk2(x)[1] for x in h if x["dam"] < 1.0)
-        ck.append(Check("ENERGY: u_f vs 2 G_f / max vM(S_PK2) pre-init (as coded)", A / slope(h),
-                        2 * gf / s_pk2, rtol=2e-4))
+                        rtol=2e-4, why="sigma_0 the Cauchy von Mises at initiation (0b7c26f)"))
         ck.append(Check("ENERGY: W after init / ((V/L) G_f)", work_after_init(h) / (A ** 2 * gf),
                         1.0, rtol=0.03))
     return ck
