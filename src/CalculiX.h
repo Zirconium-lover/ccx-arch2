@@ -4163,6 +4163,26 @@ void FORTRAN(damnonlocalset,(double *ell));
 
 void FORTRAN(damnonlocalmode,(ITG *imode));
 
+void FORTRAN(damnonlocalget,(double *ellout));
+
+void FORTRAN(damnlellmax,(double *ellmax));
+
+void FORTRAN(damnonlocalmodeget,(ITG *imodeout));
+
+void FORTRAN(damnlellcardcount,(ITG *n));
+
+void FORTRAN(damnlellgetmat,(ITG *imat,double *ell,ITG *iok));
+
+void FORTRAN(damcbevolget,(ITG *imat,ITG *kind));
+
+void damage_resolution_report(const double *co,const ITG *kon,
+     const ITG *ipkon,const char *lakon,ITG ne,const ITG *ielmat,
+     const ITG *mi,const char *matname,ITG nmat,const double *elcon,
+     const ITG *nelcon,ITG ncmat_,ITG ntmat_,const double *plicon,
+     const ITG *nplicon,ITG npmat_,const ITG *ndmcon,const double *dmcon,
+     ITG ndmat_,const ITG *ielprop,const double *prop,double dt0,
+     double visceta);
+
 /* [DAMAGE NONLOCAL] refresh the regularised driving variable once per
    results() call instead of once per increment.  Called from results.c,
    after the resultsmech threads have joined - see the comment there for

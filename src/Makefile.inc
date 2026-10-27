@@ -1116,6 +1116,7 @@ lsladder.c \
 converge.c \
 topology.c \
 globalize.c \
+damresolution.c \
 damstate.c \
 ccxopt.c \
 census.c \
