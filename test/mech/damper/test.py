@@ -21,12 +21,12 @@ t = 0, so the trapezoidal work under-counts half of increment 1's viscous
 share; a first increment of 1e-4 keeps that at 1e-4.
 
 Measured on 71ed70d.  Part 1, c = 0.2, h = 0.25: W(c)-W(0) is the active-dof
-E to 0.01 %, so the FORCE is right.  The audit is not, twice, both XFAIL and
-reported: it sums m du^2 over ALL dofs including the prescribed grip (x-dof
-of NRIGHT), where no dashpot force acts, +6.7 % here; and it never audits
-the LAST increment of the step (the audit of increment n runs at the top of
-increment n+1), so it misses dt_last/T of a uniform-rate step: -5.00 % with
-steps of 0.05, -0.415 % here.  The "as coded" check pins both to 1e-3.  Part 2: W - W(0) = +0.0663 / +0.0086 / +0.0020 / +0.0001 at
+E to 0.01 %, so the FORCE is right.  The audit was not, twice, found here:
+it summed m du^2 over ALL dofs including the prescribed grip (x-dof of
+NRIGHT), where no dashpot force acts, +6.7 %; and it never audited the LAST
+increment of the step, missing dt_last/T (-5.00 % with steps of 0.05).
+Both fixed in the developer's a28be20: the audit now equals the active-dof E
+to 1e-4 (1.35124e-5 against 1.35125e-5), with and without equal steps.  Part 2: W - W(0) = +0.0663 / +0.0086 / +0.0020 / +0.0001 at
 c = 0.2 / 0.02 / 0.002 / 0.0002 (W(0) = 15.2925); fraction 4.53e-3 / 4.53e-4
 / 4.53e-5 / 4.53e-6 - exactly linear.
 
@@ -131,16 +131,12 @@ def run(work, exe):
                     why="the force law, measured through the external work alone"))
     ed, _ = audit(d)
     ck.append(Check("audit: printed dissipation = active-dof E", ed, e_act, rtol=1e-3,
-                    expect_fail=True,
-                    why="the audit sums m du^2 over ALL dofs, the grip's prescribed one too (reported)"))
-    ck.append(Check("audit = all-dof sum without the last increment (as coded)", ed,
-                    e_all * (1 - last_dt(d)), rtol=1e-3))
+                    why="active dofs only and the last increment audited (a28be20)"))
     # equal steps of 0.05: the last increment is 5 % of E
     d5, rc5, _ = elastic(work, c, exe, dt0=0.05, dtmax=0.05)
     ed5, _ = audit(d5)
-    ck.append(Check("audit counts the last increment (dt = 0.05 steps)", ed5, e_all, rtol=1e-3,
-                    expect_fail=True, why="the audit of an increment runs at the top of the next "
-                    "one, which the last never gets: -5.00 % = dt_last/T (reported)"))
+    ck.append(Check("audit counts the last increment (dt = 0.05 steps)", ed5, e_act, rtol=1e-3,
+                    why="before a28be20 it missed dt_last/T: -5.00 % with steps of 0.05"))
     # part 2: c -> 0 on a fracture run
     runs = {}
     for cc in (0.0, 0.2, 0.02, 0.002):

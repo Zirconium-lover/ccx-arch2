@@ -13,7 +13,9 @@
     every number it prints must be finite (it once read freed memory).
 Each check is XFAIL while its fix is pending (PENDING below); a fix turns it
 XPASS, which fails the gate until PENDING is flipped - the gate notices.
-Measured on 61d1c52: (1) 82.7250 at x1 and x1e3, 82.4625 at x1e-3 (spread
+Fixed: (1) in 94abf95 (relative tolerance on the radius), (2) in f061d92
+("[FRACTURE COMPLETE] ... every element has been deleted", rc = 0).
+Measured before, on 61d1c52: (1) 82.7250 at x1 and x1e3, 82.4625 at x1e-3 (spread
 0.2625): XFAIL.  (2) rc = -11, SIGSEGV: XFAIL.  (3) 8 numbers in 3 audit
 lines, all finite, on a run with 8 deletions: PASS already - the
 use-after-free was fixed in 71ed70d; the audit's two accounting flaws are
@@ -34,7 +36,7 @@ import onelem  # noqa: E402
 WHAT = "ACCEPTANCE bug fixes: neighbour count scale-free at 2ell = 8h; lone element deleted cleanly; finite dashpot audit"
 SOURCE = "reproducers from scale_bar, bulk_law and the damper audit"
 
-PENDING = {"radius": True, "lone": True, "audit": False}
+PENDING = {"radius": False, "lone": False, "audit": False}   # all fixed: 94abf95, f061d92
 
 
 def neighbours(work, k, exe):
@@ -62,6 +64,9 @@ def run(work, exe):
     rc, _ = ccx(d, "o", exe)
     ck.append(Check("lone C3D4 deleted: rc = 0 (no SIGSEGV)", rc, 0, tol=0, expect_fail=PENDING["lone"],
                     why="rc=%d (-11 is SIGSEGV)" % rc))
+    log = open(os.path.join(d, "run.log"), errors="replace").read()
+    ck.append(Check("lone C3D4 deleted: the run says why it ended", "every element has been deleted" in log,
+                    True, cmp="true", expect_fail=PENDING["lone"]))
     # (3) dashpot audit on a run with deletions
     r = cross_bar(os.path.join(work, "audit"), 24, None, "LOCAL", exe=exe,
                   env={"CCX_DAMAGE_VISCOUS_DAMPING": "2e-4"})
