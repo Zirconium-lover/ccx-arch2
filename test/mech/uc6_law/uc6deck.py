@@ -18,7 +18,9 @@ import math
 
 
 def deck(path, props, dt, a=1.0, rot=None, tend=None):
-    kn, tn0, ts0, gc, gmin, mu = props
+    # props: the *USER SECTION constants in card order - 6 (Kn, Tn0, Ts0, Gc,
+    # gmin, mu) or 8 with G_IIc and eta appended (the B-K law)
+    kn, tn0, ts0, gc, gmin, mu = props[:6]
     co = {1: (0, 0, 0), 2: (0, a, 0), 3: (0, 0, a)}
     for i in (1, 2, 3):
         co[i + 3] = co[i]
@@ -33,9 +35,8 @@ def deck(path, props, dt, a=1.0, rot=None, tend=None):
           "*MATERIAL, NAME=COH", "*ELASTIC", "1000., 0.", "*DEPVAR", "4",
           "*MATERIAL, NAME=EL", "*ELASTIC", "1000., 0.",
           "*SOLID SECTION, ELSET=EDUM, MATERIAL=EL",
-          "*USER SECTION, ELSET=ECOH, MATERIAL=COH, CONSTANTS=6",
-          "%.12g, %.12g, %.12g, %.12g, %.12g, %.12g" % (float(kn), float(tn0), float(ts0),
-                                      float(gc), float(gmin), float(mu)),
+          "*USER SECTION, ELSET=ECOH, MATERIAL=COH, CONSTANTS=%d" % len(props),
+          ", ".join("%.12g" % float(v) for v in props),
           "*BOUNDARY", "11, 1, 3, 0.", "12, 2, 3, 0.", "13, 3, 3, 0."]
     out = ["*NODE PRINT, NSET=NPLUS, TOTALS=ONLY", "RF",
            "*EL PRINT, ELSET=ECOH", "S, SDV"]
