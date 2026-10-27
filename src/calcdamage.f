@@ -127,6 +127,147 @@
 !
 !     ------------------------------------------------------------------
 !
+!     THE STRESS THE DAMAGE LAW READS UNDER NLGEOM.
+!
+!     Rice-Tracey, the tabulated locus eps_f(eta) and the ENERGY sigma_0
+!     are all stated in terms of the TRUE stress: eta = sigma_m/sigma_vM
+!     and sigma_vM of the Cauchy tensor.  Under NLGEOM the stress at the
+!     integration point - stre in resultsmech, sti in calcdamagebase - is
+!     the second Piola-Kirchhoff tensor S, and the law read it as if it
+!     were Cauchy.  sigma = F S F^T / J differs from S at O(strain) in
+!     both the invariants and the ratio: measured by test/mech/bulk_law on
+!     one homogeneous C3D8, isochoric pure shear has eta_Cauchy = 0 to
+!     1.2e-3 while omega followed eta of S to 2e-6 and missed eta_Cauchy
+!     by 1 per cent; for EVOLUTION=ENERGY u_f came out 2G_f/max vM(S),
+!     +0.37 per cent, because vM(S) = J sigma/lambda^2 peaks at FIRST
+!     yield and falls under stretch.  At the strains of a necking tube
+!     wall (0.2-0.5) that is of order 10 per cent in eta and eps_f.
+!
+!     Uniaxial and equibiaxial stretch hide it (S parallel to sigma),
+!     which is why no earlier case saw it.  Small-strain runs are
+!     untouched: without NLGEOM S and sigma are one tensor.
+!
+!     CCX_DAMAGE_TRIAX_PK2=1 restores the old reading for A/B measurement
+!     of earlier results, and for nothing else.
+!
+      module damtrxmod
+      implicit none
+      integer :: itrxpk2=0,itrxnl=0
+      end module damtrxmod
+!
+      subroutine damtriaxset(ipk2,inlgeom)
+      use damtrxmod
+      implicit none
+      integer ipk2,inlgeom
+      itrxpk2=ipk2
+      itrxnl=inlgeom
+      return
+      end
+!
+!     sc = F s F^T / J with F = I + vkl, vkl(i,j) = du_i/dX_j, in the
+!     CalculiX order 11,22,33,12,13,23 - the same product resultsmech
+!     forms for the Cauchy output.  A copy when the switch says PK2, when
+!     the run is geometrically linear, or when J is not positive.
+!
+      subroutine damstrcauchy(s,vkl,sc)
+      use damtrxmod
+      implicit none
+      real*8 s(6),vkl(3,3),sc(6),f(3,3),sk(3,3),c(3,3),vj
+      integer m1,m2,m3,m4
+      do m1=1,6
+        sc(m1)=s(m1)
+      enddo
+      if((itrxpk2.ne.0).or.(itrxnl.eq.0)) return
+      do m1=1,3
+        do m2=1,3
+          f(m1,m2)=vkl(m1,m2)
+        enddo
+        f(m1,m1)=f(m1,m1)+1.d0
+      enddo
+      vj=f(1,1)*(f(2,2)*f(3,3)-f(2,3)*f(3,2))
+     &  -f(1,2)*(f(2,1)*f(3,3)-f(2,3)*f(3,1))
+     &  +f(1,3)*(f(2,1)*f(3,2)-f(2,2)*f(3,1))
+      if(vj.le.1.d-30) return
+      sk(1,1)=s(1)
+      sk(2,2)=s(2)
+      sk(3,3)=s(3)
+      sk(1,2)=s(4)
+      sk(2,1)=s(4)
+      sk(1,3)=s(5)
+      sk(3,1)=s(5)
+      sk(2,3)=s(6)
+      sk(3,2)=s(6)
+      do m1=1,3
+        do m2=1,3
+          c(m1,m2)=0.d0
+          do m3=1,3
+            do m4=1,3
+              c(m1,m2)=c(m1,m2)+f(m1,m3)*sk(m3,m4)*f(m2,m4)
+            enddo
+          enddo
+          c(m1,m2)=c(m1,m2)/vj
+        enddo
+      enddo
+      sc(1)=c(1,1)
+      sc(2)=c(2,2)
+      sc(3)=c(3,3)
+      sc(4)=c(1,2)
+      sc(5)=c(1,3)
+      sc(6)=c(2,3)
+      return
+      end
+!
+!     The same for calcdamagebase, which has the committed S (sti) and the
+!     converged displacements but no displacement gradient: it is formed
+!     here at (xi,et,ze) from the REFERENCE coordinates xl, as resultsmech
+!     forms it.  C3D8R and C3D8I take the plain trilinear gradient - their
+!     reduced point and incompatible modes do not enter F at the accuracy
+!     a triaxiality needs.
+!
+      subroutine damstrcauchyel(lakonl,konl,xl,nope,xi,et,ze,vold,mi,
+     &     s,sc)
+      use damtrxmod
+      implicit none
+      character*8 lakonl
+      integer konl(*),nope,mi(*),iflag,m1,m2,j
+      real*8 xl(3,20),xi,et,ze,vold(0:mi(2),*),s(6),sc(6),
+     &     xsj,shp(4,20),vkl(3,3)
+      do m1=1,6
+        sc(m1)=s(m1)
+      enddo
+      if((itrxpk2.ne.0).or.(itrxnl.eq.0)) return
+      iflag=3
+      if(nope.eq.20) then
+        call shape20h(xi,et,ze,xl,xsj,shp,iflag)
+      elseif((nope.eq.8).or.(nope.eq.11)) then
+        call shape8h(xi,et,ze,xl,xsj,shp,iflag)
+      elseif(nope.eq.10) then
+        call shape10tet(xi,et,ze,xl,xsj,shp,iflag)
+      elseif(nope.eq.4) then
+        call shape4tet(xi,et,ze,xl,xsj,shp,iflag)
+      elseif(nope.eq.15) then
+        call shape15w(xi,et,ze,xl,xsj,shp,iflag)
+      elseif(nope.eq.6) then
+        call shape6w(xi,et,ze,xl,xsj,shp,iflag)
+      else
+        return
+      endif
+      if(xsj.le.0.d0) return
+      do m1=1,3
+        do m2=1,3
+          vkl(m1,m2)=0.d0
+          do j=1,min(nope,20)
+            if((nope.eq.11).and.(j.gt.8)) cycle
+            vkl(m1,m2)=vkl(m1,m2)+shp(m2,j)*vold(m1,konl(j))
+          enddo
+        enddo
+      enddo
+      call damstrcauchy(s,vkl,sc)
+      return
+      end
+!
+!     ------------------------------------------------------------------
+!
       subroutine damcbevolset(imat,kind)
 !
 !     Record the evolution kind of a material.  Called from the reader.
@@ -903,7 +1044,7 @@
      &     xl2(3,8),eps0RT,xlimit,d1,d2,d3,d4,d5,Tmelt,Ttrans,eps0p,shy,
      &     svm,triax,t1l,dmcon(0:ndmat_,ntmat_,*),dam(mi(1),*),
      &     dambase(mi(1),*),dpeq,dpeqdt,dtime,ef,
-     &     sti(6,mi(1),*),t1(*),vold(0:mi(2),*),
+     &     sti(6,mi(1),*),t1(*),vold(0:mi(2),*),stc(6),
      &     xstate(nstate_,mi(1),*),xstateini(nstate_,mi(1),*),
      &     dmconloc(ndmat_),That,alphaevent,damold,ddam,damtrial,
      &     alphai,ufail,charlen,det6v,ax,ay,az,bx,by,bz,cx,cy,cz,
@@ -1323,6 +1464,14 @@
             ze=gauss3d7(3,jj)
             weight=weight3d7(jj)
           endif
+!
+!         The Cauchy stress of the committed state, for the triaxiality
+!         and the ENERGY sigma_0 below (damstrcauchy explains why).  The
+!         directional crack-band width keeps reading sti: it projects the
+!         REFERENCE geometry, and S is the stress of that configuration.
+!
+          call damstrcauchyel(lakonl,konl,xl,nope,xi,et,ze,vold,mi,
+     &         sti(1,jj,i),stc)
 !     
 !     determining the material model for this layer
 !     (for composites only)
@@ -1474,11 +1623,11 @@
             call damcbevolget(imat,cbkind)
             if(cbkind.eq.2) then
               if(dambase(jj,i).lt.xlimit) then
-                cbsh=(sti(1,jj,i)+sti(2,jj,i)+sti(3,jj,i))/3.d0
+                cbsh=(stc(1)+stc(2)+stc(3))/3.d0
                 cbsvm=dsqrt(1.5d0*(
-     &               (sti(1,jj,i)-cbsh)**2+(sti(2,jj,i)-cbsh)**2+
-     &               (sti(3,jj,i)-cbsh)**2+2.d0*(sti(4,jj,i)**2+
-     &               sti(5,jj,i)**2+sti(6,jj,i)**2)))
+     &               (stc(1)-cbsh)**2+(stc(2)-cbsh)**2+
+     &               (stc(3)-cbsh)**2+2.d0*(stc(4)**2+
+     &               stc(5)**2+stc(6)**2)))
 !
 !               imode=1 ONLY.  The predictor pass is documented as not
 !               modifying dam or ipkon, and the cache belongs in that set
@@ -1550,12 +1699,12 @@
 !     
 !     stress at the integration point
 !     
-          skl(1,1)=sti(1,jj,i)
-          skl(2,2)=sti(2,jj,i)
-          skl(3,3)=sti(3,jj,i)
-          skl(1,2)=sti(4,jj,i)
-          skl(1,3)=sti(5,jj,i)
-          skl(2,3)=sti(6,jj,i)
+          skl(1,1)=stc(1)
+          skl(2,2)=stc(2)
+          skl(3,3)=stc(3)
+          skl(1,2)=stc(4)
+          skl(1,3)=stc(5)
+          skl(2,3)=stc(6)
 !     
 !     hydrostatic stress
 !     

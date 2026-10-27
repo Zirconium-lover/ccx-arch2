@@ -4692,6 +4692,21 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                  "ANSWER of those modes and of CCX_DAMAGE_CHARLEN=1\n");
         }
       }
+      {
+        /* The damage law reads the Cauchy stress under NLGEOM (calcdamage.f,
+           damstrcauchy).  The PK2 reading it replaced is kept for A/B
+           measurement of earlier results only. */
+        const char *trx_env=ccxopt_getenv("CCX_DAMAGE_TRIAX_PK2");
+        ITG trx_pk2=((trx_env!=NULL)&&(trx_env[0]=='1'))?1:0;
+        ITG trx_nl=(iperturb[1]==1)?1:0;
+        if(trx_pk2){
+          printf("[DAMAGE TRIAX PK2] A/B ONLY: the damage law reads the "
+                 "second Piola-Kirchhoff stress for its triaxiality and "
+                 "ENERGY sigma_0, as before the Cauchy fix.  This CHANGES "
+                 "THE ANSWER under NLGEOM\n");
+        }
+        FORTRAN(damtriaxset,(&trx_pk2,&trx_nl));
+      }
       if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_QAM_FLOOR"))!=NULL){
         damage_qam_floor=atof(damage_de13_env);
         if(damage_qam_floor<0.) damage_qam_floor=0.;
