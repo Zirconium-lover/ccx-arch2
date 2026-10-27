@@ -27,7 +27,9 @@ Acceptance test: red until the developer's B-K code is in.  Measured on
 e2d474f (no B-K): the 8-constant section is read as the old law with Gc =
 G_Ic, so W = 0.300 at every B - 0.873 / 0.632 / 0.433 / 0.300 of G_c(B) at
 B = 0.25 / 0.5 / 0.75 / 1 - and the reduction checks pass (that is what they
-must keep doing).
+must keep doing).  On ab4720b: 15/15, W/G_c(B) = 0.999993 at every B (the
+path is scaled to lambda_f(B), so the trapezoidal error is the same at every
+mix), peaks 0.99965, reduction identical to the printed digit.
 """
 import math
 import os

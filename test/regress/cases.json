@@ -614,7 +614,7 @@
   },
   {
    "name": "mech",
-   "what": "the mechanics tests of test/mech/ - every mechanism against its own reference (closed form, literature, or self-convergence) with a stated tolerance: nonlocal objectivity in h, the lag of the staggered scheme against the implicit solution, the UC6 law through the solver, the bulk law on one element, the nodal dashpot, and the nonlocal model against the exact 1-D bar of the library (where it fails, as XFAIL with the mechanism). run.py exits with the number of failed tests, so rc=0 is the whole expectation and its table is the log; XFAILs are known defects that must keep failing as documented (an XPASS is a failure, so a fix forces the test to be revisited). output_invariance is in since the output pass stopped writing the committed state (the corrector it applied is now a commit step, CCX_DAMAGE_COMMIT_CORRECT, default on): a binary without that change fails it, so this case must not be merged ahead of the developer's 72618cb. RED PATH, run: MECH_RED_ENV=CCX_DAMAGE_NLWIDTH=0 in the environment turns nl_objectivity red and this case with it (rc=1). uc6_failed_open is in since the developer's 4fdab92 (CCX_UC6_FAILED_OPEN, the floor removed continuously): a binary without it fails seven of its checks, so this case must not be merged ahead of 4fdab92. uc6_bk waits for the B-K code.",
+   "what": "the mechanics tests of test/mech/ - every mechanism against its own reference (closed form, literature, or self-convergence) with a stated tolerance: nonlocal objectivity in h, the lag of the staggered scheme against the implicit solution, the UC6 law through the solver, the bulk law on one element, the nodal dashpot, and the nonlocal model against the exact 1-D bar of the library (where it fails, as XFAIL with the mechanism). run.py exits with the number of failed tests, so rc=0 is the whole expectation and its table is the log; XFAILs are known defects that must keep failing as documented (an XPASS is a failure, so a fix forces the test to be revisited). output_invariance is in since the output pass stopped writing the committed state (the corrector it applied is now a commit step, CCX_DAMAGE_COMMIT_CORRECT, default on): a binary without that change fails it, so this case must not be merged ahead of the developer's 72618cb. RED PATH, run: MECH_RED_ENV=CCX_DAMAGE_NLWIDTH=0 in the environment turns nl_objectivity red and this case with it (rc=1). uc6_failed_open is in since the developer's 4fdab92 (CCX_UC6_FAILED_OPEN, the floor removed continuously): a binary without it fails seven of its checks, so this case must not be merged ahead of 4fdab92. uc6_bk is in since the developer's ab4720b (B-K mixed mode, 8 section constants): a binary without it fails four of its checks (W = G_Ic at every mode mix), so this case must not be merged ahead of ab4720b.",
    "kind": "mech",
    "tests": [
     "bulk_law",
@@ -626,6 +626,7 @@
     "output_invariance",
     "scale_bar",
     "scale_invariance",
+    "uc6_bk",
     "uc6_failed_open",
     "uc6_law"
    ],
