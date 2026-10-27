@@ -88,6 +88,30 @@ def run(work, exe):
         if b == 1.0:
             ck.append(Check("mode II: peak T_s / Ts0", max(T[1] for _, T in tr) / TS0, 1.0, tol=5e-3,
                             why="the peak falls between increments, lambda0 ~35 increments in"))
+    # the B-K law under the mid-surface frame (CCX_UC6_MIDSURFACE=1): an
+    # unrotated facet must give the same work - one arm, B = 0.5
+    b = 0.5
+    th = math.asin(math.sqrt(b))
+    lf = m * l0i * math.sqrt(1 + (GIIC / GIC - 1) * b ** ETA)
+    u = (math.cos(th), math.sin(th) / math.sqrt(kappa), 0.0)
+    path = [(0.0, (0, 0, 0)), (1.2 * lf, tuple(1.2 * lf * x for x in u))]
+    d = os.path.join(work, "B0.5_midsurface")
+    write(os.path.join(d, "u.inp"), uc6deck.deck(path, props, path[-1][0] / N))
+    rc, _ = ccx(d, "u", exe, {"CCX_UC6_MIDSURFACE": "1"})
+    if rc == 0:
+        dat = os.path.join(d, "u.dat")
+        f = [totals(dat, "NPLUS", c) for c in range(3)]
+        w, pt, pl = 0.0, (0.0, 0.0, 0.0), 0.0
+        for (t, fx), (_, fy), (_, fz) in zip(*f):
+            T = (fx / AREA, fy / AREA, fz / AREA)
+            w += sum(0.5 * (T[c] + pt[c]) * (t - pl) * u[c] for c in range(3))
+            pt, pl = T, t
+            if t >= lf * (1 - 1e-12):
+                break
+        ck.append(Check("MIDSURFACE B=0.5: W / G_c(B)", w / gc(b), 1.0, tol=1e-3,
+                        why="the frame of an unrotated facet is the reference one"))
+    else:
+        ck.append(Check("MIDSURFACE B=0.5: run rc", rc, 0, tol=0))
     # reduction: G_IIc = G_Ic with 8 constants against the 6-constant law, B = 0.5 path
     th = math.asin(math.sqrt(0.5))
     beta = (TS0 / TN0) ** 2

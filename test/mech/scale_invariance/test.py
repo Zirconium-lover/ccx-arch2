@@ -24,8 +24,9 @@ no hidden absolute length must then give the same dimensionless answer.
     W/Gc 1.0028 / 1.0285 / 1.3597.  Then the two groups of the disk and
     the cell deck, 0.067 and 1.25: the cell's interfaces are ~1.7x stronger and
     tougher than their card says because mkdeck did not rescale mu.
-    Tolerance 1 %: 2000 backward-Euler steps over the ramp (the librarian's
-    200-step Euler value at group 1 is 0.7 % off the exact W).
+    Tolerance 1 %: 1000 backward-Euler steps over the ramp (the librarian's
+    200-step Euler value at group 1 is 0.7 % off the exact W; 2000 steps gave
+    0.13 % at worst).
 
 Measured on ef52329: (a) sigma and dam identical to the last digit; rate
 ratio 25.3 (the elastic share of the strain rate, 2 % allowed); (b) T to
@@ -140,7 +141,7 @@ def run(work, exe):
         mu = g * d0                         # v = 1
         tend = 1.2e-2 * 1.5 + 10 * mu
         p = [(0, (0, 0, 0)), (tend, (tend, 0, 0))]
-        rc, tr = facet(work, "visc_%g" % g, 1.0, kn, p, tend / 2000, exe, mu=mu, tn0=tn0, ts0=tn0, gc=gc,
+        rc, tr = facet(work, "visc_%g" % g, 1.0, kn, p, tend / 1000, exe, mu=mu, tn0=tn0, ts0=tn0, gc=gc,
                        gmin=1e-6)
         if rc:
             ck.append(Check("visc group %g: run rc" % g, rc, 0, tol=0))

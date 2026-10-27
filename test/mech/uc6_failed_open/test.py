@@ -128,6 +128,12 @@ def run(wk, exe):
                             why="the floor the switch removes; also the red path"))
             ck.append(Check("CONTROL switch off: failed+compressed shear traction > 0", max(shear3) / TS0,
                             1e-4, cmp="ge"))
+    # the switch together with the mid-surface frame: mode I, one arm
+    r4, t4 = facet(wk, "modeI_midsurface", p1, dict(SW, CCX_UC6_MIDSURFACE="1"))
+    if r4 == 0:
+        ck.append(Check("FAILED_OPEN + MIDSURFACE, mode I: W to delta_f / Gc", work(t4, p1) / GC, 1.0, tol=1e-5))
+    else:
+        ck.append(Check("FAILED_OPEN + MIDSURFACE: run rc", r4, 0, tol=0))
     # the notched plate of size_effect at D/l_ch = 1 with g_min = 1e-3
     import plate
     d = os.path.join(wk, "plate_gmin1e-3")
