@@ -336,6 +336,53 @@ static ITG ccx_outsnap_on=0;
 #define OUTSNAP_RESTORE(o) outsnap_restore(&(o),xstate,dam,damage_damvisc, \
     damage_damjac,ener,eei,f,qa)
 
+/* Dashpot audit of one committed increment: dissipated c*m*|du|^2/dt
+   against the work sum(fn.du), so a run states how much of its answer
+   the damping is.  Called at the start of the next increment - when vini
+   still holds the start of the committed one - and once more for the
+   LAST increment before the step total is printed.
+
+   The dissipation sums only the ACTIVE dofs (nactdof > 0), the ones
+   calcresidual.c applies the force to: a prescribed dof feels no dashpot.
+   Summing all of them, and dropping the last increment, was measured by
+   test/mech/damper on an elastic bar with an exact answer: printed =
+   E_all*(1 - dt_last/T), +6.7 per cent from the prescribed grip dof and
+   -5.00 per cent (= dt_last/T) from the missing increment.  The work keeps
+   every dof: the reactions carry it. */
+static void visc_audit(ITG nk,ITG mt,const double *vold,const double *vini,
+                       const ITG *nactdof,ITG iinc){
+  ITG vi,vj;
+  const double *fnc=ccx_visc_fnkeep;
+  double de=0.,dw=0.,du;
+  if((ccx_visc_m==NULL)||!(ccx_visc_dtlast>0.)||(ccx_visc_fnkeep==NULL))
+    return;
+  for(vi=0;(vi<nk)&&(mt*vi+3<ccx_visc_fnkeep_n);vi++){
+    for(vj=1;vj<4;vj++){
+      du=vold[mt*vi+vj]-vini[mt*vi+vj];
+      if(!isfinite(du)) continue;
+      if(nactdof[mt*vi+vj]>0) de+=ccx_visc_m[vi]*du*du;
+      /* fn of a node whose every element is deleted is not defined
+         (NaN measured on s3regen); it does no work */
+      if(isfinite(fnc[mt*vi+vj])) dw+=fnc[mt*vi+vj]*du;
+    }
+  }
+  de*=ccx_visc_c/ccx_visc_dtlast;
+  if((de>0.)||(dw!=0.)){
+    ccx_visc_ediss+=de;
+    ccx_visc_wext+=dw;
+    if(ccx_visc_wext>0.){
+      double r=ccx_visc_ediss/ccx_visc_wext;
+      if(r>2.*ccx_visc_ratio_rep){
+        ccx_visc_ratio_rep=r;
+        printf("[DAMAGE VISCOUS DAMPING] inc=%" ITGFORMAT " dissipated "
+               "%.6e of work %.6e (fraction %.3e, new maximum)\n",
+               iinc,ccx_visc_ediss,ccx_visc_wext,r);
+        fflush(stdout);
+      }
+    }
+  }
+}
+
 /* CCX_DAMAGE_GRADUAL_DELETE=N: gradual release of the forces of a deleted
    batch (Liu & Liu 2018, the element-deletion "force release" of node-release
    crack growth).  An instant deletion hands the whole force the batch carried
@@ -6879,40 +6926,8 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
       }
       pf_pending=pf_on;
 
-      /* dashpot audit on the increment just committed: dissipated
-         c*m*|du|^2/dt against the work sum(fn.du) over all dofs (the
-         reactions carry it), so a run states how much of its answer the
-         damping is */
-      if((ccx_visc_m!=NULL)&&(ccx_visc_dtlast>0.)&&(ccx_visc_fnkeep!=NULL)){
-        ITG vi,vj;
-        const double *fnc=ccx_visc_fnkeep;
-        double de=0.,dw=0.,du;
-        for(vi=0;(vi<*nk)&&(mt*vi+3<ccx_visc_fnkeep_n);vi++){
-          for(vj=1;vj<4;vj++){
-            du=vold[mt*vi+vj]-vini[mt*vi+vj];
-            if(!isfinite(du)) continue;
-            de+=ccx_visc_m[vi]*du*du;
-            /* fn of a node whose every element is deleted is not
-               defined (NaN measured on s3regen); it does no work */
-            if(isfinite(fnc[mt*vi+vj])) dw+=fnc[mt*vi+vj]*du;
-          }
-        }
-        de*=ccx_visc_c/ccx_visc_dtlast;
-        if((de>0.)||(dw!=0.)){
-          ccx_visc_ediss+=de;
-          ccx_visc_wext+=dw;
-          if(ccx_visc_wext>0.){
-            double r=ccx_visc_ediss/ccx_visc_wext;
-            if(r>2.*ccx_visc_ratio_rep){
-              ccx_visc_ratio_rep=r;
-              printf("[DAMAGE VISCOUS DAMPING] inc=%" ITGFORMAT " dissipated "
-                     "%.6e of work %.6e (fraction %.3e, new maximum)\n",
-                     iinc,ccx_visc_ediss,ccx_visc_wext,r);
-              fflush(stdout);
-            }
-          }
-        }
-      }
+      /* dashpot audit on the increment just committed */
+      visc_audit(*nk,mt,vold,vini,nactdof,iinc);
 
       /* vold is copied into vini */
 	  
@@ -17503,6 +17518,8 @@ damage_controller_done:
   if(ccx_gd_rel!=NULL){SFREE(ccx_gd_rel);ccx_gd_rel=NULL;}
   if(gd_vsave!=NULL){SFREE(gd_vsave);gd_vsave=NULL;}
   if(ccx_visc_m!=NULL){
+    /* the last increment of the step, which no next increment audits */
+    visc_audit(*nk,mt,vold,vini,nactdof,iinc);
     printf("[DAMAGE VISCOUS DAMPING] step total: dissipated %.6e, work "
            "sum(fn.du) %.6e (fraction %.3e)\n",ccx_visc_ediss,
            ccx_visc_wext,(ccx_visc_wext!=0.)?
