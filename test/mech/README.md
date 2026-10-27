@@ -5,7 +5,7 @@
 One directory per mechanism.  `<name>/test.py` generates its decks, runs the
 solver and returns checks; `run.py` prints every check (measured, reference,
 tolerance, why) and a pass/fail table, and exits with the number of failed
-tests.  Every test runs in under 60 s on one thread.  The gate runs the whole set as the case `mech` in test/regress/cases.json, except a test that is red by design (output_invariance, until its fix).
+tests.  Every test runs in under 60 s on one thread, except those marked LONG (`--long`, or named on the command line), which are not in the gate.  The gate runs the whole set as the case `mech` in test/regress/cases.json, except a test that is red by design (output_invariance, until its fix).
 
 Statuses: PASS / FAIL; XFAIL is a known limitation of the code that is still
 failing as documented (counts as passing), XPASS means it stopped failing and
@@ -28,3 +28,4 @@ docstring records its red path: what was run and which checks went red.
 | `neck_dissipation` | C3D4 bar vs the 1-D B1 reference: the local crack band's W/G_f grows as h is refined (2.11 / 8.46 at h = 0.125 for CHARLEN 0 / 1), the nonlocal one converges to ~1.35 G_f; known 3-D property, pinned + XFAIL | library notes/nonlocal-benchmarks.md sec. 1 |
 | `scale_invariance` | x1 vs x1/25: bulk law and UC6 facet identical when the numerical parameters follow their groups; element-level size effect u_f/L x k; UC6 overshoot against mu v/delta0 (disk 0.067: T_max +5 %, cell 1.25: +70 %) | library notes/scaling-levers.md; exact Duvaut-Lions (cohesive_ref.py) |
 | `scale_bar` | fracturing C3D4 bar x1 vs x1/25: byte-identical when u_f, ell and Delta scale with the size; with the physics kept, strength unchanged and the size effect recorded (local u_f/h 0.4 -> 10; INTEGRAL ductility x80) | library notes/scaling-levers.md sec. 1, 3, 5 |
+| `size_effect` (LONG) | notched UC6 plate, D/l_ch 0.1-10: net-section strength at small size (0.978), LEFM approached from below at large size (0.924, c_f = 0.52 l_ch), Bazant fit | net section; LEFM M(T) (Tada, Feddersen); Bazant 1984 |
