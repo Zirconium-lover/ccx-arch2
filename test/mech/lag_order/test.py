@@ -28,6 +28,15 @@ limit at the same step (0.60 at dtmax 0.0025 against the Richardson limit
 CCX_DAMAGE_NONLOCAL_INNER=1 (refresh inside Newton) brings FROZEN to within
 0.12 % of LOCAL at dtmax 0.0025 (15.9902 vs 16.0087), 0.5 % allowed.
 
+SCHEME A against B.  The default (B, CCX_DAMAGE_COMMIT_CORRECT=1) recomputes
+D and D_vis at every commit from the converged state with the refreshed
+driver - what the output call used to do as a side effect, which is why the
+numbers above did not move when it became a commit step.  Without it (A, =0)
+the scheme is purely lagged and its error is 5-14x larger, recorded as INFO:
+measured on the developer's build (7dd4d72): FROZEN-LOCAL +9.7 / +5.4 /
++2.8 % at dtmax 0.005 / 0.0025 / 0.00125, order 0.89.  On a binary without
+the switch the A arms reproduce B.
+
 RED PATH, run: a scratch build whose lagged increment is multiplied by 1.1
 after the dt rescaling (damnonlocal.f, the line after val=val*dtcur/dtref) -
 a lag that is no longer consistent - gives FROZEN-LOCAL of -8.5/-9.0/-9.5 %,
@@ -51,9 +60,12 @@ SOURCE = "self-convergence against the implicit local solution of the same deck 
 DTS = (0.005, 0.0025, 0.00125)
 
 
-def arm(work, mode, dtm, exe):
+B = {"CCX_DAMAGE_COMMIT_CORRECT": "1"}   # scheme B named explicitly: the test must not follow the default
+
+
+def arm(work, mode, dtm, exe, env=B, tag=""):
     ell = {"LOCAL": None, "FROZEN": 0.01, "GRADIENT": 0.5}[mode]
-    return cross_bar(os.path.join(work, "%s_%g" % (mode, dtm)), 24, ell, mode, exe=exe,
+    return cross_bar(os.path.join(work, "%s%s_%g" % (mode, tag, dtm)), 24, ell, mode, exe=exe, env=env,
                      gen=("--dt0", repr(dtm / 2), "--dtmax", repr(dtm)))
 
 
@@ -74,8 +86,20 @@ def run(work, exe):
     ck.append(Check("lag error / LOCAL time error at dtmax=0.0025",
                     abs(diff[1]) / abs(linf - loc[1]["wtot"]), 1.0, cmp="le",
                     why="measured 0.60: the lag adds less than the step already costs LOCAL"))
+    # scheme A: no corrector at commit, the purely lagged scheme
+    a_env = {"CCX_DAMAGE_COMMIT_CORRECT": "0"}
+    # against LOCAL of scheme B: the implicit local model has no lagged driver,
+    # and A and B differ there by 1e-4 of W at most (15.8479/15.9918/16.0809
+    # against 15.8483/15.9902/16.0808), so its arms are not run twice
+    frz_a = [arm(work, "FROZEN", d, exe, a_env, "_A") for d in DTS]
+    diff_a = [f["wtot"] - l["wtot"] for f, l in zip(frz_a, loc)]
+    for d, x, l in zip(DTS, diff_a, loc):
+        ck.append(Check("scheme A (COMMIT_CORRECT=0) dtmax=%g FROZEN-LOCAL W rel." % d, x / l["wtot"], None,
+                        cmp="info"))
+    ck.append(Check("scheme A: observed order of the lag error",
+                    math.log(abs(diff_a[0]) / max(abs(diff_a[-1]), 1e-30), 2) / (len(DTS) - 1), None, cmp="info"))
     inner = cross_bar(os.path.join(work, "FROZEN_INNER"), 24, 0.01, "FROZEN",
-                      env={"CCX_DAMAGE_NONLOCAL_INNER": "1"}, exe=exe,
+                      env=dict(B, CCX_DAMAGE_NONLOCAL_INNER="1"), exe=exe,
                       gen=("--dt0", "0.00125", "--dtmax", "0.0025"))
     ck.append(Check("FROZEN+INNER=1 equals LOCAL at dtmax=0.0025", inner["wtot"], loc[1]["wtot"],
                     rtol=0.005, why="refresh once per Newton iteration removes the lag: "
