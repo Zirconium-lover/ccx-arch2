@@ -40,11 +40,15 @@ def main():
     ap.add_argument("names", nargs="*")
     ap.add_argument("--work", help="keep run directories here (default: a temp dir)")
     ap.add_argument("-l", "--list", action="store_true")
+    ap.add_argument("--long", action="store_true",
+                    help="also run the tests marked LONG (minutes each; not in the gate). "
+                         "A LONG test named on the command line always runs.")
     a = ap.parse_args()
-    names = a.names or tests()
+    names = a.names or [n for n in tests() if a.long or not getattr(load(n), "LONG", False)]
     if a.list:
         for n in tests():
-            print("%-22s %s" % (n, load(n).WHAT))
+            m = load(n)
+            print("%-22s %s%s" % (n, "[LONG] " if getattr(m, "LONG", False) else "", m.WHAT))
         return 0
     exe = os.environ.get("CCX_EXE", os.path.join(mechlib.ROOT, "src", "ccx_2.23_pardiso"))
     if not os.access(exe, os.X_OK):
@@ -72,7 +76,7 @@ def main():
         ok = err is None and checks and all(c.counts_as_pass for c in checks)
         if err:
             print("  ERROR %s" % err)
-        if dt > 60:
+        if dt > 60 and not getattr(m, "LONG", False):
             print("  SLOW  %.0f s exceeds the 60 s budget of a mechanics test" % dt)
             ok = False
         nbad += 0 if ok else 1

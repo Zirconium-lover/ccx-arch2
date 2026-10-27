@@ -34,6 +34,13 @@ T_max 1.0074 / 1.0758 / 1.5809, W 1.0028 / 1.0286 / 1.3607 - and at the deck
 groups: disk (0.067) T_max/Tn0 1.052, W/Gc 1.019; cell (1.25) 1.702 and
 1.477.
 
+(e) Elastic bar + one UC6 plane (mkcohesive.py, length 4, section 1),
+    x1 and x1/10.  With Kn x10 (alpha kept), Gc/10 and the displacement /10
+    every separation scales and the run is the same run: .sta identical,
+    W/(Gc A) 1.00011 on both.  With the physics kept (Gc, Tn0; Kn x10 by the
+    alpha rule) the interface still dissipates Gc per area (0.996) and the
+    strength is the same, but the bar breaks at a 10x larger Delta/L.
+
 RED PATH.  The identity checks are the same comparison as the third bulk
 arm, which differs from x1 by the factor k it is asserted to; run with
 MECH_RED_ENV=CCX_DAMAGE_CHARLEN=0 the bulk arms stop rc=201 (the legacy
@@ -147,4 +154,40 @@ def run(work, exe):
         if g in res:
             ck.append(Check("mu v/d0 = %g (%s): T_max/Tn0" % (g, tag), res[g][0], None, cmp="info"))
             ck.append(Check("mu v/d0 = %g (%s): W/Gc" % (g, tag), res[g][1], None, cmp="info"))
+    # (e) elastic bar + one UC6 interface (test/pathfollow/mkcohesive.py), x1 and x1/10
+    ck += bar_cohesive(work, exe)
+    return ck
+
+
+def bar_cohesive(work, exe):
+    import filecmp
+    import subprocess
+    from mechlib import ROOT
+    ck, r = [], {}
+    for tag, k, kn, gc, ue in (("x1", 1, 1e6, 2.0, 0.02), ("xk_scaled", 10, 1e7, 0.2, 0.002),
+                               ("xk_physics", 10, 1e7, 2.0, 0.02)):
+        d = os.path.join(work, "coh_" + tag)
+        os.makedirs(d, exist_ok=True)
+        subprocess.check_call(["python3", os.path.join(ROOT, "test/pathfollow/mkcohesive.py"), "--nslice", "4",
+                               "--isplit", "2", "--h", repr(1.0 / k), "--kn", repr(kn), "--gc", repr(gc),
+                               "--uend", repr(ue), "--gmin", "1e-6", "-o", os.path.join(d, "t.inp")],
+                              stdout=subprocess.DEVNULL)
+        rc, _ = ccx(d, "t", exe)
+        c = [(0.0, 0.0)] + [(ue * t, f) for t, f in totals(os.path.join(d, "t.dat"), "NRIGHT")]
+        a, length = (1.0 / k) ** 2, 4.0 / k
+        fm = max(f for _, f in c)
+        ubreak = next((u for u, f in c if u > 0 and f < 0.01 * fm and c.index((u, f)) > 1), c[-1][0])
+        r[tag] = dict(d=d, rc=rc, w=trapz(c) / (gc * a), fmax=fm / (400.0 * a), ub=ubreak / length)
+    ck.append(Check("UC6 bar: runs (rc)", max(abs(x["rc"]) for x in r.values()), 0, tol=0))
+    same = filecmp.cmp(os.path.join(r["x1"]["d"], "t.sta"), os.path.join(r["xk_scaled"]["d"], "t.sta"),
+                       shallow=False)
+    ck.append(Check("UC6 bar x1/10 with Kn x10, Gc/10, Delta/10: .sta identical", same, True, cmp="true"))
+    ck.append(Check("UC6 bar x1/10 scaled: W/(Gc A) vs x1", r["xk_scaled"]["w"], r["x1"]["w"], rtol=1e-6))
+    ck.append(Check("UC6 bar x1/10 physics kept (Gc, Kn x10): W/(Gc A)", r["xk_physics"]["w"], 1.0, rtol=0.01,
+                    why="the interface dissipates Gc per area at any size"))
+    ck.append(Check("UC6 bar x1/10 physics kept: strength F_max/(Tn0 A)", r["xk_physics"]["fmax"],
+                    r["x1"]["fmax"], rtol=0.03, why="strength regime on both; 3 % for the sampling of the peak"))
+    ck.append(Check("UC6 bar x1/10 physics kept: Delta_break/L x1/10 over x1 (= 10, size effect)",
+                    r["xk_physics"]["ub"] / r["x1"]["ub"], 10.0, rtol=0.15,
+                    why="the same delta_f on a bar 10x shorter"))
     return ck
