@@ -135,6 +135,7 @@ c      enddo
             endif
           enddo
         enddo
+        call uc6nconset(npropstart,ndprop)
         nprop=nprop+ndprop
       else
         call getnewline(inpc,textpart,istat,n,key,iline,ipol,inl,
