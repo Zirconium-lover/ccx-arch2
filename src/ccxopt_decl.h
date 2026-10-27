@@ -371,6 +371,18 @@ static const ccxopt_decl ccxopt_decl_table[]={
  "output at every increment - that call was doing this, on output "
  "increments only.  Inert for the legacy width with local damage",NULL},
 
+{"CCX_UC6_FAILED_OPEN",CCXOPT_ENUM,"unset (off)",CCXOPT_UNBOUNDED,"0|1",
+ "1: a UC6 facet whose degradation has reached its floor (1-dvisc <= gmin) "
+ "carries no tension and no shear, in traction and in tangent alike; "
+ "compression keeps the full-Kn contact.  Measured on fast-wrapped: keeping "
+ "gmin*Kn in the tangent alone walls it at peak (theta 0.1075, rc=201); "
+ "consistent, it ends as a completed fracture at theta 0.158082, 63 "
+ "deletions (off: 0.157680, 64).  Off, "
+ "such a facet carries gmin*Kn*delta, a force that grows with the opening "
+ "and does work of order gmin*delta^2/(delta_0*delta_f) Gc.  Unlike "
+ "CCX_DAMAGE_FACET_DEBRIS, which removes a facet and with it its contact, "
+ "this keeps the facet in compression",NULL},
+
 /* ---- the constitutive law ----------------------------------------- */
 {"CCX_DAMAGE_TRIAX_PK2",CCXOPT_ENUM,"unset (Cauchy)",CCXOPT_UNBOUNDED,"0|1",
  "A/B ONLY.  1 makes the damage law read the second Piola-Kirchhoff stress "

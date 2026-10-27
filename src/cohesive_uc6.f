@@ -54,6 +54,29 @@
       character*256 csm
       save zsmooth
 !
+!     CCX_UC6_FAILED_OPEN.  A facet whose degradation has reached the
+!     floor (1-dvisc <= gmin) still carries gmin*Kn*delta in tension and
+!     shear, a force that GROWS with the opening.  Over a large opening
+!     that is real extra work, W/Gc of order gmin*delta^2/(delta_0*
+!     delta_f) (library note notes/cohesive-uc6.md: +2.4 Gc at ten times
+!     delta_f for Kn=1e5, Tn0=50, Gc=0.3, gmin=1e-3), and it is what let
+!     fast-wrapped run on to theta=1 on the stretch of dead facets.  1
+!     sets the tension and shear traction of such a facet to zero, and
+!     its tangent with it, and keeps the full-Kn contact in compression.
+!     0 (default) is the law as it was, bit for bit.
+!
+!     THE TANGENT IS ZEROED TOO, AND THAT WAS MEASURED, NOT ASSUMED.
+!     Keeping gmin*Kn in the tangent alone - for conditioning, as
+!     CCX_DAMAGE_GMIN_TANGENT does for the bulk - walled fast-wrapped at
+!     theta=0.1075, at peak load with the grips still connected (rc=201,
+!     16 iterations per attempt down to dt=2e-6): the operator kept a
+!     stiffness the residual no longer had.  With the consistent tangent
+!     the same deck ends as a completed fracture at theta=0.158082 with
+!     63 deletions, against 0.157680 and 64 with the option off.
+!
+      integer ifopen
+      save ifopen
+!
 !     Diagnostic-only local rescue.  Acts on an explicit list of
 !     element numbers and on nothing else: no material card, no
 !     global damage law, no deletion logic, no controller.  Its
@@ -220,6 +243,16 @@
      &      ' x d0.  The law stays continuous and monotone; only its'
      &      //' derivative changes, and only within that band.'
         endif
+        ifopen=0
+        call getenv('CCX_UC6_FAILED_OPEN',csm)
+        if(csm(1:1).eq.'1') ifopen=1
+        if(ifopen.eq.1) then
+          write(*,'(a)')
+     &      '[UC6 FAILED OPEN] a facet at the degradation floor carries'
+     &      //' no tension and no shear, in traction and tangent;'
+     &      //' compression keeps the full-Kn contact.  This'
+     &      //' CHANGES THE ANSWER after facets fail'
+        endif
         call getenv('CCX_UC6_RESCUE_INC',cresc)
         if(cresc(1:1).ne.' ') read(cresc,*,err=9102,end=9102) irescinc
  9102   continue
@@ -290,6 +323,15 @@
       traction(2)=g*kn*beta*deltal(2)
       traction(3)=g*kn*beta*deltal(3)
 !
+!     CCX_UC6_FAILED_OPEN: see its declaration.  The tangent is zeroed
+!     to match after it is assembled below.
+!
+      if((ifopen.eq.1).and.(1.d0-dvisc.le.gmin)) then
+         if(deltal(1).gt.0.d0) traction(1)=0.d0
+         traction(2)=0.d0
+         traction(3)=0.d0
+      endif
+!
 !     Elastic/unloading tangent.
 !
       do i=1,3
@@ -319,6 +361,12 @@
                ctan(i,j)=ctan(i,j)-kn*qvec(i)*ddvisc*grad(j)
             enddo
          enddo
+      endif
+!
+      if((ifopen.eq.1).and.(1.d0-dvisc.le.gmin)) then
+         if(deltal(1).gt.0.d0) ctan(1,1)=0.d0
+         ctan(2,2)=0.d0
+         ctan(3,3)=0.d0
       endif
 !
       if(ndump.gt.0) then
