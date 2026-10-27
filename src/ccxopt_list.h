@@ -13,7 +13,7 @@
    Regenerate with tools/mkswitches.py; tools/mkswitches.py --check
    fails if this file is stale. */
 
-#define CCXOPT_KNOWN_COUNT 173
+#define CCXOPT_KNOWN_COUNT 174
 
 static const char *const ccxopt_known_name[CCXOPT_KNOWN_COUNT]={
   "CCX_CONVERGE_EXPLAIN",
@@ -186,6 +186,7 @@ static const char *const ccxopt_known_name[CCXOPT_KNOWN_COUNT]={
   "CCX_TOPODIAG",
   "CCX_UC6_CONTACT_SMOOTH",
   "CCX_UC6_DUMP_ELEMS",
+  "CCX_UC6_FAILED_OPEN",
   "CCX_UC6_RESCUE_ELEMS",
   "CCX_UC6_RESCUE_G",
   "CCX_UC6_RESCUE_INC",
@@ -360,6 +361,7 @@ static const char ccxopt_known_fortran[CCXOPT_KNOWN_COUNT]={
   0,
   0,
   0,
+  1,
   1,
   1,
   1,

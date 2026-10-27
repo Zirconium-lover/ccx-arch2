@@ -38,7 +38,7 @@
       real*8 edge1(3),edge2(3),crossv(3),jump(3),qvec(3),grad(3)
       real*8 area,norm1,normc,kn,tn0,ts0,gc,gmin,mu,beta
       real*8 d0,df,deff,dmax,dmax0,dback,dvisc,dvisc0,alpha,g
-      real*8 ddback,ddvisc,tol,initialgap,scale
+      real*8 ddback,ddvisc,tol,initialgap,scale,gfl
 !
 !     CCX_UC6_CONTACT_SMOOTH.  The normal law is continuous at
 !     deltal(1)=0 but its SLOPE jumps from g*kn to kn there, a factor of
@@ -53,6 +53,32 @@
       real*8 zsmooth,wsm,upen,psism,dpsism,ctan11
       character*256 csm
       save zsmooth
+!
+!     CCX_UC6_FAILED_OPEN.  A facet whose degradation has reached the
+!     floor (1-dvisc <= gmin) still carries gmin*Kn*delta in tension and
+!     shear, a force that GROWS with the opening.  Over a large opening
+!     that is real extra work, W/Gc of order gmin*delta^2/(delta_0*
+!     delta_f) (library note notes/cohesive-uc6.md: +2.4 Gc at ten times
+!     delta_f for Kn=1e5, Tn0=50, Gc=0.3, gmin=1e-3), and it is what let
+!     fast-wrapped run on to theta=1 on the stretch of dead facets.  1
+!     removes the floor: g = max(0,1-dvisc), so tension and shear
+!     traction and tangent fall continuously to zero at delta_f and the
+!     facet does exactly Gc; compression keeps the full-Kn contact.  0
+!     (default) is the law as it was, bit for bit.
+!
+!     CONTINUOUS, AND THAT WAS MEASURED, NOT ASSUMED.  Two switched
+!     versions came first.  Zeroing the traction at the floor but keeping
+!     gmin*Kn in the tangent walled fast-wrapped at peak (theta 0.1075,
+!     rc=201): the operator kept a stiffness the residual no longer had.
+!     Zeroing both at the floor ran fast-wrapped to fracture, but walled
+!     the notched plate of test/mech/size_effect before its peak (theta
+!     0.302, gmin=1e-3): at the floor the traction jumps by gmin*Kn*delta,
+!     about 1 per cent of Tn0, on many facets at once.  At gmin=1e-6 that
+!     jump vanishes and the plate is the same with the switch as
+!     without, which is what pointed at the jump.
+!
+      integer ifopen
+      save ifopen
 !
 !     Diagnostic-only local rescue.  Acts on an explicit list of
 !     element numbers and on nothing else: no material card, no
@@ -220,6 +246,16 @@
      &      ' x d0.  The law stays continuous and monotone; only its'
      &      //' derivative changes, and only within that band.'
         endif
+        ifopen=0
+        call getenv('CCX_UC6_FAILED_OPEN',csm)
+        if(csm(1:1).eq.'1') ifopen=1
+        if(ifopen.eq.1) then
+          write(*,'(a)')
+     &      '[UC6 FAILED OPEN] no gmin floor: tension and shear fall'
+     &      //' continuously to zero at delta_f, a failed facet carries'
+     &      //' nothing; compression keeps the full-Kn contact.  This'
+     &      //' CHANGES THE ANSWER after facets fail'
+        endif
         call getenv('CCX_UC6_RESCUE_INC',cresc)
         if(cresc(1:1).ne.' ') read(cresc,*,err=9102,end=9102) irescinc
  9102   continue
@@ -243,6 +279,16 @@
         endif
       endif
 !
+!     CCX_UC6_FAILED_OPEN: no floor.  g follows 1-dvisc to zero, so the
+!     traction and the tangent of tension and shear fall CONTINUOUSLY to
+!     zero at delta_f; compression keeps kn below.  gfl is the floor the
+!     softening tangent below is gated on.
+!
+      gfl=gmin
+      if(ifopen.eq.1) then
+         g=max(0.d0,1.d0-dvisc)
+         gfl=0.d0
+      endif!
 !     Gated by increment so the control and the intervention share
 !     the same history.  The first attempt applied the rescue from
 !     increment one, which changed the crack path from the start and
@@ -305,7 +351,7 @@
 !
       tol=1.d-12*max(1.d0,dmax0)
       if((deff.ge.dmax0-tol).and.(deff.gt.d0).and.(deff.lt.df)
-     &     .and.(deff.gt.1.d-30).and.(1.d0-dvisc.gt.gmin)) then
+     &     .and.(deff.gt.1.d-30).and.(1.d0-dvisc.gt.gfl)) then
          ddback=df*d0/((df-d0)*deff**2)
          ddvisc=alpha*ddback
          qvec(1)=max(deltal(1),0.d0)
