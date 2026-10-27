@@ -5,23 +5,28 @@ and shear.  That floor is a numerical device, and test/mech/size_effect
 showed what it costs when g_min Kn is not far below E: at g_min = 1e-3 the
 broken ligament of a notched plate carried 1.44 Tn0 and the plate never
 fractured.  The switch (developer, ffec13c; interface agreed 27.10):
-    failed     1 - D_vis <= g_min (at mu = 0: delta_max >= delta_f)
-    tension    T_n = 0 and its tangent 0
+    floor      removed: g = max(0, 1 - D_vis), so traction and tangent go
+               to 0 CONTINUOUSLY, reaching it exactly at delta_f (D = 1);
+               with mu > 0 the facet is failed when D_vis = 1
+    tension    T_n = 0 and its tangent 0 once failed
     shear      T_s = 0 and its tangent 0, at ANY sign of delta_n (no friction)
     contact    T_n = Kn delta_n, as before
     off        the law is bit-identical to the default
 References (closed form, exact on these paths): T = 0 to the printed digit
-after failure, which with the agreed threshold 1 - D <= g_min begins where the
-softening line meets the floor, delta_c = 0.009766, not at delta_f; the work is
-therefore Gc less the triangle beyond delta_c, W_open = 0.99943 Gc (the
-default law instead ADDS the floor's sliver, 1.00059 Gc); compression Kn delta_n; the notched plate of
+for delta >= delta_f; the work to delta_f is Gc exactly (the default law adds
+the floor's sliver, 1.00059 Gc); compression Kn delta_n; the notched plate of
 size_effect at D/l_ch = 1 breaks at the same sigma_N with g_min = 1e-3 as the
 default law does with g_min = 1e-6 (0.581 Tn0).
 
 Facet: uc6_law/uc6deck.py, Kn = 1e6, Tn0 = 400, Ts0 = 300, Gc = 2, g_min =
 1e-3 (large on purpose, so the floor is visible): delta_0 = 4e-4 and delta_f =
-1e-2 lie on the increments; delta_c does not, so the work gets 5e-5 as in
-uc6_law.
+1e-2 lie on the increments, so the trapezoidal work is exact (1e-5).
+
+HISTORY.  The developer's first version opened the facet with a JUMP when
+1 - D reached g_min (delta_c = 0.009766 here): the traction fell by
+g_min Kn delta (~1 % of Tn0) at once on many facets, and the size_effect
+plate failed before its peak (theta 0.302, sigma_N 0.306 Tn0).  This test
+then expected W = 0.99943 Gc; the continuous form replaced both.
 
 Measured on e2d474f, a binary WITHOUT the switch: seven checks red, as an
 acceptance test must be before its code - residual tractions 0.03 Tn0, W
@@ -59,16 +64,6 @@ def facet(work, name, path, env, dt=0.01):
     dat = os.path.join(d, "u.dat")
     f = [totals(dat, "NPLUS", c) for c in range(3)] if rc == 0 else [[], [], []]
     return rc, [(t, (fx / AREA, fy / AREA, fz / AREA)) for (t, fx), (_, fy), (_, fz) in zip(*f)]
-
-
-def w_open():
-    """Work per area to failure with the switch: the softening line is followed
-    down to delta_c, where (1 - D) = g_min, i.e. where it meets the floor
-    g_min Kn delta - and there the facet opens and pulls no more.  So W is
-    Gc less the thin triangle from delta_c to delta_f under the line."""
-    sl = TN0 / (DF - D0)
-    dc = sl * DF / (GMIN * KN + sl)
-    return KN * D0 ** 2 / 2 + (TN0 + sl * (DF - dc)) / 2 * (dc - D0), dc
 
 
 def lerp(path, t):
@@ -112,9 +107,8 @@ def run(wk, exe):
         ck.append(Check("%s: runs (rc)" % tag, max(abs(r1), abs(r2), abs(r3)), 0, tol=0))
         if r1 or r2 or r3:
             continue
-        wo, dc = w_open()
-        post1 = [abs(T[0]) for t, T in t1 if deff(lerp(p1, t)) > dc * 1.0001]
-        post2 = [abs(T[1]) for t, T in t2 if deff(lerp(p2, t)) > dc * 1.0001]
+        post1 = [abs(T[0]) for t, T in t1 if deff(lerp(p1, t)) >= DF * (1 - 1e-12)]
+        post2 = [abs(T[1]) for t, T in t2 if deff(lerp(p2, t)) >= DF * (1 - 1e-12)]
         shear3 = [abs(T[1]) for t, T in t3 if t > 1.4 + 1e-9]
         tn3 = [T[0] / (KN * lerp(p3, t)[0]) for t, T in t3 if t > 1.3 and lerp(p3, t)[0] < -1e-5]
         if tag == "switch":
@@ -124,10 +118,8 @@ def run(wk, exe):
                             0.0, tol=1e-9))
             ck.append(Check("failed, compressed: T_n / (Kn delta_n)", min(tn3), 1.0, tol=1e-5))
             ck.append(Check("failed, compressed: T_n / (Kn delta_n) (max)", max(tn3), 1.0, tol=1e-5))
-            ck.append(Check("mode I: W to delta_f / W_open (no g_min sliver)", work(t1, p1) / wo, 1.0, tol=5e-5,
-                            why="W_open/Gc = %.5f: the line is cut where it meets the floor, delta_c = %.6f; "
-                            "delta_c is not on the grid, so 5e-5 as in uc6_law" % (wo / GC, dc)))
-            ck.append(Check("mode II: W to delta_f / W_open", work(t2, p2) / wo, 1.0, tol=5e-5))
+            ck.append(Check("mode I: W to delta_f / Gc (no g_min sliver)", work(t1, p1) / GC, 1.0, tol=1e-5))
+            ck.append(Check("mode II: W to delta_f / Gc", work(t2, p2) / GC, 1.0, tol=1e-5))
             ck.append(Check("mode I: work after failure (to 1.2 delta_f)", work(t1, p1, False) - work(t1, p1), 0.0,
                             tol=1e-9, why="the facet does no work once failed"))
         else:
