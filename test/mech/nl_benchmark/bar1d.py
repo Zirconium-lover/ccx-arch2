@@ -24,10 +24,11 @@ def vol6(p, q, r, s):
 
 
 def deck(nx, length=10.0, iweak=None, e=1.0e5, sy=100.0, sy_bulk=102.0, uf=0.1,
-         eps0=1.0e-6, ell=0.5, uend=0.15, dt=0.005, edge=False, eltype="C3D8"):
+         eps0=1.0e-6, ell=0.5, uend=0.15, dt=0.005, edge=False, eltype="C3D8", width=1.0):
     """eltype C3D8 / C3D8I / C3D8R: one hexahedron per slice; C3D4: each
     slice cut into the six Kuhn tetrahedra; C3D10: the same with midside
-    nodes.  ell=None writes no NONLOCAL= (the local crack band)."""
+    nodes.  ell=None writes no NONLOCAL= (the local crack band).  width is
+    the edge of the square section (scale tests shrink it with the length)."""
     h = length / nx
     if iweak is None:
         iweak = 0 if edge else nx // 2
@@ -37,12 +38,12 @@ def deck(nx, length=10.0, iweak=None, e=1.0e5, sy=100.0, sy_bulk=102.0, uf=0.1,
     for i in range(nx + 1):
         for j in (0, 1):
             for k in (0, 1):
-                L.append("%d, %.12g, %d, %d" % (nid(i, j, k), i * h, j, k))
+                L.append("%d, %.12g, %.12g, %.12g" % (nid(i, j, k), i * h, j * width, k * width))
     coord = {}
     for i in range(nx + 1):
         for j in (0, 1):
             for k in (0, 1):
-                coord[nid(i, j, k)] = (i * h, j, k)
+                coord[nid(i, j, k)] = (i * h, j * width, k * width)
     mid, nxt = {}, 4 * (nx + 1) + 1
     bulk, weak = [], []
     eid = 0
