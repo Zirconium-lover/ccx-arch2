@@ -1538,7 +1538,11 @@
 !       bucket grid of cell size rmax, so a neighbourhood search only has
 !       to look at the 27 cells around the element
 !
-        csize=rmax
+!
+!       The cell is a hair wider than the search radius below, so the
+!       relative tolerance there never reaches past the 3x3x3 cells.
+!
+        csize=rmax*(1.d0+2.d-9)
         ip=max(1,int((xmax-xmin)/csize)+1)
         jp=max(1,int((ymax-ymin)/csize)+1)
         kp=max(1,int((zmax-zmin)/csize)+1)
@@ -1585,7 +1589,18 @@
                       if(j.eq.0) exit
                       d2=(cen(1,i)-cen(1,j))**2+(cen(2,i)-cen(2,j))**2
      &                  +(cen(3,i)-cen(3,j))**2
-                      if(d2.le.rmax*rmax) then
+!
+!                     RELATIVE TOLERANCE, so the neighbourhood is a
+!                     property of the geometry and not of its units.
+!                     With 2*ell a multiple of h - ell=0.5, h=0.125 puts
+!                     2*ell at exactly 8h - centres lie ON the radius,
+!                     and whether rounding put them inside depended on
+!                     the length scale: test/mech/scale_bar measured 82.7
+!                     against 81.8 mean neighbours at x1 and x1/25, and
+!                     rc=0 against rc=201.  1e-9 of the radius is far
+!                     above rounding and far below any mesh feature.
+!
+                      if(d2.le.rmax*rmax*(1.d0+1.d-9)) then
                         nn=nn+1
                         if(m.eq.2) then
 !
