@@ -16947,7 +16947,9 @@ damage_controller_done:
 	      itiefac,tieset,smscale,&mscalmethod,nbody,t0g,t1g,
 	      islavquadel,aut,irowt,jqt,&mortartrafoflag,
 	      &intscheme,physcon,dam,damn,iponoel);
-      SFREE(inum);SFREE(v);SFREE(stx);VISC_FN_RELEASE();
+      /* plain SFREE, not VISC_FN_RELEASE: iout=-2 does not compute fn, and
+         the copy that macro keeps is what the damping audit reads next */
+      SFREE(inum);SFREE(v);SFREE(stx);SFREE(fn);
     }
 
     /* output */
