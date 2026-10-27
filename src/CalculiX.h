@@ -4182,6 +4182,7 @@ void damage_resolution_report(const double *co,const ITG *kon,
      const ITG *nplicon,ITG npmat_,const ITG *ndmcon,const double *dmcon,
      ITG ndmat_,const ITG *ielprop,const double *prop,double dt0,
      double visceta);
+void FORTRAN(damtriaxset,(ITG *ipk2,ITG *inlgeom));
 
 /* [DAMAGE NONLOCAL] refresh the regularised driving variable once per
    results() call instead of once per increment.  Called from results.c,

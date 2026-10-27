@@ -13,20 +13,20 @@
  "cases": [
   {
    "name": "fast-plain",
-   "what": "the bar with a partial cohesive plane: bulk damage, deletion, cutbacks",
+   "what": "the bar with a partial cohesive plane: bulk damage, deletion, cutbacks REBASELINED when the damage law started reading the Cauchy stress under NLGEOM (triaxiality and ENERGY sigma_0 were taken from the second Piola-Kirchhoff stress; test/mech/bulk_law measured the error, O(strain)). Every fast deck runs NLGEOM, so every trajectory moves; measured against the binary before the change, both with the commit corrector: the plain fracture keeps its 90 deletions, the deletion set differs by 2 elements and the first deletion moves from theta 0.0335 to 0.0355; the end force at theta=1 is unchanged (3.999). last_inc 507 -> 512.",
    "kind": "fast",
    "variant": "plain",
    "env": [],
    "expect": {
     "rc": 0,
-    "last_inc": 507,
+    "last_inc": 512,
     "theta": "0.100000E+01",
     "deletions": 90
    }
   },
   {
    "name": "fast-plain-smooth",
-   "what": "the regulariser on a deck with real bulk damage and 90 deletions where no DAMAGED facet ever closes: it must be a byte-for-byte no-op, because the blend differs from the sharp law only when g<1 AND the facet is in compression",
+   "what": "the regulariser on a deck with real bulk damage and 90 deletions where no DAMAGED facet ever closes: it must be a byte-for-byte no-op, because the blend differs from the sharp law only when g<1 AND the facet is in compression REBASELINED when the damage law started reading the Cauchy stress under NLGEOM (triaxiality and ENERGY sigma_0 were taken from the second Piola-Kirchhoff stress; test/mech/bulk_law measured the error, O(strain)). Every fast deck runs NLGEOM, so every trajectory moves; measured against the binary before the change, both with the commit corrector: the plain fracture keeps its 90 deletions, the deletion set differs by 2 elements and the first deletion moves from theta 0.0335 to 0.0355; the end force at theta=1 is unchanged (3.999). last_inc 507 -> 512, still byte-identical to fast-plain as this case claims.",
    "kind": "fast",
    "variant": "plain",
    "env": [
@@ -34,7 +34,7 @@
    ],
    "expect": {
     "rc": 0,
-    "last_inc": 507,
+    "last_inc": 512,
     "theta": "0.100000E+01",
     "deletions": 90
    },
@@ -55,7 +55,7 @@
   },
   {
    "name": "fast-plain-unsym",
-   "what": "the same deck with the damage-consistent tangent switched ON. It used to be the reverse - the gate forced UNSYM on every case and this one turned it off - and it was flipped when the unconditional export was removed, because a case that asks for what is now the default tests nothing and passes: 'Not wrong: UNINFORMATIVE, which is the expensive kind', as run_fast's own docstring puts it about a different case that had already failed this way. Agent 2 caught it. MEASURED against fast-plain: the fracture is IDENTICAL - m.damage byte-for-byte, the same 90 deletions in the same order at the same times - and the terminal grip reaction prints the same seven digits. What moves is the per-node split of that reaction, by at most 2.18e-04 relative, and the transverse displacements, by at most 7.1e-09 absolute on a field whose axial component is 1.0. The run takes 0.2 percent MORE Newton iterations and 33 percent MORE wall time. DISCLOSURE: on C3D4 the rank-1 term is zero on the softening branch, which is why the fracture does not move; on MULTI-POINT elements it is not zero and is harmful - a C3D8 deck fails at theta=0.135 with it against 0.215 without - so this case pins a deviation that is known to cost, not a recommended setting.",
+   "what": "the same deck with the damage-consistent tangent switched ON. It used to be the reverse - the gate forced UNSYM on every case and this one turned it off - and it was flipped when the unconditional export was removed, because a case that asks for what is now the default tests nothing and passes: 'Not wrong: UNINFORMATIVE, which is the expensive kind', as run_fast's own docstring puts it about a different case that had already failed this way. Agent 2 caught it. MEASURED against fast-plain: the fracture is IDENTICAL - m.damage byte-for-byte, the same 90 deletions in the same order at the same times - and the terminal grip reaction prints the same seven digits. What moves is the per-node split of that reaction, by at most 2.18e-04 relative, and the transverse displacements, by at most 7.1e-09 absolute on a field whose axial component is 1.0. The run takes 0.2 percent MORE Newton iterations and 33 percent MORE wall time. DISCLOSURE: on C3D4 the rank-1 term is zero on the softening branch, which is why the fracture does not move; on MULTI-POINT elements it is not zero and is harmful - a C3D8 deck fails at theta=0.135 with it against 0.215 without - so this case pins a deviation that is known to cost, not a recommended setting. REBASELINED when the damage law started reading the Cauchy stress under NLGEOM (triaxiality and ENERGY sigma_0 were taken from the second Piola-Kirchhoff stress; test/mech/bulk_law measured the error, O(strain)). Every fast deck runs NLGEOM, so every trajectory moves; measured against the binary before the change, both with the commit corrector: the plain fracture keeps its 90 deletions, the deletion set differs by 2 elements and the first deletion moves from theta 0.0335 to 0.0355; the end force at theta=1 is unchanged (3.999). last_inc 507 -> 514. The byte equality of m.damage with fast-plain no longer holds: the same 90 elements are deleted, but element 1696 two increments later (inc 65 against 63) - so equal_to is replaced by same_deletion_set_as, which still holds.",
    "kind": "fast",
    "variant": "plain",
    "env": [
@@ -63,29 +63,11 @@
    ],
    "expect": {
     "rc": 0,
-    "last_inc": 507,
+    "last_inc": 514,
     "theta": "0.100000E+01",
     "deletions": 90
    },
-   "same_deletion_set_as": "fast-plain",
-   "equal_to": [
-    {
-     "case": "fast-plain",
-     "rtol": 0.0,
-     "atol": 0.0,
-     "files": [
-      "m.damage"
-     ]
-    },
-    {
-     "case": "fast-plain",
-     "rtol": 0.0005,
-     "atol": 1e-07,
-     "files": [
-      "m.dat"
-     ]
-    }
-   ]
+   "same_deletion_set_as": "fast-plain"
   },
   {
    "name": "fast-plain-noglob",
@@ -108,7 +90,7 @@
   },
   {
    "name": "fast-plain-repack",
-   "what": "the same deck with the CSR permutation cached. The structurally-symmetric asymmetric branch - which is what CCX_DAMAGE_TANGENT=UNSYM makes every run of this branch take - otherwise rebuilds its whole CSR on every factorisation: four allocations, a full sort of the lower triangle by row, a sort of every row by column, and an interleave. The permutation depends only on the sparsity pattern, and on this deck the pattern changes ONCE: measured 1 rebuild against 1282 refills. Acceptance is BIT IDENTITY, because the same values land in the same slots, and that is what this case pins - all five files byte-for-byte. MEASURED: 25.62 s against 27.92 s here and 13.43 s against 15.10 s on fast-wrapped. CCX_PARDISO_REPACK_VERIFY rebuilds the whole CSR anyway and compares it slot by slot, and CCX_PARDISO_REPACK_BREAK corrupts one cache entry so that check can be seen to go red - it catches 1 slot in 58408 every time.",
+   "what": "the same deck with the CSR permutation cached. The structurally-symmetric asymmetric branch - which is what CCX_DAMAGE_TANGENT=UNSYM makes every run of this branch take - otherwise rebuilds its whole CSR on every factorisation: four allocations, a full sort of the lower triangle by row, a sort of every row by column, and an interleave. The permutation depends only on the sparsity pattern, and on this deck the pattern changes ONCE: measured 1 rebuild against 1282 refills. Acceptance is BIT IDENTITY, because the same values land in the same slots, and that is what this case pins - all five files byte-for-byte. MEASURED: 25.62 s against 27.92 s here and 13.43 s against 15.10 s on fast-wrapped. CCX_PARDISO_REPACK_VERIFY rebuilds the whole CSR anyway and compares it slot by slot, and CCX_PARDISO_REPACK_BREAK corrupts one cache entry so that check can be seen to go red - it catches 1 slot in 58408 every time. REBASELINED when the damage law started reading the Cauchy stress under NLGEOM (triaxiality and ENERGY sigma_0 were taken from the second Piola-Kirchhoff stress; test/mech/bulk_law measured the error, O(strain)). Every fast deck runs NLGEOM, so every trajectory moves; measured against the binary before the change, both with the commit corrector: the plain fracture keeps its 90 deletions, the deletion set differs by 2 elements and the first deletion moves from theta 0.0335 to 0.0355; the end force at theta=1 is unchanged (3.999). last_inc 507 -> 512, still byte-identical to fast-plain as this case claims.",
    "kind": "fast",
    "variant": "plain",
    "env": [
@@ -116,7 +98,7 @@
    ],
    "expect": {
     "rc": 0,
-    "last_inc": 507,
+    "last_inc": 512,
     "theta": "0.100000E+01",
     "deletions": 90
    },
@@ -138,22 +120,26 @@
   },
   {
    "name": "fast-wrapped",
-   "what": "the eroding phase wrapped in facets: reaches a node with no bulk support, and walls on the crack-face kink REBASELINED when the unconditional CCX_DAMAGE_TANGENT=UNSYM export was removed from run_s3rad.sh, so this case now runs the binary's DEFAULT tangent instead of a forced one. What moved is trajectory and nothing else: last_inc 99 -> 96 and the fifth digit of theta, 0.158766E+00 -> 0.158754E+00. The deletion set was checked element by element against the run with the export and is IDENTICAL (64 elements, same members) - that check is what makes this a rebaseline rather than a change of answer, and if it had moved the removal would have been stopped instead. Measured cost of the removal on this gate: 154 s against 179 s for the full 20 cases at -j 2, one thread per process - NOT the 37 percent the binary's banner quotes, which was measured on s3rad rather than on these decks. REBASELINED 25.09 by Agent 1: the rescue ladder's LEVEL 3, the trust-region dogleg, refused to arm on a symmetric operator (nasym=0), and the default tangent is symmetric - so on default settings it could never fire, which every run's GLOBALIZE CENSUS showed as 'trust region (dogleg) ... never fired'. It now reads the transpose half from the stored half when the matrix is symmetric, and its own identity check dot(J^T r0,p_N)=|r0|^2 passes to 1e-12. On this wall it CONVERGES the increment that stopped here (inc 96, attempt 4, in 10 iterations), and the run stops at the next wall: last_inc 96 -> 98, theta 0.158754E+00 -> 0.158762E+00. m.sta is identical line for line up to inc 96 attempt 4, and the deletion set is identical - 64 elements, same members, same order - so this is a rebaseline of where the stop falls, not a change of answer. ENDING RECLASSIFIED 25.09 by Agent 1: rc 201 -> 0, and nothing else moved - m.sta and m.damage are byte-identical to the run before the change. The run still stops where it stopped; what changed is what the stop is called. At this point every one of the 54 cohesive facets is dead by its own law, the bulk elements the law broke are already deleted, and [FRACTURE SEPARATION] finds the grips joined by nothing the damage law has left unbroken; the end force is 1.5 per cent of peak (0.84 against 54.7). When every rescue level has then failed, checkconvergence ends the step as a completed fracture on the last committed state instead of the stock error stop. That the state carries a little load is the numerical floor, not material: fast-wrapped-gmin, whose facets keep more residual stiffness, passes through the same separated state and carries up to 10 per cent of peak through dead facets to theta=1. log_has pins the REASON, because rc=0 alone is also what a run that never fractured returns. REBASELINED 25.09 by Agent 1: run_s3rad.sh now exports CCX_DAMAGE_AUTOSPC_FORCE=1 (forum f53fa30: on s3rad the rc=201 stop at theta 0.2550 is the force criterion on a node with no bulk left). Here it does the same thing: the node the mask already excludes from the displacement norm is now excluded from the force residual as well, the increment that stopped at 98 converges, and the run reaches theta=1 at increment 533. The FRACTURE is unchanged - m.damage byte-identical, the same 64 deletions in the same order, masked_max and worst_ratio unchanged. What is new is what comes after it: the grips are separated by the law from inc 98 on, and the grip force then rises linearly from 0.84 to 5.30 (9.7 per cent of peak) at theta=1 - the dead facets' residual stiffness stretched elastically, exactly as fast-wrapped-gmin already showed. The FRACTURE COMPLETE ending on this deck is pinned by fast-wrapped-nospc, which has no mask and therefore no exclusion.",
+   "what": "the eroding phase wrapped in facets: reaches a node with no bulk support, and walls on the crack-face kink REBASELINED when the unconditional CCX_DAMAGE_TANGENT=UNSYM export was removed from run_s3rad.sh, so this case now runs the binary's DEFAULT tangent instead of a forced one. What moved is trajectory and nothing else: last_inc 99 -> 96 and the fifth digit of theta, 0.158766E+00 -> 0.158754E+00. The deletion set was checked element by element against the run with the export and is IDENTICAL (64 elements, same members) - that check is what makes this a rebaseline rather than a change of answer, and if it had moved the removal would have been stopped instead. Measured cost of the removal on this gate: 154 s against 179 s for the full 20 cases at -j 2, one thread per process - NOT the 37 percent the binary's banner quotes, which was measured on s3rad rather than on these decks. REBASELINED 25.09 by Agent 1: the rescue ladder's LEVEL 3, the trust-region dogleg, refused to arm on a symmetric operator (nasym=0), and the default tangent is symmetric - so on default settings it could never fire, which every run's GLOBALIZE CENSUS showed as 'trust region (dogleg) ... never fired'. It now reads the transpose half from the stored half when the matrix is symmetric, and its own identity check dot(J^T r0,p_N)=|r0|^2 passes to 1e-12. On this wall it CONVERGES the increment that stopped here (inc 96, attempt 4, in 10 iterations), and the run stops at the next wall: last_inc 96 -> 98, theta 0.158754E+00 -> 0.158762E+00. m.sta is identical line for line up to inc 96 attempt 4, and the deletion set is identical - 64 elements, same members, same order - so this is a rebaseline of where the stop falls, not a change of answer. ENDING RECLASSIFIED 25.09 by Agent 1: rc 201 -> 0, and nothing else moved - m.sta and m.damage are byte-identical to the run before the change. The run still stops where it stopped; what changed is what the stop is called. At this point every one of the 54 cohesive facets is dead by its own law, the bulk elements the law broke are already deleted, and [FRACTURE SEPARATION] finds the grips joined by nothing the damage law has left unbroken; the end force is 1.5 per cent of peak (0.84 against 54.7). When every rescue level has then failed, checkconvergence ends the step as a completed fracture on the last committed state instead of the stock error stop. That the state carries a little load is the numerical floor, not material: fast-wrapped-gmin, whose facets keep more residual stiffness, passes through the same separated state and carries up to 10 per cent of peak through dead facets to theta=1. log_has pins the REASON, because rc=0 alone is also what a run that never fractured returns. REBASELINED 25.09 by Agent 1: run_s3rad.sh now exports CCX_DAMAGE_AUTOSPC_FORCE=1 (forum f53fa30: on s3rad the rc=201 stop at theta 0.2550 is the force criterion on a node with no bulk left). Here it does the same thing: the node the mask already excludes from the displacement norm is now excluded from the force residual as well, the increment that stopped at 98 converges, and the run reaches theta=1 at increment 533. The FRACTURE is unchanged - m.damage byte-identical, the same 64 deletions in the same order, masked_max and worst_ratio unchanged. What is new is what comes after it: the grips are separated by the law from inc 98 on, and the grip force then rises linearly from 0.84 to 5.30 (9.7 per cent of peak) at theta=1 - the dead facets' residual stiffness stretched elastically, exactly as fast-wrapped-gmin already showed. The FRACTURE COMPLETE ending on this deck is pinned by fast-wrapped-nospc, which has no mask and therefore no exclusion. REBASELINED when the damage law started reading the Cauchy stress under NLGEOM (triaxiality and ENERGY sigma_0 were taken from the second Piola-Kirchhoff stress; test/mech/bulk_law measured the error, O(strain)). Every fast deck runs NLGEOM, so every trajectory moves; measured against the binary before the change, both with the commit corrector: the wrapped fracture keeps its 64 deletions with the SAME members and the same first deletion (theta 0.0315); the grips separate slightly earlier, theta 0.1585 -> 0.1577. Before, the run then went on to theta=1 on the elastic stretch of the dead facets' residual stiffness (end force 5.30, 9.7 per cent of peak); now the rescue ladder is exhausted in the separated state and the step ends as a completed fracture at theta=0.157680, end force 0.84 (1.5 per cent of peak) - the same ending fast-wrapped-nospc pins. last_inc 533 -> 109, worst_ratio 0.00044641 -> 0.00039179; log_has added so rc=0 says why.",
    "kind": "fast",
    "variant": "wrapped",
    "env": [],
    "expect": {
     "rc": 0,
-    "last_inc": 533,
-    "theta": "0.100000E+01",
+    "last_inc": 109,
+    "theta": "0.157680E+00",
     "deletions": 64,
     "masked_max": 1,
-    "worst_ratio": 0.00044641
+    "worst_ratio": 0.00039179,
+    "log_has": [
+     "[FRACTURE COMPLETE]",
+     "joined only by material the damage law has broken"
+    ]
    }
   },
   {
    "name": "fast-wrapped-smooth",
-   "what": "the same deck with the crack-face kink regularised: the wall is gone and the fracture is not",
+   "what": "the same deck with the crack-face kink regularised: the wall is gone and the fracture is not REBASELINED when the damage law started reading the Cauchy stress under NLGEOM (triaxiality and ENERGY sigma_0 were taken from the second Piola-Kirchhoff stress; test/mech/bulk_law measured the error, O(strain)). Every fast deck runs NLGEOM, so every trajectory moves; measured against the binary before the change, both with the commit corrector: the wrapped fracture keeps its 64 deletions with the SAME members and the same first deletion (theta 0.0315); the grips separate slightly earlier, theta 0.1585 -> 0.1577. last_inc 515 -> 526.",
    "kind": "fast",
    "variant": "wrapped",
    "env": [
@@ -161,7 +147,7 @@
    ],
    "expect": {
     "rc": 0,
-    "last_inc": 515,
+    "last_inc": 526,
     "theta": "0.100000E+01",
     "deletions": 64
    },
@@ -169,7 +155,7 @@
   },
   {
    "name": "fast-wrapped-gmin",
-   "what": "the same wall with the residual-stiffness floor raised from 1e-04 to 1e-02. MEASURED: THE WALL IS GONE - rc=0, theta reaches 1.0 at increment 520, with the IDENTICAL 64-element deletion set, and the cost per increment halves, 2.60 Newton iterations against 6.12. The floor's own comment in resultsmech.f claims exactly this trade - 'raising the floor trades a small unreleased load for conditioning' - and until now nobody had measured it. Swept over six decades the deck is INSENSITIVE from 1e-06 to 1e-03 (identical wall, identical 606 iterations) and worse at 1e-01 (walls earlier, at increment 61, with two fewer elements gone), so the useful band is narrow and 1e-02 is inside it. Note this is the SECOND independent cure for this wall: fast-wrapped-smooth removes it with the crack-face regulariser and arrives at the same place, theta 1.0 with the same 64 elements, at increment 515. Two mechanisms, one wall, one fracture - which says the wall is a conditioning phenomenon and not a unique defect.",
+   "what": "the same wall with the residual-stiffness floor raised from 1e-04 to 1e-02. MEASURED: THE WALL IS GONE - rc=0, theta reaches 1.0 at increment 520, with the IDENTICAL 64-element deletion set, and the cost per increment halves, 2.60 Newton iterations against 6.12. The floor's own comment in resultsmech.f claims exactly this trade - 'raising the floor trades a small unreleased load for conditioning' - and until now nobody had measured it. Swept over six decades the deck is INSENSITIVE from 1e-06 to 1e-03 (identical wall, identical 606 iterations) and worse at 1e-01 (walls earlier, at increment 61, with two fewer elements gone), so the useful band is narrow and 1e-02 is inside it. Note this is the SECOND independent cure for this wall: fast-wrapped-smooth removes it with the crack-face regulariser and arrives at the same place, theta 1.0 with the same 64 elements, at increment 515. Two mechanisms, one wall, one fracture - which says the wall is a conditioning phenomenon and not a unique defect. REBASELINED when the damage law started reading the Cauchy stress under NLGEOM (triaxiality and ENERGY sigma_0 were taken from the second Piola-Kirchhoff stress; test/mech/bulk_law measured the error, O(strain)). Every fast deck runs NLGEOM, so every trajectory moves; measured against the binary before the change, both with the commit corrector: the wrapped fracture keeps its 64 deletions with the SAME members and the same first deletion (theta 0.0315); the grips separate slightly earlier, theta 0.1585 -> 0.1577. last_inc 520 -> 521, end force 5.30 unchanged.",
    "kind": "fast",
    "variant": "wrapped",
    "env": [
@@ -177,7 +163,7 @@
    ],
    "expect": {
     "rc": 0,
-    "last_inc": 520,
+    "last_inc": 521,
     "theta": "0.100000E+01",
     "deletions": 64
    },
@@ -185,7 +171,7 @@
   },
   {
    "name": "fast-wrapped-nospc",
-   "what": "the same wall without the load-path mask, which must not change it. MEASURED, once the override actually reached the binary: m.sta and m.damage are byte-identical to fast-wrapped - same wall at increment 99, same 64 deletions in the same order - and m.cvg differs at exactly one place, increment 93 attempt 2 iteration 3, CORR.DISP 0.1018 against 0.1438. That single difference IS the mask: it excludes a node from the displacement norm and changes nothing else. REBASELINED when the unconditional CCX_DAMAGE_TANGENT=UNSYM export was removed from run_s3rad.sh, so this case now runs the binary's DEFAULT tangent instead of a forced one. What moved is trajectory and nothing else: last_inc 99 -> 96 and theta 0.158766E+00 -> 0.158754E+00. The deletion set was checked element by element against the run with the export and is IDENTICAL (64 elements, same members) - that check is what makes this a rebaseline rather than a change of answer, and if it had moved the removal would have been stopped instead. Measured cost of the removal on this gate: 154 s against 179 s for the full 20 cases at -j 2, one thread per process - NOT the 37 percent the binary's banner quotes, which was measured on s3rad rather than on these decks. REBASELINED 25.09 by Agent 1: the rescue ladder's LEVEL 3, the trust-region dogleg, refused to arm on a symmetric operator (nasym=0), and the default tangent is symmetric - so on default settings it could never fire, which every run's GLOBALIZE CENSUS showed as 'trust region (dogleg) ... never fired'. It now reads the transpose half from the stored half when the matrix is symmetric, and its own identity check dot(J^T r0,p_N)=|r0|^2 passes to 1e-12. On this wall it CONVERGES the increment that stopped here (inc 96, attempt 4, in 10 iterations), and the run stops at the next wall: last_inc 96 -> 98, theta 0.158754E+00 -> 0.158762E+00. m.sta is identical line for line up to inc 96 attempt 4, and the deletion set is identical - 64 elements, same members, same order - so this is a rebaseline of where the stop falls, not a change of answer. ENDING RECLASSIFIED 25.09 by Agent 1: rc 201 -> 0, and nothing else moved - m.sta and m.damage are byte-identical to the run before the change. The run still stops where it stopped; what changed is what the stop is called. At this point every one of the 54 cohesive facets is dead by its own law, the bulk elements the law broke are already deleted, and [FRACTURE SEPARATION] finds the grips joined by nothing the damage law has left unbroken; the end force is 1.5 per cent of peak (0.84 against 54.7). When every rescue level has then failed, checkconvergence ends the step as a completed fracture on the last committed state instead of the stock error stop. That the state carries a little load is the numerical floor, not material: fast-wrapped-gmin, whose facets keep more residual stiffness, passes through the same separated state and carries up to 10 per cent of peak through dead facets to theta=1. log_has pins the REASON, because rc=0 alone is also what a run that never fractured returns. CHANGED 25.09 by Agent 1: with CCX_DAMAGE_AUTOSPC_FORCE=1 exported by the runner, the mask is no longer display-only - it also takes the masked node out of the force residual, which is what lets fast-wrapped pass its wall. Without the mask there is nothing to exclude, so this case keeps the old ending and is now the one that pins it: inc 98, theta 0.158762, [FRACTURE COMPLETE] by the damage law. It is equal to fast-wrapped in m.damage (the same 64 deletions) and no longer in m.sta, which is what the switch is for.",
+   "what": "the same wall without the load-path mask, which must not change it. MEASURED, once the override actually reached the binary: m.sta and m.damage are byte-identical to fast-wrapped - same wall at increment 99, same 64 deletions in the same order - and m.cvg differs at exactly one place, increment 93 attempt 2 iteration 3, CORR.DISP 0.1018 against 0.1438. That single difference IS the mask: it excludes a node from the displacement norm and changes nothing else. REBASELINED when the unconditional CCX_DAMAGE_TANGENT=UNSYM export was removed from run_s3rad.sh, so this case now runs the binary's DEFAULT tangent instead of a forced one. What moved is trajectory and nothing else: last_inc 99 -> 96 and theta 0.158766E+00 -> 0.158754E+00. The deletion set was checked element by element against the run with the export and is IDENTICAL (64 elements, same members) - that check is what makes this a rebaseline rather than a change of answer, and if it had moved the removal would have been stopped instead. Measured cost of the removal on this gate: 154 s against 179 s for the full 20 cases at -j 2, one thread per process - NOT the 37 percent the binary's banner quotes, which was measured on s3rad rather than on these decks. REBASELINED 25.09 by Agent 1: the rescue ladder's LEVEL 3, the trust-region dogleg, refused to arm on a symmetric operator (nasym=0), and the default tangent is symmetric - so on default settings it could never fire, which every run's GLOBALIZE CENSUS showed as 'trust region (dogleg) ... never fired'. It now reads the transpose half from the stored half when the matrix is symmetric, and its own identity check dot(J^T r0,p_N)=|r0|^2 passes to 1e-12. On this wall it CONVERGES the increment that stopped here (inc 96, attempt 4, in 10 iterations), and the run stops at the next wall: last_inc 96 -> 98, theta 0.158754E+00 -> 0.158762E+00. m.sta is identical line for line up to inc 96 attempt 4, and the deletion set is identical - 64 elements, same members, same order - so this is a rebaseline of where the stop falls, not a change of answer. ENDING RECLASSIFIED 25.09 by Agent 1: rc 201 -> 0, and nothing else moved - m.sta and m.damage are byte-identical to the run before the change. The run still stops where it stopped; what changed is what the stop is called. At this point every one of the 54 cohesive facets is dead by its own law, the bulk elements the law broke are already deleted, and [FRACTURE SEPARATION] finds the grips joined by nothing the damage law has left unbroken; the end force is 1.5 per cent of peak (0.84 against 54.7). When every rescue level has then failed, checkconvergence ends the step as a completed fracture on the last committed state instead of the stock error stop. That the state carries a little load is the numerical floor, not material: fast-wrapped-gmin, whose facets keep more residual stiffness, passes through the same separated state and carries up to 10 per cent of peak through dead facets to theta=1. log_has pins the REASON, because rc=0 alone is also what a run that never fractured returns. CHANGED 25.09 by Agent 1: with CCX_DAMAGE_AUTOSPC_FORCE=1 exported by the runner, the mask is no longer display-only - it also takes the masked node out of the force residual, which is what lets fast-wrapped pass its wall. Without the mask there is nothing to exclude, so this case keeps the old ending and is now the one that pins it: inc 98, theta 0.158762, [FRACTURE COMPLETE] by the damage law. It is equal to fast-wrapped in m.damage (the same 64 deletions) and no longer in m.sta, which is what the switch is for. REBASELINED when the damage law started reading the Cauchy stress under NLGEOM (triaxiality and ENERGY sigma_0 were taken from the second Piola-Kirchhoff stress; test/mech/bulk_law measured the error, O(strain)). Every fast deck runs NLGEOM, so every trajectory moves; measured against the binary before the change, both with the commit corrector: the wrapped fracture keeps its 64 deletions with the SAME members and the same first deletion (theta 0.0315); the grips separate slightly earlier, theta 0.1585 -> 0.1577. last_inc 98 -> 109, theta 0.158762 -> 0.157680, end force 0.84 as before; now equal to fast-wrapped in m.sta as well.",
    "kind": "fast",
    "variant": "wrapped",
    "env": [
@@ -193,8 +179,8 @@
    ],
    "expect": {
     "rc": 0,
-    "last_inc": 98,
-    "theta": "0.158762E+00",
+    "last_inc": 109,
+    "theta": "0.157680E+00",
     "deletions": 64,
     "log_has": [
      "[FRACTURE COMPLETE]",
@@ -212,7 +198,7 @@
   },
   {
    "name": "fast-plain-gradual",
-   "what": "CCX_DAMAGE_GRADUAL_DELETE=8 on a run that needs no help, which must not change the answer. The forces of every deleted batch are released over 8 same-load steps (Liu and Liu 2018) instead of at once; each pass restarts the increment from xstateini, so only the end point beta=0 enters the answer and that is the instant deletion's. MEASURED 26.09 by Agent 1: m.damage byte-identical to fast-plain (90 deletions, same elements, same increments, same order), last_inc 507, the force at every printed point equal to 7 digits except 4e-6 relative at theta=0.0915; 32 batches, 256 converged release steps, no halving, and 41 percent more Newton attempts. RED PATH: a release walk that ended anywhere but beta=0, or that let the path enter the material history, moves m.damage.",
+   "what": "CCX_DAMAGE_GRADUAL_DELETE=8 on a run that needs no help, which must not change the answer. The forces of every deleted batch are released over 8 same-load steps (Liu and Liu 2018) instead of at once; each pass restarts the increment from xstateini, so only the end point beta=0 enters the answer and that is the instant deletion's. MEASURED 26.09 by Agent 1: m.damage byte-identical to fast-plain (90 deletions, same elements, same increments, same order), last_inc 507, the force at every printed point equal to 7 digits except 4e-6 relative at theta=0.0915; 32 batches, 256 converged release steps, no halving, and 41 percent more Newton attempts. RED PATH: a release walk that ended anywhere but beta=0, or that let the path enter the material history, moves m.damage. REBASELINED when the damage law started reading the Cauchy stress under NLGEOM (triaxiality and ENERGY sigma_0 were taken from the second Piola-Kirchhoff stress; test/mech/bulk_law measured the error, O(strain)). Every fast deck runs NLGEOM, so every trajectory moves; measured against the binary before the change, both with the commit corrector: the plain fracture keeps its 90 deletions, the deletion set differs by 2 elements and the first deletion moves from theta 0.0335 to 0.0355; the end force at theta=1 is unchanged (3.999). last_inc 507 -> 514; 30 batches and 240 converged steps instead of 32 and 256. m.damage is no longer byte-equal to fast-plain (element 1696 deleted at inc 65 against 63, as under the unsymmetric tangent), so equal_to is replaced by same_deletion_set_as, which holds: the walk still changes no member of the fracture.",
    "kind": "fast",
    "variant": "plain",
    "env": [
@@ -220,25 +206,18 @@
    ],
    "expect": {
     "rc": 0,
-    "last_inc": 507,
+    "last_inc": 514,
     "theta": "0.100000E+01",
     "deletions": 90,
     "log_has": [
-     "[DAMAGE GRADUAL] step total: 32 batch(es), 256 converged step(s), 0 halving(s), 0 exhausted"
+     "[DAMAGE GRADUAL] step total: 30 batch(es), 240 converged step(s), 0 halving(s), 0 exhausted"
     ]
    },
-   "equal_to": {
-    "case": "fast-plain",
-    "rtol": 0.0,
-    "atol": 0.0,
-    "files": [
-     "m.damage"
-    ]
-   }
+   "same_deletion_set_as": "fast-plain"
   },
   {
    "name": "fast-wrapped-gradual",
-   "what": "the fast-wrapped wall passed by releasing the deleted batch gradually instead of by the load-path mask. Without the mask (fast-wrapped-nospc) the same-load solve after the deletion at increment 94 has no nearby solution and the run ends there as a completed fracture at theta=0.159. With CCX_DAMAGE_GRADUAL_DELETE=8 the forces of each batch are walked from beta=1 to 0 in same-load steps and a failed step is halved: MEASURED 26.09 by Agent 1, the step 0.125 -> 0 failed once, 0.125 -> 0.0625 -> 0 converged, and the run reaches theta=1 with the same 64 deletions as the masked fast-wrapped (same elements, same order; the last one at increment 94 theta 0.1595 instead of 95 theta 0.1588, where the masked run needed a cutback) and the same end force, 5.299252. 27 batches, 217 converged release steps. RED PATH: fast-wrapped-nospc is this case with the switch off.",
+   "what": "the fast-wrapped wall passed by releasing the deleted batch gradually instead of by the load-path mask. Without the mask (fast-wrapped-nospc) the same-load solve after the deletion at increment 94 has no nearby solution and the run ends there as a completed fracture at theta=0.159. With CCX_DAMAGE_GRADUAL_DELETE=8 the forces of each batch are walked from beta=1 to 0 in same-load steps and a failed step is halved: MEASURED 26.09 by Agent 1, the step 0.125 -> 0 failed once, 0.125 -> 0.0625 -> 0 converged, and the run reaches theta=1 with the same 64 deletions as the masked fast-wrapped (same elements, same order; the last one at increment 94 theta 0.1595 instead of 95 theta 0.1588, where the masked run needed a cutback) and the same end force, 5.299252. 27 batches, 217 converged release steps. RED PATH: fast-wrapped-nospc is this case with the switch off. REBASELINED when the damage law started reading the Cauchy stress under NLGEOM (triaxiality and ENERGY sigma_0 were taken from the second Piola-Kirchhoff stress; test/mech/bulk_law measured the error, O(strain)). Every fast deck runs NLGEOM, so every trajectory moves; measured against the binary before the change, both with the commit corrector: the wrapped fracture keeps its 64 deletions with the SAME members and the same first deletion (theta 0.0315); the grips separate slightly earlier, theta 0.1585 -> 0.1577. last_inc 521 -> 528; 29 batches, 232 converged steps, no halving (was 27, 217, one halving).",
    "kind": "fast",
    "variant": "wrapped",
    "env": [
@@ -247,17 +226,17 @@
    ],
    "expect": {
     "rc": 0,
-    "last_inc": 521,
+    "last_inc": 528,
     "theta": "0.100000E+01",
     "deletions": 64,
     "log_has": [
-     "[DAMAGE GRADUAL] step total: 27 batch(es), 217 converged step(s), 1 halving(s), 0 exhausted"
+     "[DAMAGE GRADUAL] step total: 29 batch(es), 232 converged step(s), 0 halving(s), 0 exhausted"
     ]
    }
   },
   {
    "name": "fast-wrapped-damping",
-   "what": "the nodal dashpot of the Fn-series recipe, CCX_DAMAGE_VISCOUS_DAMPING=2e-4, which no case ran although every run of that series depends on it. What is pinned is its energy AUDIT, under MALLOC_PERTURB_=165 so that a read of freed memory cannot pass by luck. The audit used to read fn at the top of an increment, after stock CalculiX had freed it at the end of the last Newton iteration: on this deck it printed work sum(fn.du) 3.843796e+01 without the perturbation and about -7.32e-125 with it (the exact value moves with the heap) - the fill byte 0xA5 read as a double - while m.sta, m.damage and m.cvg stayed byte-identical, because the audit feeds nothing back. On the fn100 deck with the gradient backend armed the freed block was unmapped and the run died with SIGSEGV after its first deletion batch. With the kept copy the audit prints 4.255799e+01 with and without the perturbation, and the solution is the one it was before the fix, file for file. RED PATH, run: the binary before the fix prints -7.321299e-125 here and fails the log_has line. The damping itself moves only the trajectory: the same 64 deletions in the same order as fast-wrapped, the last one at increment 93 theta 0.1600 instead of 95 theta 0.1588, and the step ends at increment 525 instead of 533.",
+   "what": "the nodal dashpot of the Fn-series recipe, CCX_DAMAGE_VISCOUS_DAMPING=2e-4, which no case ran although every run of that series depends on it. What is pinned is its energy AUDIT, under MALLOC_PERTURB_=165 so that a read of freed memory cannot pass by luck. The audit used to read fn at the top of an increment, after stock CalculiX had freed it at the end of the last Newton iteration: on this deck it printed work sum(fn.du) 3.843796e+01 without the perturbation and about -7.32e-125 with it (the exact value moves with the heap) - the fill byte 0xA5 read as a double - while m.sta, m.damage and m.cvg stayed byte-identical, because the audit feeds nothing back. On the fn100 deck with the gradient backend armed the freed block was unmapped and the run died with SIGSEGV after its first deletion batch. With the kept copy the audit prints 4.255799e+01 with and without the perturbation, and the solution is the one it was before the fix, file for file. RED PATH, run: the binary before the fix prints -7.321299e-125 here and fails the log_has line. The damping itself moves only the trajectory: the same 64 deletions in the same order as fast-wrapped, the last one at increment 93 theta 0.1600 instead of 95 theta 0.1588, and the step ends at increment 525 instead of 533. REBASELINED when the damage law started reading the Cauchy stress under NLGEOM (triaxiality and ENERGY sigma_0 were taken from the second Piola-Kirchhoff stress; test/mech/bulk_law measured the error, O(strain)). Every fast deck runs NLGEOM, so every trajectory moves; measured against the binary before the change, both with the commit corrector: the wrapped fracture keeps its 64 deletions with the SAME members and the same first deletion (theta 0.0315); the grips separate slightly earlier, theta 0.1585 -> 0.1577. last_inc 525 -> 517; the dashpot audit reads dissipated 2.760479e-03 against work 4.337685e+01 (fraction 6.364e-05, was 6.142e-05).",
    "kind": "fast",
    "variant": "wrapped",
    "env": [
@@ -266,18 +245,18 @@
    ],
    "expect": {
     "rc": 0,
-    "last_inc": 525,
+    "last_inc": 517,
     "theta": "0.100000E+01",
     "deletions": 64,
     "log_has": [
-     "[DAMAGE VISCOUS DAMPING] step total: dissipated 2.613800e-03, work sum(fn.du) 4.255799e+01 (fraction 6.142e-05)"
+     "[DAMAGE VISCOUS DAMPING] step total: dissipated 2.760479e-03, work sum(fn.du) 4.337685e+01 (fraction 6.364e-05)"
     ]
    },
    "same_deletion_set_as": "fast-wrapped"
   },
   {
    "name": "fast-wrapped-noglob",
-   "what": "the walling deck with the same four mechanisms off. MEASURED: it still walls - and it walls 0.5 percent LATER in load factor, 0.159572 against 0.158766, with 568 Newton iterations against 606 and one FEWER element deleted (63 against 64). The apparatus built one mechanism per wall does not move this wall in the direction it was built for. Pinned at the wall, which is the physically meaningful event here, not at whichever increment the solver gave up on. ENDING RECLASSIFIED 25.09 by Agent 1: rc 201 -> 0, and nothing else moved - m.sta and m.damage are byte-identical to the run before the change. The run still stops where it stopped; what changed is what the stop is called. At this point every one of the 54 cohesive facets is dead by its own law, the bulk elements the law broke are already deleted, and [FRACTURE SEPARATION] finds the grips joined by nothing the damage law has left unbroken; the end force is 1.5 per cent of peak (0.84 against 54.7). When every rescue level has then failed, checkconvergence ends the step as a completed fracture on the last committed state instead of the stock error stop. That the state carries a little load is the numerical floor, not material: fast-wrapped-gmin, whose facets keep more residual stiffness, passes through the same separated state and carries up to 10 per cent of peak through dead facets to theta=1. log_has pins the REASON, because rc=0 alone is also what a run that never fractured returns.",
+   "what": "the walling deck with the same four mechanisms off. MEASURED: it still walls - and it walls 0.5 percent LATER in load factor, 0.159572 against 0.158766, with 568 Newton iterations against 606 and one FEWER element deleted (63 against 64). The apparatus built one mechanism per wall does not move this wall in the direction it was built for. Pinned at the wall, which is the physically meaningful event here, not at whichever increment the solver gave up on. ENDING RECLASSIFIED 25.09 by Agent 1: rc 201 -> 0, and nothing else moved - m.sta and m.damage are byte-identical to the run before the change. The run still stops where it stopped; what changed is what the stop is called. At this point every one of the 54 cohesive facets is dead by its own law, the bulk elements the law broke are already deleted, and [FRACTURE SEPARATION] finds the grips joined by nothing the damage law has left unbroken; the end force is 1.5 per cent of peak (0.84 against 54.7). When every rescue level has then failed, checkconvergence ends the step as a completed fracture on the last committed state instead of the stock error stop. That the state carries a little load is the numerical floor, not material: fast-wrapped-gmin, whose facets keep more residual stiffness, passes through the same separated state and carries up to 10 per cent of peak through dead facets to theta=1. log_has pins the REASON, because rc=0 alone is also what a run that never fractured returns. REBASELINED when the damage law started reading the Cauchy stress under NLGEOM (triaxiality and ENERGY sigma_0 were taken from the second Piola-Kirchhoff stress; test/mech/bulk_law measured the error, O(strain)). Every fast deck runs NLGEOM, so every trajectory moves; measured against the binary before the change, both with the commit corrector: the wrapped fracture keeps its 64 deletions with the SAME members and the same first deletion (theta 0.0315); the grips separate slightly earlier, theta 0.1585 -> 0.1577. last_inc 101 -> 100, theta 0.159572 -> 0.157690, 63 deletions as before.",
    "kind": "fast",
    "variant": "wrapped",
    "env": [
@@ -288,8 +267,8 @@
    ],
    "expect": {
     "rc": 0,
-    "last_inc": 101,
-    "theta": "0.159572E+00",
+    "last_inc": 100,
+    "theta": "0.157690E+00",
     "deletions": 63,
     "log_has": [
      "[FRACTURE COMPLETE]",
@@ -299,7 +278,7 @@
   },
   {
    "name": "fast-wrapped-cut",
-   "what": "the same wall with the load-path WIDTH measured on every committed batch but the stopping threshold set to 1e-09, which nothing reaches. This is the no-perturbation proof: a measurement that silently changes the run it measures is worse than no measurement, so all five output files must be byte-identical to fast-wrapped. The measure's self test - fifteen checks including the one where deleting a wide bridge collapses the cut by 99.9 percent while every boolean rule still says CONNECTED - runs before the switch is allowed to arm and must report PASSED. REBASELINED when the unconditional CCX_DAMAGE_TANGENT=UNSYM export was removed from run_s3rad.sh, so this case now runs the binary's DEFAULT tangent instead of a forced one. What moved is trajectory and nothing else: last_inc 99 -> 96 and theta 0.158766E+00 -> 0.158754E+00. The deletion set was checked element by element against the run with the export and is IDENTICAL (64 elements, same members) - that check is what makes this a rebaseline rather than a change of answer, and if it had moved the removal would have been stopped instead. Measured cost of the removal on this gate: 154 s against 179 s for the full 20 cases at -j 2, one thread per process - NOT the 37 percent the binary's banner quotes, which was measured on s3rad rather than on these decks. REBASELINED 25.09 by Agent 1: the rescue ladder's LEVEL 3, the trust-region dogleg, refused to arm on a symmetric operator (nasym=0), and the default tangent is symmetric - so on default settings it could never fire, which every run's GLOBALIZE CENSUS showed as 'trust region (dogleg) ... never fired'. It now reads the transpose half from the stored half when the matrix is symmetric, and its own identity check dot(J^T r0,p_N)=|r0|^2 passes to 1e-12. On this wall it CONVERGES the increment that stopped here (inc 96, attempt 4, in 10 iterations), and the run stops at the next wall: last_inc 96 -> 98, theta 0.158754E+00 -> 0.158762E+00. m.sta is identical line for line up to inc 96 attempt 4, and the deletion set is identical - 64 elements, same members, same order - so this is a rebaseline of where the stop falls, not a change of answer. ENDING RECLASSIFIED 25.09 by Agent 1: rc 201 -> 0, and nothing else moved - m.sta and m.damage are byte-identical to the run before the change. The run still stops where it stopped; what changed is what the stop is called. At this point every one of the 54 cohesive facets is dead by its own law, the bulk elements the law broke are already deleted, and [FRACTURE SEPARATION] finds the grips joined by nothing the damage law has left unbroken; the end force is 1.5 per cent of peak (0.84 against 54.7). When every rescue level has then failed, checkconvergence ends the step as a completed fracture on the last committed state instead of the stock error stop. That the state carries a little load is the numerical floor, not material: fast-wrapped-gmin, whose facets keep more residual stiffness, passes through the same separated state and carries up to 10 per cent of peak through dead facets to theta=1. log_has pins the REASON, because rc=0 alone is also what a run that never fractured returns. REBASELINED 25.09 with fast-wrapped (CCX_DAMAGE_AUTOSPC_FORCE=1 in the runner): theta=1 at increment 533, the same 64 deletions, no FRACTURE COMPLETE; still byte-identical to fast-wrapped in all five files, which is the point of this case.",
+   "what": "the same wall with the load-path WIDTH measured on every committed batch but the stopping threshold set to 1e-09, which nothing reaches. This is the no-perturbation proof: a measurement that silently changes the run it measures is worse than no measurement, so all five output files must be byte-identical to fast-wrapped. The measure's self test - fifteen checks including the one where deleting a wide bridge collapses the cut by 99.9 percent while every boolean rule still says CONNECTED - runs before the switch is allowed to arm and must report PASSED. REBASELINED when the unconditional CCX_DAMAGE_TANGENT=UNSYM export was removed from run_s3rad.sh, so this case now runs the binary's DEFAULT tangent instead of a forced one. What moved is trajectory and nothing else: last_inc 99 -> 96 and theta 0.158766E+00 -> 0.158754E+00. The deletion set was checked element by element against the run with the export and is IDENTICAL (64 elements, same members) - that check is what makes this a rebaseline rather than a change of answer, and if it had moved the removal would have been stopped instead. Measured cost of the removal on this gate: 154 s against 179 s for the full 20 cases at -j 2, one thread per process - NOT the 37 percent the binary's banner quotes, which was measured on s3rad rather than on these decks. REBASELINED 25.09 by Agent 1: the rescue ladder's LEVEL 3, the trust-region dogleg, refused to arm on a symmetric operator (nasym=0), and the default tangent is symmetric - so on default settings it could never fire, which every run's GLOBALIZE CENSUS showed as 'trust region (dogleg) ... never fired'. It now reads the transpose half from the stored half when the matrix is symmetric, and its own identity check dot(J^T r0,p_N)=|r0|^2 passes to 1e-12. On this wall it CONVERGES the increment that stopped here (inc 96, attempt 4, in 10 iterations), and the run stops at the next wall: last_inc 96 -> 98, theta 0.158754E+00 -> 0.158762E+00. m.sta is identical line for line up to inc 96 attempt 4, and the deletion set is identical - 64 elements, same members, same order - so this is a rebaseline of where the stop falls, not a change of answer. ENDING RECLASSIFIED 25.09 by Agent 1: rc 201 -> 0, and nothing else moved - m.sta and m.damage are byte-identical to the run before the change. The run still stops where it stopped; what changed is what the stop is called. At this point every one of the 54 cohesive facets is dead by its own law, the bulk elements the law broke are already deleted, and [FRACTURE SEPARATION] finds the grips joined by nothing the damage law has left unbroken; the end force is 1.5 per cent of peak (0.84 against 54.7). When every rescue level has then failed, checkconvergence ends the step as a completed fracture on the last committed state instead of the stock error stop. That the state carries a little load is the numerical floor, not material: fast-wrapped-gmin, whose facets keep more residual stiffness, passes through the same separated state and carries up to 10 per cent of peak through dead facets to theta=1. log_has pins the REASON, because rc=0 alone is also what a run that never fractured returns. REBASELINED 25.09 with fast-wrapped (CCX_DAMAGE_AUTOSPC_FORCE=1 in the runner): theta=1 at increment 533, the same 64 deletions, no FRACTURE COMPLETE; still byte-identical to fast-wrapped in all five files, which is the point of this case. REBASELINED when the damage law started reading the Cauchy stress under NLGEOM (triaxiality and ENERGY sigma_0 were taken from the second Piola-Kirchhoff stress; test/mech/bulk_law measured the error, O(strain)). Every fast deck runs NLGEOM, so every trajectory moves; measured against the binary before the change, both with the commit corrector: the wrapped fracture keeps its 64 deletions with the SAME members and the same first deletion (theta 0.0315); the grips separate slightly earlier, theta 0.1585 -> 0.1577. Ends with fast-wrapped, byte-identical as this case claims: last_inc 533 -> 109, theta 1 -> 0.157680.",
    "kind": "fast",
    "variant": "wrapped",
    "env": [
@@ -307,8 +286,8 @@
    ],
    "expect": {
     "rc": 0,
-    "last_inc": 533,
-    "theta": "0.100000E+01",
+    "last_inc": 109,
+    "theta": "0.157680E+00",
     "deletions": 64
    },
    "same_deletion_set_as": "fast-wrapped",
@@ -329,7 +308,7 @@
   },
   {
    "name": "fast-wrapped-severed",
-   "what": "the same deck, stopped when the load path has narrowed to a thousandth of its original width. MEASURED: the reference cut at the first committed batch is 0.8701933; at increment 36 it is 2.800000e-04, a ratio of 3.2e-04, and that number is what a SINGLE face of area 2.8 at the residual-stiffness floor g=1e-04 is worth. The specimen is held together by one floored face and nothing else, while the topological sweep - correctly - still calls the grips CONNECTED. Without the criterion this deck grinds on to increment 99 and stops with rc=201, 63 increments and two thirds of its wall clock later, having deleted 18 more elements from a specimen that was already in two pieces. WITH it the run ends rc=0 at the separation, which is the difference between a solver that gave up and a specimen that broke. This is the s3rad story reproduced in six seconds instead of sixty-nine minutes.",
+   "what": "the same deck, stopped when the load path has narrowed to a thousandth of its original width. MEASURED: the reference cut at the first committed batch is 0.8701933; at increment 36 it is 2.800000e-04, a ratio of 3.2e-04, and that number is what a SINGLE face of area 2.8 at the residual-stiffness floor g=1e-04 is worth. The specimen is held together by one floored face and nothing else, while the topological sweep - correctly - still calls the grips CONNECTED. Without the criterion this deck grinds on to increment 99 and stops with rc=201, 63 increments and two thirds of its wall clock later, having deleted 18 more elements from a specimen that was already in two pieces. WITH it the run ends rc=0 at the separation, which is the difference between a solver that gave up and a specimen that broke. This is the s3rad story reproduced in six seconds instead of sixty-nine minutes. REBASELINED when the damage law started reading the Cauchy stress under NLGEOM (triaxiality and ENERGY sigma_0 were taken from the second Piola-Kirchhoff stress; test/mech/bulk_law measured the error, O(strain)). Every fast deck runs NLGEOM, so every trajectory moves; measured against the binary before the change, both with the commit corrector: the severed deck ends where it ended, theta=0.0635, with 45 deletions instead of 46 (one element fewer: the deletion sets differ by exactly that element) and last_inc 36 -> 34.",
    "kind": "fast",
    "variant": "wrapped",
    "env": [
@@ -337,9 +316,9 @@
    ],
    "expect": {
     "rc": 0,
-    "last_inc": 36,
+    "last_inc": 34,
     "theta": "0.635000E-01",
-    "deletions": 46
+    "deletions": 45
    }
   },
   {
@@ -417,7 +396,7 @@
   },
   {
    "name": "fast-plain-nochain",
-   "what": "the T1 nonlocal chain rule ARMED and proved inert anyway. The deck runs with no internal length, so damnlchain cannot report a factor and the probe never opens, whatever the switch says. MEASURED against fast-plain: m.sta, m.damage, m.cvg and m.dat byte for byte identical, m.frd differing only in its UTIME stamp. This is the compatibility claim for T1 stated as a test rather than an assertion - every one of the other cases runs at ell=0, so if T1 could move them it would move this one first. The case used to pass =0; it was flipped to =1 when the default became off, because a case that sets the default tests nothing.",
+   "what": "the T1 nonlocal chain rule ARMED and proved inert anyway. The deck runs with no internal length, so damnlchain cannot report a factor and the probe never opens, whatever the switch says. MEASURED against fast-plain: m.sta, m.damage, m.cvg and m.dat byte for byte identical, m.frd differing only in its UTIME stamp. This is the compatibility claim for T1 stated as a test rather than an assertion - every one of the other cases runs at ell=0, so if T1 could move them it would move this one first. The case used to pass =0; it was flipped to =1 when the default became off, because a case that sets the default tests nothing. REBASELINED when the damage law started reading the Cauchy stress under NLGEOM (triaxiality and ENERGY sigma_0 were taken from the second Piola-Kirchhoff stress; test/mech/bulk_law measured the error, O(strain)). Every fast deck runs NLGEOM, so every trajectory moves; measured against the binary before the change, both with the commit corrector: the plain fracture keeps its 90 deletions, the deletion set differs by 2 elements and the first deletion moves from theta 0.0335 to 0.0355; the end force at theta=1 is unchanged (3.999). last_inc 507 -> 512, still byte-identical to fast-plain as this case claims.",
    "kind": "fast",
    "variant": "plain",
    "env": [
@@ -425,7 +404,7 @@
    ],
    "expect": {
     "rc": 0,
-    "last_inc": 507,
+    "last_inc": 512,
     "theta": "0.100000E+01",
     "deletions": 90
    },
@@ -463,7 +442,7 @@
   },
   {
    "name": "fast-plain-charlen",
-   "what": "the same deck with the DIRECTIONAL crack-band width armed, CCX_DAMAGE_CHARLEN=1, instead of the legacy (6V)^(1/3).  This case exists because the switch changes a length that stands in the damage law itself, D += L*dEps_p/u_f, so it cannot be covered by a byte-identity case - the answer is expected to move - and because nothing else in the gate executes the projection at all.  What it pins is the part that must NOT move: the fracture.  MEASURED, 90 deletions and the SAME 90 ELEMENTS as fast-plain, which is what same_deletion_set_as asserts; only the trajectory shifts, 508 increments against 507.  The shift is one-sided and explainable: 68 of the 90 elements fail EARLIER and none later, by at most 6.72 per cent in load fraction, because on these tetrahedra the projection onto the major principal direction is LARGER than the cube root of six volumes, and a larger L accumulates damage faster.  The reference for the width itself is not here but in test/crackband/run_cbwidth_test.sh, which checks it against hand-computable geometry, and the reason the two lengths agree so closely on this deck at all is that on the corner tetrahedron of a cube they are exactly equal - see case 5 there.  DISCLOSURE: this case runs the projection on C3D4 only, because the deck is C3D4.  The lift of the C3D4 restriction that the same switch performs is covered SEPARATELY, by hex-nonlocal-card (integral backend) and hex-gradient-card (gradient backend) - which was outside the gate when this description was first written and is not any more.  That case pins a geometric neighbour count rather than a verdict, because the two failures it guards against were both silent: a hexahedral deck ran unregularised while looking healthy. REBASELINED when the unconditional CCX_DAMAGE_TANGENT=UNSYM export was removed from run_s3rad.sh, so this case now runs the binary's DEFAULT tangent instead of a forced one. What moved is trajectory and nothing else: last_inc 508 -> 506; theta stays 1.0 exactly. The deletion set was checked element by element against the run with the export and is IDENTICAL (90 elements, same members) - that check is what makes this a rebaseline rather than a change of answer, and if it had moved the removal would have been stopped instead. Measured cost of the removal on this gate: 154 s against 179 s for the full 20 cases at -j 2, one thread per process - NOT the 37 percent the binary's banner quotes, which was measured on s3rad rather than on these decks.",
+   "what": "the same deck with the DIRECTIONAL crack-band width armed, CCX_DAMAGE_CHARLEN=1, instead of the legacy (6V)^(1/3).  This case exists because the switch changes a length that stands in the damage law itself, D += L*dEps_p/u_f, so it cannot be covered by a byte-identity case - the answer is expected to move - and because nothing else in the gate executes the projection at all.  What it pins is the part that must NOT move: the fracture.  MEASURED, 90 deletions and the SAME 90 ELEMENTS as fast-plain, which is what same_deletion_set_as asserts; only the trajectory shifts, 508 increments against 507.  The shift is one-sided and explainable: 68 of the 90 elements fail EARLIER and none later, by at most 6.72 per cent in load fraction, because on these tetrahedra the projection onto the major principal direction is LARGER than the cube root of six volumes, and a larger L accumulates damage faster.  The reference for the width itself is not here but in test/crackband/run_cbwidth_test.sh, which checks it against hand-computable geometry, and the reason the two lengths agree so closely on this deck at all is that on the corner tetrahedron of a cube they are exactly equal - see case 5 there.  DISCLOSURE: this case runs the projection on C3D4 only, because the deck is C3D4.  The lift of the C3D4 restriction that the same switch performs is covered SEPARATELY, by hex-nonlocal-card (integral backend) and hex-gradient-card (gradient backend) - which was outside the gate when this description was first written and is not any more.  That case pins a geometric neighbour count rather than a verdict, because the two failures it guards against were both silent: a hexahedral deck ran unregularised while looking healthy. REBASELINED when the unconditional CCX_DAMAGE_TANGENT=UNSYM export was removed from run_s3rad.sh, so this case now runs the binary's DEFAULT tangent instead of a forced one. What moved is trajectory and nothing else: last_inc 508 -> 506; theta stays 1.0 exactly. The deletion set was checked element by element against the run with the export and is IDENTICAL (90 elements, same members) - that check is what makes this a rebaseline rather than a change of answer, and if it had moved the removal would have been stopped instead. Measured cost of the removal on this gate: 154 s against 179 s for the full 20 cases at -j 2, one thread per process - NOT the 37 percent the binary's banner quotes, which was measured on s3rad rather than on these decks. REBASELINED when the damage law started reading the Cauchy stress under NLGEOM (triaxiality and ENERGY sigma_0 were taken from the second Piola-Kirchhoff stress; test/mech/bulk_law measured the error, O(strain)). Every fast deck runs NLGEOM, so every trajectory moves; measured against the binary before the change, both with the commit corrector: last_inc 506 -> 529, 90 deletions, first deletion theta 0.0335 -> 0.0313. The deletion set is now 2 elements away from fast-plain's (it equals the one fast-plain had before this change); same_deletion_set_as is withdrawn rather than kept by coincidence - the directional width and the Cauchy reading each move the fracture by about two elements of 90, and they no longer cancel.",
    "kind": "fast",
    "variant": "plain",
    "env": [
@@ -471,11 +450,10 @@
    ],
    "expect": {
     "rc": 0,
-    "last_inc": 506,
+    "last_inc": 529,
     "theta": "0.100000E+01",
     "deletions": 90
-   },
-   "same_deletion_set_as": "fast-plain"
+   }
   },
   {
    "name": "hex-nonlocal-card",

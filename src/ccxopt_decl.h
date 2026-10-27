@@ -372,6 +372,16 @@ static const ccxopt_decl ccxopt_decl_table[]={
  "increments only.  Inert for the legacy width with local damage",NULL},
 
 /* ---- the constitutive law ----------------------------------------- */
+{"CCX_DAMAGE_TRIAX_PK2",CCXOPT_ENUM,"unset (Cauchy)",CCXOPT_UNBOUNDED,"0|1",
+ "A/B ONLY.  1 makes the damage law read the second Piola-Kirchhoff stress "
+ "for the triaxiality eta and the EVOLUTION=ENERGY sigma_0 under NLGEOM, as "
+ "every run did before the Cauchy fix; unset (or 0) reads the Cauchy stress "
+ "F S F^T/J, which is what Rice-Tracey, the tabulated locus and the energy "
+ "definition are stated in.  Measured by test/mech/bulk_law on one C3D8: "
+ "isochoric shear has eta_Cauchy=0 while S gives 1e-3..1e-2, and u_f from "
+ "G_f came out +0.37 per cent; O(strain), so about 10 per cent in a necking "
+ "wall.  Without NLGEOM the two are one tensor and nothing changes",NULL},
+
 {"CCX_UC6_CONTACT_SMOOTH",CCXOPT_REAL,"unset (sharp law)",CCXOPT_UNBOUNDED,NULL,
  "penetration band over which the crack-face closure kink is blended.  The "
  "kink is a measured factor of 1/gmin = 1e+06 in the normal tangent; the "
