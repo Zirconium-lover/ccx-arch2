@@ -2876,7 +2876,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
   static glob_census damage_glob;
   double damage_nl_ell=0.;
   ITG damage_nl_mode=0;
-  ITG damage_commit_correct=0;
+  ITG damage_commit_correct=1;
   double damage_qam_floor=0.;
   converge damage_cvg;
   ITG damage_deadsole_law=0,damage_bare_rep_mask=0,damage_hinge_total=0,
@@ -4683,13 +4683,13 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
       FORTRAN(damnonlocalmode,(&damage_nl_mode));
       {
         const char *cc_env=ccxopt_getenv("CCX_DAMAGE_COMMIT_CORRECT");
-        damage_commit_correct=((cc_env!=NULL)&&(cc_env[0]=='1'))?1:0;
-        if(damage_commit_correct){
-          printf("[DAMAGE COMMIT CORRECT] after every accepted increment the "
-                 "damage (and its viscous copy) is re-integrated once from the "
-                 "converged state with the driver the commit has just rebuilt, "
-                 "independently of output.  This CHANGES THE ANSWER of the "
-                 "staggered nonlocal modes and of CCX_DAMAGE_CHARLEN=1\n");
+        damage_commit_correct=((cc_env!=NULL)&&(cc_env[0]=='0'))?0:1;
+        if(!damage_commit_correct){
+          printf("[DAMAGE COMMIT CORRECT] OFF: the damage is NOT re-integrated "
+                 "after the commit, so the staggered nonlocal modes run "
+                 "purely lagged - measured 4.8 times the local time error on "
+                 "test/mech/lag_order against 0.59 with it.  This CHANGES THE "
+                 "ANSWER of those modes and of CCX_DAMAGE_CHARLEN=1\n");
         }
       }
       if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_QAM_FLOOR"))!=NULL){
@@ -16916,7 +16916,19 @@ damage_controller_done:
        copy and state are kept.  The equilibrium Newton found is not
        re-solved: the next increment starts from the corrected damage
        against the converged displacements, exactly as it did after an
-       output increment before.  Off by default until it is measured. */
+       output increment before.
+
+       ON BY DEFAULT, decided on these measurements (test/mech/lag_order,
+       bar h=0.25, FROZEN against the implicit LOCAL solution; A = off,
+       B = on): error in W at dtmax 0.005/0.0025/0.00125 is 9.69/5.36/2.78
+       per cent for A and 1.40/0.67/0.20 for B; observed order 0.89 and
+       1.38; lag error over LOCAL's own time error 4.81 and 0.59; with
+       INNER=1 +0.64 and +0.12 per cent; GRADIENT spread over dtmax
+       0.01..0.00125 5.9 and 0.73 per cent.  Both are independent of the
+       output frequency.  B is byte-identical to the binary before 384cf55
+       at output every increment, i.e. to every earlier result written that
+       way.  Without CHARLEN=1 and with local damage the re-integration
+       reproduces the converged state and nothing moves. */
 
     if(damage_commit_correct&&(icutb==0)&&(*ndmat_>0)&&(*iexpl<=1)&&
        damage_de12_enabled){

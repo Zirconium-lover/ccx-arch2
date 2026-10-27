@@ -357,16 +357,19 @@ static const ccxopt_decl ccxopt_decl_table[]={
  "Any non-blank value arms it with n=2, R=1e-2 unless given; n<0 resets to "
  "2, R clamped to [1e-6,1].  Read ONLY by the GRADIENT backend",NULL},
 
-{"CCX_DAMAGE_COMMIT_CORRECT",CCXOPT_ENUM,"unset (off)",CCXOPT_UNBOUNDED,"0|1",
- "1 re-integrates the damage and its viscous copy once after every accepted "
- "increment, from the converged displacements with the driver the commit "
- "has just rebuilt (the current averaged increment for INTEGRAL, GRADIENT "
- "and FROZEN; the frozen band width under CCX_DAMAGE_CHARLEN=1), and keeps "
- "the result.  This is what the output-only results() call did, on output "
- "increments only, until it was made read-only; here it is a step of the "
- "commit and does not depend on output.  Equilibrium is not re-solved.  "
- "Inert for the legacy width with local damage, where the re-integration "
- "reproduces the converged state",NULL},
+{"CCX_DAMAGE_COMMIT_CORRECT",CCXOPT_ENUM,"1 (on)",CCXOPT_UNBOUNDED,"0|1",
+ "after every accepted increment, re-integrate the damage and its viscous "
+ "copy once from the converged displacements with the driver the commit has "
+ "just rebuilt (the current averaged increment for INTEGRAL, GRADIENT and "
+ "FROZEN; the frozen band width under CCX_DAMAGE_CHARLEN=1) and keep it; "
+ "equilibrium is not re-solved.  0 runs the staggered modes purely lagged.  "
+ "MEASURED on test/mech/lag_order (FROZEN against implicit LOCAL, error in W "
+ "at dtmax 0.005/0.0025/0.00125): on 1.40/0.67/0.20 per cent, order 1.38, "
+ "0.59 of LOCAL's own time error; off 9.69/5.36/2.78, order 0.89, 4.81.  "
+ "Both are independent of the output frequency.  On is byte-identical to "
+ "every result written before the output call was made read-only with "
+ "output at every increment - that call was doing this, on output "
+ "increments only.  Inert for the legacy width with local damage",NULL},
 
 /* ---- the constitutive law ----------------------------------------- */
 {"CCX_UC6_CONTACT_SMOOTH",CCXOPT_REAL,"unset (sharp law)",CCXOPT_UNBOUNDED,NULL,
