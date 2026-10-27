@@ -80,15 +80,15 @@ def deck(nx, length=10.0, iweak=None, e=1.0e5, sy=100.0, sy_bulk=102.0, uf=0.1,
     for name, s in (("BULK", sy_bulk), ("WEAK", sy)):
         L += ["*MATERIAL, NAME=%s" % name, "*ELASTIC", "%g, 0." % e, "*PLASTIC", "%g, 0." % s,
               "*DAMAGE INITIATION, CRITERION=RICETRACEY, EVOLUTION=DISPLACEMENT"
-              + (", NONLOCAL=%r" % ell if ell else ""),
+              + (", NONLOCAL=%.12g" % ell if ell else ""),
               "%g, 1.0, %g, 0." % (eps0, uf)]
     L += ["*SOLID SECTION, ELSET=EBULK, MATERIAL=BULK", "*SOLID SECTION, ELSET=EWEAK, MATERIAL=WEAK",
           # uniaxial: x held on the left face, the rigid modes by three
           # single dofs at the left end; lateral faces free (nu = 0 anyway)
           "*BOUNDARY", "NLEFT, 1, 1, 0.", "%d, 2, 3, 0." % nid(0, 0, 0), "%d, 3, 3, 0." % nid(0, 1, 0),
           "%d, 2, 2, 0." % nid(0, 0, 1),
-          "*STEP, INC=100000, NLGEOM", "*STATIC", "%r, 1., 1e-9, %r" % (dt, dt),
-          "*BOUNDARY", "NRIGHT, 1, 1, %r" % uend,
+          "*STEP, INC=100000, NLGEOM", "*STATIC", "%.12g, 1., 1e-9, %.12g" % (dt, dt),
+          "*BOUNDARY", "NRIGHT, 1, 1, %.12g" % uend,
           "*NODE PRINT, NSET=NRIGHT, TOTALS=ONLY", "RF",
           "*EL PRINT, ELSET=EWEAK", "PEEQ", "*END STEP"]
     if eltype == "C3D10":   # midside nodes of the end faces belong to the grips too
