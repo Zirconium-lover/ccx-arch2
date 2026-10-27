@@ -5475,6 +5475,13 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
     }
     if(*nmethod!=4) NNEW(veolddamageini,double,mt**nk);
 
+    /* [RESOLUTION]: the dimensionless levers of this deck, printed once per
+       step (damresolution.c).  Output only. */
+    damage_resolution_report(co,kon,ipkon,lakon,*ne,ielmat,mi,matname,*nmat,
+                             elcon,nelcon,*ncmat_,*ntmat_,plicon,nplicon,
+                             *npmat_,ndmcon,dmcon,*ndmat_,ielprop,prop,
+                             timepar[0],damage_visc_eta);
+
     /* committed hard-deletion history; one file per CalculiX job */
 
     strcpy2(damagefilename,jobnamec,132);
