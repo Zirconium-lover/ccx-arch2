@@ -38,7 +38,7 @@
       real*8 edge1(3),edge2(3),crossv(3),jump(3),qvec(3),grad(3)
       real*8 area,norm1,normc,kn,tn0,ts0,gc,gmin,mu,beta
       real*8 d0,df,deff,dmax,dmax0,dback,dvisc,dvisc0,alpha,g
-      real*8 ddback,ddvisc,tol,initialgap,scale
+      real*8 ddback,ddvisc,tol,initialgap,scale,gfl
 !
 !     CCX_UC6_CONTACT_SMOOTH.  The normal law is continuous at
 !     deltal(1)=0 but its SLOPE jumps from g*kn to kn there, a factor of
@@ -61,18 +61,21 @@
 !     delta_f) (library note notes/cohesive-uc6.md: +2.4 Gc at ten times
 !     delta_f for Kn=1e5, Tn0=50, Gc=0.3, gmin=1e-3), and it is what let
 !     fast-wrapped run on to theta=1 on the stretch of dead facets.  1
-!     sets the tension and shear traction of such a facet to zero, and
-!     its tangent with it, and keeps the full-Kn contact in compression.
-!     0 (default) is the law as it was, bit for bit.
+!     removes the floor: g = max(0,1-dvisc), so tension and shear
+!     traction and tangent fall continuously to zero at delta_f and the
+!     facet does exactly Gc; compression keeps the full-Kn contact.  0
+!     (default) is the law as it was, bit for bit.
 !
-!     THE TANGENT IS ZEROED TOO, AND THAT WAS MEASURED, NOT ASSUMED.
-!     Keeping gmin*Kn in the tangent alone - for conditioning, as
-!     CCX_DAMAGE_GMIN_TANGENT does for the bulk - walled fast-wrapped at
-!     theta=0.1075, at peak load with the grips still connected (rc=201,
-!     16 iterations per attempt down to dt=2e-6): the operator kept a
-!     stiffness the residual no longer had.  With the consistent tangent
-!     the same deck ends as a completed fracture at theta=0.158082 with
-!     63 deletions, against 0.157680 and 64 with the option off.
+!     CONTINUOUS, AND THAT WAS MEASURED, NOT ASSUMED.  Two switched
+!     versions came first.  Zeroing the traction at the floor but keeping
+!     gmin*Kn in the tangent walled fast-wrapped at peak (theta 0.1075,
+!     rc=201): the operator kept a stiffness the residual no longer had.
+!     Zeroing both at the floor ran fast-wrapped to fracture, but walled
+!     the notched plate of test/mech/size_effect before its peak (theta
+!     0.302, gmin=1e-3): at the floor the traction jumps by gmin*Kn*delta,
+!     about 1 per cent of Tn0, on many facets at once.  At gmin=1e-6 that
+!     jump vanishes and the plate is the same with the switch as
+!     without, which is what pointed at the jump.
 !
       integer ifopen
       save ifopen
@@ -248,9 +251,9 @@
         if(csm(1:1).eq.'1') ifopen=1
         if(ifopen.eq.1) then
           write(*,'(a)')
-     &      '[UC6 FAILED OPEN] a facet at the degradation floor carries'
-     &      //' no tension and no shear, in traction and tangent;'
-     &      //' compression keeps the full-Kn contact.  This'
+     &      '[UC6 FAILED OPEN] no gmin floor: tension and shear fall'
+     &      //' continuously to zero at delta_f, a failed facet carries'
+     &      //' nothing; compression keeps the full-Kn contact.  This'
      &      //' CHANGES THE ANSWER after facets fail'
         endif
         call getenv('CCX_UC6_RESCUE_INC',cresc)
@@ -276,6 +279,16 @@
         endif
       endif
 !
+!     CCX_UC6_FAILED_OPEN: no floor.  g follows 1-dvisc to zero, so the
+!     traction and the tangent of tension and shear fall CONTINUOUSLY to
+!     zero at delta_f; compression keeps kn below.  gfl is the floor the
+!     softening tangent below is gated on.
+!
+      gfl=gmin
+      if(ifopen.eq.1) then
+         g=max(0.d0,1.d0-dvisc)
+         gfl=0.d0
+      endif!
 !     Gated by increment so the control and the intervention share
 !     the same history.  The first attempt applied the rescue from
 !     increment one, which changed the crack path from the start and
@@ -323,15 +336,6 @@
       traction(2)=g*kn*beta*deltal(2)
       traction(3)=g*kn*beta*deltal(3)
 !
-!     CCX_UC6_FAILED_OPEN: see its declaration.  The tangent is zeroed
-!     to match after it is assembled below.
-!
-      if((ifopen.eq.1).and.(1.d0-dvisc.le.gmin)) then
-         if(deltal(1).gt.0.d0) traction(1)=0.d0
-         traction(2)=0.d0
-         traction(3)=0.d0
-      endif
-!
 !     Elastic/unloading tangent.
 !
       do i=1,3
@@ -347,7 +351,7 @@
 !
       tol=1.d-12*max(1.d0,dmax0)
       if((deff.ge.dmax0-tol).and.(deff.gt.d0).and.(deff.lt.df)
-     &     .and.(deff.gt.1.d-30).and.(1.d0-dvisc.gt.gmin)) then
+     &     .and.(deff.gt.1.d-30).and.(1.d0-dvisc.gt.gfl)) then
          ddback=df*d0/((df-d0)*deff**2)
          ddvisc=alpha*ddback
          qvec(1)=max(deltal(1),0.d0)
@@ -361,12 +365,6 @@
                ctan(i,j)=ctan(i,j)-kn*qvec(i)*ddvisc*grad(j)
             enddo
          enddo
-      endif
-!
-      if((ifopen.eq.1).and.(1.d0-dvisc.le.gmin)) then
-         if(deltal(1).gt.0.d0) ctan(1,1)=0.d0
-         ctan(2,2)=0.d0
-         ctan(3,3)=0.d0
       endif
 !
       if(ndump.gt.0) then
