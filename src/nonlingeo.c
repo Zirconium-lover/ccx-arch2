@@ -15004,6 +15004,26 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
                damage_topology_rebuild?"remastruct":"reuse-sparse-graph");
         fflush(stdout);
 
+        /* Nothing left: every element is deleted.  The same-load solve
+           this batch asks for would call results() on an empty model, and
+           elementcpuload divides the element range by the number of
+           active elements - zero - which killed the job with SIGFPE (a
+           single C3D4 driven to deletion, from the tester).  An empty model
+           has no equilibrium to find and no answer to change: say so and
+           end the job cleanly, files closed, rc=0. */
+        {
+          ITG ea,nalive=0;
+          for(ea=0;ea<*ne;ea++) if(ipkon[ea]>-1) nalive++;
+          if(nalive==0){
+            printf("\n[FRACTURE COMPLETE] inc=%" ITGFORMAT " time=%.12e\n"
+                   "                    every element has been deleted; "
+                   "there is nothing left to compute and the job ends "
+                   "here\n\n",iinc,theta**tper);
+            fflush(stdout);
+            FORTRAN(stopwithout201,());
+          }
+        }
+
         /* [DAMAGE RELEASE] arm.  f still holds f_int(u*) of the converged
            state - the elements were marked above but no results() has run
            since - and nactdof is still the pre-remastruct numbering.  Both
@@ -16245,6 +16265,26 @@ damage_controller_done:
                damage_topology_orphans,
                damage_topology_rebuild?"remastruct":"reuse-sparse-graph");
         fflush(stdout);
+
+        /* Nothing left: every element is deleted.  The same-load solve
+           this batch asks for would call results() on an empty model, and
+           elementcpuload divides the element range by the number of
+           active elements - zero - which killed the job with SIGFPE (a
+           single C3D4 driven to deletion, from the tester).  An empty model
+           has no equilibrium to find and no answer to change: say so and
+           end the job cleanly, files closed, rc=0. */
+        {
+          ITG ea,nalive=0;
+          for(ea=0;ea<*ne;ea++) if(ipkon[ea]>-1) nalive++;
+          if(nalive==0){
+            printf("\n[FRACTURE COMPLETE] inc=%" ITGFORMAT " time=%.12e\n"
+                   "                    every element has been deleted; "
+                   "there is nothing left to compute and the job ends "
+                   "here\n\n",iinc,theta**tper);
+            fflush(stdout);
+            FORTRAN(stopwithout201,());
+          }
+        }
 
         /* [DAMAGE RELEASE] arm.  f still holds f_int(u*) of the converged
            state - the elements were marked above but no results() has run
