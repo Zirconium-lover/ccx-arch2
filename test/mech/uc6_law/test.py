@@ -37,13 +37,16 @@ the continuous Duvaut-Lions ODE (RK4, h=1e-4) the error is 0.031 at dt=0.02
 and 0.010 at dt=0.005 - ratio 3.0 for a 4x smaller step, first order with
 the kinks of D(d) at d0 and df taking the rest (35 % allowed on the ratio).
 
-Known limitation, kept as XFAIL (acceptance for the co-rotated frame the
-developer is writing; set ROT_ENV / ROT_FIXED below when it lands): the frame
-and area are the REFERENCE ones, so a rigidly rotated open facet is read in
+Rotation: run twice.  Default (reference frame) - known limitation, kept as
+XFAIL: the frame and area are the REFERENCE ones, so a rigidly rotated open facet is read in
 the old axes.  Checked at 30 / 60 / 90 deg: the force along the turned normal
 is 0.891 / 0.672 / 0.5625 of Kn d A, the force across it -0.189 / -0.189 / 0,
 and with Ts0 > Tn0 the elastic facet is damaged from 60 deg on (d_eff =
-d sqrt(cos^2 + beta sin^2) = 4.17e-4 and 4.38e-4 against d0 = 4e-4).  Turned 90 deg about
+d sqrt(cos^2 + beta sin^2) = 4.17e-4 and 4.38e-4 against d0 = 4e-4).
+With CCX_UC6_MIDSURFACE=1 (developer's 1379894: frame and area of the current
+mid-surface, Segurado and LLorca 2004) the same checks must PASS: along the
+turned normal Kn d A to 1e-4, across it 0 to 1e-6, no damage.  A binary
+without 1379894 ignores the switch and fails the keyed arm.  Turned 90 deg about
 z with an elastic opening of 2e-4, the reaction must be Kn*d*A = 100 along
 the new normal; the code reports beta*Kn*d*A = 56.25 (a shear reading).  With
 Ts0 > Tn0 the same rotation DAMAGES an elastic facet (d_eff = sqrt(beta)*d >
@@ -237,17 +240,12 @@ def run(work, exe):
         ck.append(Check("viscous: Dv error vs ODE at dt=0.005", errs[1], 0.0, tol=0.02))
     ck.append(Check("W_exact/Gc (the gmin sliver)", w_exact() / GC, None, cmp="info"))
     # rigid rotation of an open, elastic facet: the traction must turn with it
-    ck += rotation(work, exe)
+    ck += rotation(work, exe, {}, False)                                  # reference frame: XFAIL
+    ck += rotation(work, exe, {"CCX_UC6_MIDSURFACE": "1"}, True)          # mid-surface frame: PASS
     return ck
 
 
-# Switch of the co-rotated frame, once the developer names it; empty = the
-# reference-frame law, where the rotation checks are XFAIL.
-ROT_ENV = {}
-ROT_FIXED = False
-
-
-def rotation(work, exe):
+def rotation(work, exe, env, fixed):
     """Open a facet elastically by jn along its normal, then turn the whole
     facet (both faces) rigidly by th about z, an axis in its plane.  An
     objective law gives the same traction in the turned axes: |RF| = Kn jn A
@@ -258,16 +256,17 @@ def rotation(work, exe):
     sqrt(beta) jn sin th that can pass d0 - an elastic facet damaged by a
     rotation."""
     ck = []
+    key = "MIDSURFACE" if fixed else "ref.frame"
     for ts0, jn, tag in ((TS0, 2e-4, "beta<1"), (500.0, 3.5e-4, "beta>1")):
         b = (ts0 / TN0) ** 2
         for deg in (30, 60, 90):
             th = math.radians(deg)
-            d = os.path.join(work, "rot_%s_%d" % (tag, deg))
+            d = os.path.join(work, "rot_%s_%s_%d" % (key, tag, deg))
             write(os.path.join(d, "u.inp"), uc6deck.deck(None, (KN, TN0, ts0, GC, GMIN, 0.0), 0.1,
                                                          rot=(th, (jn, 0, 0))))
-            rc, _ = ccx(d, "u", exe, ROT_ENV)
+            rc, _ = ccx(d, "u", exe, env)
             if rc:
-                ck.append(Check("rotation %s %d deg: run rc" % (tag, deg), rc, 0, tol=0))
+                ck.append(Check("%s rotation %s %d deg: run rc" % (key, tag, deg), rc, 0, tol=0))
                 continue
             fx = totals(os.path.join(d, "u.dat"), "NPLUS", 0)[-1][1]
             fy = totals(os.path.join(d, "u.dat"), "NPLUS", 1)[-1][1]
@@ -275,19 +274,19 @@ def rotation(work, exe):
             ft = -fx * math.sin(th) + fy * math.cos(th)         # across it, in the plane of rotation
             ref = KN * jn * AREA
             if tag == "beta<1":
-                ck.append(Check("rotation %d deg: RF along turned normal / (Kn d A)" % deg, fn / ref, 1.0, tol=1e-4,
-                                expect_fail=not ROT_FIXED,
-                                why="" if ROT_FIXED else "reference axes: the turned opening is read partly as shear"))
+                ck.append(Check("%s rotation %d deg: RF along turned normal / (Kn d A)" % (key, deg), fn / ref, 1.0,
+                                tol=1e-4, expect_fail=not fixed,
+                                why="" if fixed else "reference axes: the turned opening is read partly as shear"))
                 # old axes: across = (beta - 1) sin cos - zero at 90 deg, where
                 # the whole opening is read as shear along the turned normal
-                ck.append(Check("rotation %d deg: RF across turned normal / (Kn d A)" % deg, ft / ref, 0.0, tol=1e-4,
-                                expect_fail=(not ROT_FIXED) and deg != 90))
+                ck.append(Check("%s rotation %d deg: RF across turned normal / (Kn d A)" % (key, deg), ft / ref, 0.0,
+                                tol=1e-6, expect_fail=(not fixed) and deg != 90))
             else:
                 st = blocks(os.path.join(d, "u.dat"), "stresses")
                 dmax = max(row[7] for rows in st.values() for row in rows)
                 old = jn * math.sqrt(math.cos(th) ** 2 + b * math.sin(th) ** 2)
-                ck.append(Check("rotation %d deg, Ts0>Tn0: no damage (d_max <= d0)" % deg, dmax, D0, cmp="le",
-                                expect_fail=(not ROT_FIXED) and old > D0,
+                ck.append(Check("%s rotation %d deg, Ts0>Tn0: no damage (d_max <= d0)" % (key, deg), dmax, D0,
+                                cmp="le", expect_fail=(not fixed) and old > D0,
                                 why="old axes: d_eff = d sqrt(cos^2 + beta sin^2) = %.3g against d0 = %.3g"
                                 % (old, D0)))
     return ck
