@@ -29,6 +29,12 @@ ap.add_argument("--nz", type=int, default=2)
 # what lets a test hold that seam shut.
 ap.add_argument("--nonlocal-ell", type=float, default=0.0,
                 help="put NONLOCAL=<ell> on the *DAMAGE INITIATION cards")
+# The weak material's own NONLOCAL=, defaulting to the same value.  0 leaves
+# it off that card only, so the deck has one damage material that names a
+# length and one that inherits it - the case damnlinheritsay announces.
+ap.add_argument("--weak-nonlocal-ell", type=float, default=None,
+                help="NONLOCAL= on WEAKMAT only (default: --nonlocal-ell; "
+                     "0 omits it there)")
 a = ap.parse_args()
 
 nx, ny, nz = a.nx, a.ny, a.nz
@@ -79,8 +85,12 @@ L.append("*Elset, Elset=STRONG, Generate")
 L.append("1, %d, 1" % e)
 
 DMG = "*Damage Initiation, Criterion=Ductile, Evolution=Displacement, Npoints=6"
+DMGW = DMG
+ellw = a.nonlocal_ell if a.weak_nonlocal_ell is None else a.weak_nonlocal_ell
 if a.nonlocal_ell > 0.0:
     DMG += ", NONLOCAL=%g" % a.nonlocal_ell
+if ellw > 0.0:
+    DMGW += ", NONLOCAL=%g" % ellw
 
 L += [
     "*Material, Name=STEEL",
@@ -96,7 +106,7 @@ L += [
     "210000., 0.3",
     "*Plastic",
     "240., 0.", "260., 0.010", "280., 0.050", "300., 0.150",
-    DMG,
+    DMGW,
     "1.0, 0.0150, 0.00, 0.1500, 0.33, 0.0600, 0.50, 0.0350",
     "0.67, 0.0210, 1.00, 0.0120, 1.50, 0.0070",
     "*Solid Section, Elset=STRONG, Material=STEEL",

@@ -246,6 +246,96 @@ static ITG ccx_visc_fnkeep_n=0;
     SFREE(fn);                                                    \
   }while(0)
 
+/* The OUTPUT call of results() must not change the solution.
+
+   It is made only on increments that write output (*NODE PRINT / *EL FILE
+   FREQUENCY) and at the end of a step, after the increment has been
+   accepted and the damage committed.  In stock CalculiX it is harmless: it
+   recomputes the state from xstateini and the converged displacements and
+   gets back exactly what the last Newton iteration had.  The damage module
+   broke that: the call runs the damage update again (results.c rebuilds
+   dam from dambase on every call), now with inputs the commit has already
+   moved, and the next increment started from what it wrote - a state
+   Newton never balanced.  Output frequency was a hidden parameter of the
+   solution.  Two channels, found by restoring one array at a time:
+
+   - LOCAL, CCX_DAMAGE_CHARLEN=1: calcdamagebase freezes the crack-band
+     width of a newly initiated element AT THE COMMIT, so Newton integrated
+     that element with the provisional width and the output call with the
+     frozen one.  Only dam differs (xstate, f bit-identical); without
+     CHARLEN nothing differs.
+   - FROZEN/INTEGRAL: the commit rebuilds dpsave from the CURRENT averaged
+     increment, so the output call integrates dam and the viscous copy with
+     a driving variable Newton never saw.
+
+   Measured on the mkcross bar (24 slices, VISCOSITY=1e-3, CHARLEN=1),
+   FREQUENCY=1 against 1000: local 117 vs 120 increments, FROZEN rc=201 at
+   theta=0.2575 vs rc=0, different deletion sets.  With the restore both
+   pairs give byte-identical .sta and .damage, and FROZEN completes.
+
+   Everything that call writes and a later increment reads is copied before
+   and put back after, so what is written to the output files is computed
+   but the state that continues is the equilibrium one.  Element range ne0
+   only: contact elements beyond it are stock CalculiX, whose update is a
+   pure function of the converged state.  xstiff is not saved: icmd=3 does
+   not write it (the C3D8R hourglass path aside, which this module does not
+   reach). */
+typedef struct{
+  double *xstate,*dam,*damvisc,*damjac,*ener,*eei,*f,qa[4];
+  ITG nxs,ndam,nener,neei,nf;
+}outsnap;
+
+static void outsnap_take(outsnap *o,const double *xstate,ITG nxs,
+                         const double *dam,ITG ndam,const double *damvisc,
+                         const double *damjac,const double *ener,
+                         ITG nener,const double *eei,ITG neei,
+                         const double *f,ITG nf,const double *qa){
+  memset(o,0,sizeof(*o));
+  o->nxs=nxs;o->ndam=ndam;o->nener=nener;o->neei=neei;o->nf=nf;
+  if((xstate!=NULL)&&(nxs>0)){
+    NNEW(o->xstate,double,nxs);memcpy(o->xstate,xstate,sizeof(double)*nxs);}
+  if((dam!=NULL)&&(ndam>0)){
+    NNEW(o->dam,double,ndam);memcpy(o->dam,dam,sizeof(double)*ndam);}
+  if((damvisc!=NULL)&&(ndam>0)){
+    NNEW(o->damvisc,double,ndam);
+    memcpy(o->damvisc,damvisc,sizeof(double)*ndam);}
+  if((damjac!=NULL)&&(ndam>0)){
+    NNEW(o->damjac,double,12*ndam);
+    memcpy(o->damjac,damjac,sizeof(double)*12*ndam);}
+  if((ener!=NULL)&&(nener>0)){
+    NNEW(o->ener,double,nener);memcpy(o->ener,ener,sizeof(double)*nener);}
+  if((eei!=NULL)&&(neei>0)){
+    NNEW(o->eei,double,neei);memcpy(o->eei,eei,sizeof(double)*neei);}
+  if((f!=NULL)&&(nf>0)){
+    NNEW(o->f,double,nf);memcpy(o->f,f,sizeof(double)*nf);}
+  memcpy(o->qa,qa,sizeof(double)*4);
+}
+
+static void outsnap_restore(outsnap *o,double *xstate,double *dam,
+                            double *damvisc,double *damjac,double *ener,
+                            double *eei,double *f,double *qa){
+  if(o->xstate!=NULL){
+    memcpy(xstate,o->xstate,sizeof(double)*o->nxs);SFREE(o->xstate);}
+  if(o->dam!=NULL){memcpy(dam,o->dam,sizeof(double)*o->ndam);SFREE(o->dam);}
+  if(o->damvisc!=NULL){
+    memcpy(damvisc,o->damvisc,sizeof(double)*o->ndam);SFREE(o->damvisc);}
+  if(o->damjac!=NULL){
+    memcpy(damjac,o->damjac,sizeof(double)*12*o->ndam);SFREE(o->damjac);}
+  if(o->ener!=NULL){
+    memcpy(ener,o->ener,sizeof(double)*o->nener);SFREE(o->ener);}
+  if(o->eei!=NULL){memcpy(eei,o->eei,sizeof(double)*o->neei);SFREE(o->eei);}
+  if(o->f!=NULL){memcpy(f,o->f,sizeof(double)*o->nf);SFREE(o->f);}
+  memcpy(qa,o->qa,sizeof(double)*4);
+}
+
+#define OUTSNAP_TAKE(o) outsnap_take(&(o),xstate,*nstate_*mi[0]*ne0,       \
+    dam,(*ndmat_>0)?mi[0]*ne0:0,damage_damvisc,damage_damjac,ener,       \
+    (*nener==1)?2*mi[0]*ne0:0,eei,6*mi[0]*ne0,f,neq[1],qa)
+static outsnap ccx_outsnap;
+static ITG ccx_outsnap_on=0;
+#define OUTSNAP_RESTORE(o) outsnap_restore(&(o),xstate,dam,damage_damvisc, \
+    damage_damjac,ener,eei,f,qa)
+
 /* CCX_DAMAGE_GRADUAL_DELETE=N: gradual release of the forces of a deleted
    batch (Liu & Liu 2018, the element-deletion "force release" of node-release
    crack growth).  An instant deletion hands the whole force the batch carried
@@ -2786,6 +2876,7 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
   static glob_census damage_glob;
   double damage_nl_ell=0.;
   ITG damage_nl_mode=0;
+  ITG damage_commit_correct=1;
   double damage_qam_floor=0.;
   converge damage_cvg;
   ITG damage_deadsole_law=0,damage_bare_rep_mask=0,damage_hinge_total=0,
@@ -4590,6 +4681,17 @@ void nonlingeo(double **cop,ITG *nk,ITG **konp,ITG **ipkonp,char **lakonp,
         printf("[DAMAGE NONLOCAL] backend FROZEN: CONTROL ONLY - the staggered damage update WITHOUT spatial averaging.  ell is read but NOT applied; this arm regularises nothing and exists to separate the internal length from the integration scheme\n");
       }
       FORTRAN(damnonlocalmode,(&damage_nl_mode));
+      {
+        const char *cc_env=ccxopt_getenv("CCX_DAMAGE_COMMIT_CORRECT");
+        damage_commit_correct=((cc_env!=NULL)&&(cc_env[0]=='0'))?0:1;
+        if(!damage_commit_correct){
+          printf("[DAMAGE COMMIT CORRECT] OFF: the damage is NOT re-integrated "
+                 "after the commit, so the staggered nonlocal modes run "
+                 "purely lagged - measured 4.8 times the local time error on "
+                 "test/mech/lag_order against 0.59 with it.  This CHANGES THE "
+                 "ANSWER of those modes and of CCX_DAMAGE_CHARLEN=1\n");
+        }
+      }
       if((damage_de13_env=ccxopt_getenv("CCX_DAMAGE_QAM_FLOOR"))!=NULL){
         damage_qam_floor=atof(damage_de13_env);
         if(damage_qam_floor<0.) damage_qam_floor=0.;
@@ -16796,6 +16898,72 @@ damage_controller_done:
 
     }
 
+    /* CCX_DAMAGE_COMMIT_CORRECT: the corrector the output call used to be.
+
+       Before 384cf55 the output-only results() call re-integrated dam and
+       its viscous copy from the converged displacements with the driver
+       the commit had just rebuilt - the current averaged increment in the
+       staggered nonlocal modes, the frozen band width under CHARLEN=1 -
+       and the next increment started from that.  So on output increments
+       the scheme had a corrector step, and only on those.  384cf55 made
+       the output call read-only, which removed the dependence on output
+       and the corrector with it; the lagged scheme then measured 4.8 times
+       its local reference error on test/mech/lag_order.
+
+       This puts the corrector back as a step of the COMMIT, on every
+       accepted increment: one results() call with iout=-2 (v known, no SPC
+       or MPC applied, no output, no f or qa recomputed) whose dam, viscous
+       copy and state are kept.  The equilibrium Newton found is not
+       re-solved: the next increment starts from the corrected damage
+       against the converged displacements, exactly as it did after an
+       output increment before.
+
+       ON BY DEFAULT, decided on these measurements (test/mech/lag_order,
+       bar h=0.25, FROZEN against the implicit LOCAL solution; A = off,
+       B = on): error in W at dtmax 0.005/0.0025/0.00125 is 9.69/5.36/2.78
+       per cent for A and 1.40/0.67/0.20 for B; observed order 0.89 and
+       1.38; lag error over LOCAL's own time error 4.81 and 0.59; with
+       INNER=1 +0.64 and +0.12 per cent; GRADIENT spread over dtmax
+       0.01..0.00125 5.9 and 0.73 per cent.  Both are independent of the
+       output frequency.  B is byte-identical to the binary before 384cf55
+       at output every increment, i.e. to every earlier result written that
+       way.  Without CHARLEN=1 and with local damage the re-integration
+       reproduces the converged state and nothing moves. */
+
+    if(damage_commit_correct&&(icutb==0)&&(*ndmat_>0)&&(*iexpl<=1)&&
+       damage_de12_enabled){
+      ITG cc_iout=-2,cc_icmd=3;
+      MNEW(v,double,mt**nk);
+      isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);
+      NNEW(stx,double,6*mi[0]**ne);
+      MNEW(fn,double,mt**nk);
+      NNEW(inum,ITG,*nk);
+      results(co,nk,kon,ipkon,lakon,ne,v,stn,inum,stx,
+	      elcon,nelcon,rhcon,nrhcon,alcon,nalcon,alzero,ielmat,
+	      ielorien,norien,orab,ntmat_,t0,t1act,ithermal,
+	      prestr,iprestr,filab,eme,emn,een,iperturb,
+	      f,fn,nactdof,&cc_iout,qa,vold,b,nodeboun,
+	      ndirboun,xbounact,nboun,ipompc,
+	      nodempc,coefmpc,labmpc,nmpc,nmethod,cam,&neq[1],veold,accold,
+	      &bet,&gam,&dtime,&time,ttime,plicon,nplicon,plkcon,nplkcon,
+	      xstateini,xstiff,xstate,npmat_,epn,matname,mi,&ielas,
+	      &cc_icmd,ncmat_,nstate_,stiini,vini,ikboun,ilboun,ener,enern,
+	      emeini,xstaten,eei,enerini,cocon,ncocon,set,nset,istartset,
+	      iendset,ialset,nprint,prlab,prset,qfx,qfn,trab,inotr,ntrans,
+	      fmpc,nelemload,nload,ikmpc,ilmpc,istep,&iinc,springarea,
+	      &reltime,&ne0,thicke,shcon,nshcon,
+	      sideload,xloadact,xloadold,&icfd,inomat,pslavsurf,pmastsurf,
+	      mortar,islavact,cdn,islavnode,nslavnode,ntie,clearini,
+	      islavsurf,ielprop,prop,energyini,energy,&kscale,iponoeln,
+	      inoeln,nener,orname,network,ipobody,xbodyact,ibody,typeboun,
+	      itiefac,tieset,smscale,&mscalmethod,nbody,t0g,t1g,
+	      islavquadel,aut,irowt,jqt,&mortartrafoflag,
+	      &intscheme,physcon,dam,damn,iponoel);
+      /* plain SFREE, not VISC_FN_RELEASE: iout=-2 does not compute fn, and
+         the copy that macro keeps is what the damping audit reads next */
+      SFREE(inum);SFREE(v);SFREE(stx);SFREE(fn);
+    }
+
     /* output */
 
     if((jout[0]==jprint)&&(icutb==0)){
@@ -16831,6 +16999,7 @@ damage_controller_done:
 
       }else{
       
+	OUTSNAP_TAKE(ccx_outsnap);ccx_outsnap_on=1;
 	iout=2;
 	icmd=3;
       
@@ -16942,6 +17111,9 @@ damage_controller_done:
       if(strcmp1(&filab[2175],"CONT")==0) SFREE(cdn);
       if(strcmp1(&filab[2697],"ME  ")==0) SFREE(emn);
       if(strcmp1(&filab[4785],"DUCT")==0) SFREE(damn);
+
+      /* the output is written; continue from the equilibrium state */
+      if(ccx_outsnap_on){OUTSNAP_RESTORE(ccx_outsnap);ccx_outsnap_on=0;}
     }
     
   }
@@ -16980,6 +17152,7 @@ damage_controller_done:
     if(strcmp1(&filab[4785],"DUCT")==0) NNEW(damn,double,*nk);
     
     isiz=mt**nk;cpypardou(v,vold,&isiz,&num_cpus);
+    OUTSNAP_TAKE(ccx_outsnap);ccx_outsnap_on=1;
     iout=2;
     icmd=3;
 
@@ -17085,6 +17258,9 @@ damage_controller_done:
     if(strcmp1(&filab[2175],"CONT")==0) SFREE(cdn);
     if(strcmp1(&filab[2697],"ME  ")==0) SFREE(emn);
     if(strcmp1(&filab[4785],"DUCT")==0) SFREE(damn);
+
+    /* the next step starts from the equilibrium state, not the output's */
+    if(ccx_outsnap_on){OUTSNAP_RESTORE(ccx_outsnap);ccx_outsnap_on=0;}
 
   }
     
